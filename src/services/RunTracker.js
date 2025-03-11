@@ -116,10 +116,10 @@ class RunTracker extends EventEmitter {
       // 2. Maximum speed check to filter GPS jumps
       // 3. Accuracy threshold to ensure quality data
       
-      const MIN_MOVEMENT_THRESHOLD = 3; // 3 meters minimum to count as movement
+      const MIN_MOVEMENT_THRESHOLD = 0.5; // Reduced to 0.5 meters for indoor tracking
       const MAX_SPEED = 10; // 10 meters per second (~36 km/h) maximum realistic speed
       const MAX_REASONABLE_DISTANCE = MAX_SPEED * timeDiff;
-      const ACCURACY_THRESHOLD = 20; // Only accept points with accuracy better than 20 meters
+      const ACCURACY_THRESHOLD = 50; // Increased to 50 meters for indoor use
       
       const isRealisticMovement = 
         distanceIncrement >= MIN_MOVEMENT_THRESHOLD && 
@@ -188,7 +188,7 @@ class RunTracker extends EventEmitter {
           backgroundTitle: 'Runstr',
           // Never request permissions here - we've already done it in the permission dialog
           requestPermissions: false, 
-          distanceFilter: 10,
+          distanceFilter: 0.5, // Reduced from 10 to 0.5 meters to detect smaller movements
           // Add high accuracy mode for better GPS precision
           highAccuracy: true,
           // Increase stale location threshold to get fresher GPS data

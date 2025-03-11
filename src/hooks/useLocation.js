@@ -154,14 +154,17 @@ export const useLocation = (options = {}) => {
       // 1. Increase minimum movement threshold
       // 2. Add maximum reasonable movement threshold (nobody moves 100m in a second)
       // 3. Consider GPS accuracy in the decision
-      const MIN_MOVEMENT_THRESHOLD = 2; // Minimum 2 meters to count movement (reduce noise)
+      const MIN_MOVEMENT_THRESHOLD = 0.5; // Reduced from 2m to 0.5m to detect smaller movements
       const MAX_REASONABLE_SPEED = 10; // Maximum 10 meters per second (~36 km/h or ~22 mph)
       const MAX_MOVEMENT_PER_UPDATE = MAX_REASONABLE_SPEED * timeDiff; // Max distance based on time difference
+
+      // More flexible for indoor use - allow lower accuracy indoors
+      const INDOOR_ACCURACY_THRESHOLD = 50; // Increased from 20m to 50m for indoor use
 
       const isReasonableMovement = 
         distance >= MIN_MOVEMENT_THRESHOLD && 
         distance <= MAX_MOVEMENT_PER_UPDATE &&
-        position.coords.accuracy < 20; // Require better accuracy (20m instead of 30m)
+        position.coords.accuracy < INDOOR_ACCURACY_THRESHOLD; // More forgiving accuracy check
 
       // Log suspicious movements for debugging
       if (distance > MAX_MOVEMENT_PER_UPDATE) {
