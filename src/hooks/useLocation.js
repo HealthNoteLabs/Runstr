@@ -2,6 +2,16 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { calculateStats, calculateDistance } from '../utils/runCalculations';
 import { KalmanFilter } from '../utils/kalmanFilter';
 
+// Debug helper - enable to log detailed movement information
+const DEBUG_GPS = false;
+
+// Helper function to log GPS debug info when enabled
+const logGpsDebug = (message, data) => {
+  if (DEBUG_GPS) {
+    console.log(`GPS Debug: ${message}`, data);
+  }
+};
+
 export const useLocation = (options = {}) => {
   const [location, setLocation] = useState(null);
   const [error, setError] = useState(null);
@@ -116,6 +126,22 @@ export const useLocation = (options = {}) => {
         filteredPosition.coords.longitude
       );
 
+      // Log detailed distance information when debug is enabled
+      logGpsDebug('Movement detected', {
+        distance: distance.toFixed(2) + 'm',
+        timeDiff: timeDiff.toFixed(2) + 's',
+        speed: (distance / timeDiff).toFixed(2) + 'm/s',
+        accuracy: position.coords.accuracy.toFixed(2) + 'm',
+        from: {
+          lat: lastPositionRef.current.coords.latitude,
+          lng: lastPositionRef.current.coords.longitude
+        },
+        to: {
+          lat: filteredPosition.coords.latitude,
+          lng: filteredPosition.coords.longitude
+        }
+      });
+
       // Update GPS quality indicator
       updateGpsQuality(position.coords.accuracy);
 
@@ -124,8 +150,25 @@ export const useLocation = (options = {}) => {
         updateElevation(position.coords.altitude);
       }
 
-      // Less strict filtering criteria - allow any movement >= 0.1m with reasonable accuracy
-      if (distance >= 0.1 && position.coords.accuracy < 30) {
+      // More strict filtering criteria to avoid GPS jumps
+      // 1. Increase minimum movement threshold
+      // 2. Add maximum reasonable movement threshold (nobody moves 100m in a second)
+      // 3. Consider GPS accuracy in the decision
+      const MIN_MOVEMENT_THRESHOLD = 2; // Minimum 2 meters to count movement (reduce noise)
+      const MAX_REASONABLE_SPEED = 10; // Maximum 10 meters per second (~36 km/h or ~22 mph)
+      const MAX_MOVEMENT_PER_UPDATE = MAX_REASONABLE_SPEED * timeDiff; // Max distance based on time difference
+
+      const isReasonableMovement = 
+        distance >= MIN_MOVEMENT_THRESHOLD && 
+        distance <= MAX_MOVEMENT_PER_UPDATE &&
+        position.coords.accuracy < 20; // Require better accuracy (20m instead of 30m)
+
+      // Log suspicious movements for debugging
+      if (distance > MAX_MOVEMENT_PER_UPDATE) {
+        console.warn(`Filtered out suspicious movement: ${distance.toFixed(2)}m in ${timeDiff.toFixed(2)}s`);
+      }
+
+      if (isReasonableMovement) {
         lastPositionRef.current = filteredPosition;
         setPositions((prev) => [...prev, filteredPosition]);
       }

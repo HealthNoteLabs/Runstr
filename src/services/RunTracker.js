@@ -94,6 +94,16 @@ class RunTracker extends EventEmitter {
   addPosition(newPosition) {
     if (this.positions.length > 0) {
       const lastPosition = this.positions[this.positions.length - 1];
+      
+      // Calculate time difference between points
+      const timeDiff = (newPosition.timestamp - lastPosition.timestamp) / 1000;
+      
+      // Skip if time difference is negative (out of order GPS points)
+      if (timeDiff < 0) {
+        console.warn('Skipping position with negative time difference');
+        return;
+      }
+      
       const distanceIncrement = this.calculateDistance(
         lastPosition.latitude,
         lastPosition.longitude,
@@ -101,57 +111,46 @@ class RunTracker extends EventEmitter {
         newPosition.longitude
       );
       
-      // Add a minimum threshold to filter out GPS noise (e.g., 3 meters)
-      // Only count movement if it's above the threshold
-      const MOVEMENT_THRESHOLD = 3; // 3 meters
-      if (distanceIncrement >= MOVEMENT_THRESHOLD) {
+      // Improved filtering for realistic movement
+      // 1. Higher movement threshold to filter noise
+      // 2. Maximum speed check to filter GPS jumps
+      // 3. Accuracy threshold to ensure quality data
+      
+      const MIN_MOVEMENT_THRESHOLD = 3; // 3 meters minimum to count as movement
+      const MAX_SPEED = 10; // 10 meters per second (~36 km/h) maximum realistic speed
+      const MAX_REASONABLE_DISTANCE = MAX_SPEED * timeDiff;
+      const ACCURACY_THRESHOLD = 20; // Only accept points with accuracy better than 20 meters
+      
+      const isRealisticMovement = 
+        distanceIncrement >= MIN_MOVEMENT_THRESHOLD && 
+        distanceIncrement <= MAX_REASONABLE_DISTANCE &&
+        newPosition.accuracy <= ACCURACY_THRESHOLD;
+      
+      // Log suspicious movements for debugging
+      if (distanceIncrement > MAX_REASONABLE_DISTANCE) {
+        console.warn(`Filtered out suspicious movement in tracker: ${distanceIncrement.toFixed(2)}m in ${timeDiff.toFixed(2)}s`);
+      }
+      
+      if (isRealisticMovement) {
         this.distance += distanceIncrement;
         this.emit('distanceChange', this.distance); // Emit distance change
-      } else {
-        // GPS noise detected, not adding to distance
-        console.log(`Filtered out small movement: ${distanceIncrement.toFixed(2)}m`);
-      }
-
-      // Check for altitude data and update elevation
-      if (newPosition.altitude !== undefined && newPosition.altitude !== null) {
-        this.updateElevation(newPosition.altitude);
-      }
-
-      // Define the split distance in meters based on selected unit
-      const splitDistance = this.distanceUnit === 'km' ? 1000 : 1609.344; // 1km or 1mile in meters
-      
-      // Check if a new full unit (km or mile) has been completed
-      if (
-        Math.floor(this.distance / splitDistance) >
-        Math.floor(this.lastSplitDistance / splitDistance)
-      ) {
-        // Calculate the current split number (e.g., 1, 2, 3, ...)
-        const currentSplit = Math.floor(this.distance / splitDistance);
-
-        // Determine the elapsed time at the previous split (or 0 at start)
-        const previousSplitTime = this.splits.length
-          ? this.splits[this.splits.length - 1].time
-          : 0;
-        // Calculate the duration for this split (time difference)
-        const splitDuration = this.duration - previousSplitTime;
-        // Calculate pace for this split
-        const splitPace = this.calculatePace(splitDistance, splitDuration); // seconds per unit
-
-        // Record the split with the unit count, cumulative time, and split pace
-        this.splits.push({
-          km: currentSplit, // We keep the field name as 'km' for backward compatibility
-          time: this.duration,
-          pace: splitPace
-        });
-        // Update lastSplitDistance to the current total distance
-        this.lastSplitDistance = this.distance;
-
-        // Emit an event with updated splits array
-        this.emit('splitRecorded', this.splits);
+        
+        // Check if we have exceeded the next split distance and emit a split event
+        const currentSplitDistance = Math.floor(this.distance / 1000);
+        if (currentSplitDistance > this.lastSplitDistance) {
+          this.lastSplitDistance = currentSplitDistance;
+          this.emit('split', currentSplitDistance); // Emit split event with km value
+        }
       }
     }
-
+    
+    // Add position to history regardless of filtering
+    // This gives us a complete GPS trace for the activity
     this.positions.push(newPosition);
+    
+    // Update current pace estimate
+    this.currentPace = this.calculatePace(this.distance, this.duration);
+    this.emit('paceChange', this.currentPace); // Emit pace change
   }
 
   startTimer() {

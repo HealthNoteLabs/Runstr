@@ -542,17 +542,37 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     }
   };
 
+  // Add a reset function to clear all run history
+  const handleResetAllData = () => {
+    if (window.confirm('WARNING: This will permanently delete ALL your run history. Are you sure you want to continue? This cannot be undone.')) {
+      if (window.confirm('FINAL WARNING: All runs will be permanently deleted. Confirm reset?')) {
+        localStorage.removeItem('runHistory');
+        setRunHistory([]);
+        alert('All run history has been deleted.');
+      }
+    }
+  };
+
   return (
     <div className="run-history">
       <div className="stats-overview">
         <h2>STATS</h2>
-        <button 
-          className="profile-btn" 
-          onClick={() => setShowProfileModal(true)}
-          title="Update your profile for accurate calorie calculations"
-        >
-          Update Profile
-        </button>
+        <div className="profile-buttons">
+          <button 
+            className="profile-btn" 
+            onClick={() => setShowProfileModal(true)}
+            title="Update your profile for accurate calorie calculations"
+          >
+            Update Profile
+          </button>
+          <button 
+            className="reset-btn" 
+            onClick={handleResetAllData}
+            title="Reset all run history data"
+          >
+            Reset Data
+          </button>
+        </div>
         <div className="stats-grid">
           <div className="stat-card">
             <h3>Total Distance</h3>
