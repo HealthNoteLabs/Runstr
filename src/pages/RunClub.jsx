@@ -658,6 +658,53 @@ export const RunClub = () => {
     return () => window.removeEventListener('scroll', handleVisibilityCheck);
   }, [loading, posts, checkPostVisibility]);
 
+  // Format split times correctly in post content
+  const formatSplitTimesInContent = (content) => {
+    if (!content) return content;
+    
+    // Check if the content contains splits section
+    if (!content.includes('📊 Splits:')) return content;
+    
+    // Split the content into lines
+    const lines = content.split('\n');
+    
+    // Process each line
+    const formattedLines = lines.map(line => {
+      // Check if this is a split line - handles both formats:
+      // - Old format: "Mile 0.6: 8816:43" or fractional miles with invalid times
+      // - New format: "Mile 1: 8:16" or sequential miles with proper time format
+      const splitRegex = /(Mile|Km)\s+(\d+\.?\d*):\s+(\d+:\d+|\d+)/i;
+      const match = line.match(splitRegex);
+      
+      if (match) {
+        const unit = match[1]; // "Mile" or "Km"
+        const number = parseFloat(match[2]);
+        const time = match[3];
+        
+        // If already in the new format (whole number), keep it as is
+        const wholeNumber = Number.isInteger(number) ? number : Math.round(number);
+        
+        // If time format is valid (like 8:43) keep it, otherwise convert
+        let formattedTime = time;
+        if (!time.includes(':')) {
+          // Try to convert a number like 8816 to 8:16
+          const timeNumber = parseInt(time);
+          if (!isNaN(timeNumber)) {
+            const minutes = Math.floor(timeNumber / 100);
+            const seconds = timeNumber % 100;
+            formattedTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+          }
+        }
+        
+        return `${unit} ${wholeNumber}: ${formattedTime}`;
+      }
+      
+      return line;
+    });
+    
+    return formattedLines.join('\n');
+  };
+
   return (
     <div className="run-club-container">
       <h2>RUNSTR FEED</h2>
@@ -686,7 +733,7 @@ export const RunClub = () => {
                 </div>
               </div>
               <div className="post-content">
-                {post.content}
+                {formatSplitTimesInContent(post.content)}
                 <div className="post-images">
                   {extractImagesFromContent(post.content).map(
                     (imageUrl, index) => (

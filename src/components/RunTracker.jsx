@@ -322,7 +322,11 @@ ${
   run.splits.length > 0
     ? '\n📊 Splits:\n' +
       run.splits
-        .map((split) => `${distanceUnit === 'km' ? `Km ${split.km}` : `Mile ${(split.km * 0.621371).toFixed(1)}`}: ${formatPace(split.pace, distanceUnit)}`)
+        .map((split, index) => {
+          // Use 1-based mile/km numbering for better readability
+          const displayNumber = index + 1;
+          return `${distanceUnit === 'km' ? `Km ${displayNumber}` : `Mile ${displayNumber}`}: ${formatPace(split.pace, distanceUnit)}`;
+        })
         .join('\n')
     : ''
 }
@@ -510,16 +514,12 @@ ${
               splitLabel = distanceUnit === 'km'
                 ? `Partial: ${partialDistance} km`
                 : `Partial: ${partialDistance} mi`;
-            } else if (Number.isInteger(split.km)) {
-              // For whole unit splits (Mile 1, Mile 2, etc.)
-              splitLabel = distanceUnit === 'km' 
-                ? `Km ${split.km}` 
-                : `Mile ${split.km}`;
             } else {
-              // Fallback for any other case
-              splitLabel = distanceUnit === 'km'
-                ? `Km ${split.km.toFixed(1)}`
-                : `Mile ${split.km.toFixed(2)}`;
+              // For whole unit splits (Mile 1, Mile 2, etc.), use the index + 1
+              // This matches how we format it in the Nostr post
+              splitLabel = distanceUnit === 'km' 
+                ? `Km ${i + 1}` 
+                : `Mile ${i + 1}`;
             }
             
             return (
