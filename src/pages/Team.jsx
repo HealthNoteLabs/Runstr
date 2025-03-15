@@ -191,7 +191,7 @@ export const Team = () => {
         
         try {
           profile = JSON.parse(profileEvent.content);
-        } catch (err) {
+        } catch (_) {
           profile = { name: 'Unknown' };
         }
         
@@ -362,7 +362,7 @@ export const Team = () => {
         name = metadata.name;
         about = metadata.about;
         picture = metadata.picture;
-      } catch (e) {
+      } catch (_) {
         // Fallback to tags if content is not valid JSON
         name = channelEvent.tags.find(tag => tag[0] === 'name')?.[1] || 'Unnamed Channel';
         about = channelEvent.tags.find(tag => tag[0] === 'about')?.[1] || '';
@@ -414,31 +414,37 @@ export const Team = () => {
       });
     } catch (error) {
       console.error('Error opening channel:', error);
-      setError('Failed to open channel. Please try again later.');
+      setError('Failed to open channel. Please check your connection and try again later.');
     }
   };
 
   // Handle team creation
   const createTeam = () => {
     try {
+      // Check if logged in with Nostr
+      if (!pubkey) {
+        setError('You need to log in to create a club. Please click the login button in the top right of the app.');
+        return;
+      }
+
       // Basic validation
       if (!newTeamData.name || !newTeamData.description) {
         setError('Please fill out all fields');
         return;
       }
 
-      // Validate that name contains #Runstr
-      if (!newTeamData.name.includes('#Runstr')) {
-        setError('Run Club name must include "#Runstr" to help others find running-related groups');
-        return;
-      }
-
       // Clear any previous errors
       setError('');
 
-      // Create channel metadata
+      // Automatically append #Runstr to the name if it's not already included
+      let finalName = newTeamData.name.trim();
+      if (!finalName.includes('#Runstr')) {
+        finalName = `${finalName} #Runstr`;
+      }
+
+      // Create channel metadata with the finalized name
       const channelMetadata = {
-        name: newTeamData.name,
+        name: finalName,
         about: newTeamData.description,
         picture: newTeamData.picture || "https://runstr.app/default-club.png"
       };
@@ -446,6 +452,7 @@ export const Team = () => {
       // Create the channel
       createChannel(channelMetadata)
         .then((channel) => {
+          console.log("Club created successfully:", channel);
           // Add newly created channel to local state
           setMyTeams(prevTeams => [...prevTeams, channel]);
           // Reset form
@@ -455,15 +462,16 @@ export const Team = () => {
             picture: ''
           });
           // Switch to the new team
+          setActiveTab('teamProfile');
           openTeam(channel.id);
         })
         .catch((err) => {
-          setError('Failed to create club. Please try again.');
           console.error('Failed to create channel:', err);
+          setError(err.message || 'Failed to create club. Please check your connection and try again.');
         });
     } catch (e) {
-      setError('An unexpected error occurred.');
       console.error('Error in createTeam:', e);
+      setError(e.message || 'An unexpected error occurred.');
     }
   };
 
@@ -488,36 +496,21 @@ export const Team = () => {
     }
   };
 
-  // Reply to a message
-  const replyToMessage = async (message, replyText) => {
-    if (!pubkey || !message || !replyText.trim() || !currentTeam) return;
-
-    try {
-      // Prepare the reply data with pubkey for p tag
-      const replyTo = {
-        id: message.id,
-        pubkey: message.pubkey
-      };
-      
-      // Send message with reply information
-      await sendChannelMessage(currentTeam.id, replyText, replyTo);
-      
-      // Clear message input
-      setMessageText('');
-    } catch (error) {
-      console.error('Error replying to message:', error);
-      setError('Failed to send reply. Please try again later.');
-    }
-  };
-
   // Search for teams/channels
   const searchTeams = async () => {
     try {
+      // Check if logged in
+      if (!pubkey) {
+        setError('You need to log in to search for clubs. Please click the login button in the top right of the app.');
+        return;
+      }
+
       if (!searchQuery.trim()) {
         setSearchResults([]);
         return;
       }
       
+      setLoading(true);
       const results = await searchChannels(searchQuery);
       
       // Process results
@@ -530,7 +523,7 @@ export const Team = () => {
           name = metadata.name;
           about = metadata.about;
           picture = metadata.picture;
-        } catch (e) {
+        } catch (_) {
           // Fallback to tags if content is not valid JSON
           name = event.tags.find(tag => tag[0] === 'name')?.[1] || 'Unnamed Channel';
           about = event.tags.find(tag => tag[0] === 'about')?.[1] || '';
@@ -548,9 +541,11 @@ export const Team = () => {
       });
       
       setSearchResults(channels);
+      setLoading(false);
     } catch (error) {
       console.error('Error searching teams:', error);
-      setError('Failed to search for Run Clubs. Please try again later.');
+      setLoading(false);
+      setError(error.message || 'Failed to search for Run Clubs. Please check your connection and try again later.');
     }
   };
 
@@ -669,11 +664,11 @@ export const Team = () => {
         <input
           id="team-name"
           type="text"
-          placeholder="Enter club name (must include #Runstr)"
+          placeholder="Enter club name (we'll add #Runstr for you)"
           value={newTeamData.name}
           onChange={(e) => setNewTeamData({...newTeamData, name: e.target.value})}
         />
-        <small className="form-hint">Example: "Chicago Marathon #Runstr Group" or "#Runstr Trail Runners"</small>
+        <small className="form-hint">Example: "Chicago Marathon Runners" or "Trail Runners Club"</small>
       </div>
       
       <div className="form-group">

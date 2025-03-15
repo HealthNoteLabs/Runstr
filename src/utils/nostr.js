@@ -45,14 +45,14 @@ let connectionState = {
 // Export loggedInUser as a let variable
 export let loggedInUser = null;
 
-// Initialize NDK instance with optimized settings
+// Initialize NDK instance with optimized settings for Android
 export const ndk = isBrowser
   ? new NDK({
       explicitRelayUrls: PRIORITIZED_RELAYS.slice(0, 3), // Start with just 3 fastest relays
       enableOutboxModel: true,
       autoConnectRelays: false, // We'll handle connection manually for better control
       autoFetchUserRelays: true, // Get user's preferred relays when available
-      connectionTimeout: 2500 // 2.5 seconds timeout for faster failures
+      connectionTimeout: 3500 // 3.5 seconds timeout - slightly longer for mobile networks
     })
   : null;
 
@@ -78,13 +78,13 @@ const connectToAdditionalRelays = async () => {
     }
   }
   
-  // Wait a bit for connections to establish
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  // Wait a bit for connections to establish - longer for mobile
+  await new Promise(resolve => setTimeout(resolve, 1500));
   
   return ndk.pool?.relays?.size > 0;
 };
 
-// Initialize NDK connection with improved strategy
+// Initialize NDK connection with improved strategy for mobile
 export const initializeNostr = async (forceReconnect = false) => {
   if (!ndk) return false;
 
@@ -106,23 +106,23 @@ export const initializeNostr = async (forceReconnect = false) => {
     return connectionState.connectionPromise;
   }
 
-  console.log('Initializing NDK connection...');
+  console.log('Initializing NDK connection for Android...');
   connectionState.lastConnectAttempt = now;
 
   // Create a promise for the connection attempt that can be shared
   connectionState.connectionPromise = (async () => {
     let retryCount = 0;
-    const maxRetries = 2; // Reduced retry count for faster loading
+    const maxRetries = 3; // Mobile needs more retries
 
     while (retryCount < maxRetries) {
       try {
         console.log(`Connecting to relays (attempt ${retryCount + 1}/${maxRetries})...`);
         
-        // Use a promise race to add timeout
+        // Use a promise race to add timeout - longer for mobile
         await Promise.race([
           ndk.connect(),
           new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Connection timeout')), 5000)
+            setTimeout(() => reject(new Error('Connection timeout')), 7000)
           )
         ]);
 
@@ -151,7 +151,7 @@ export const initializeNostr = async (forceReconnect = false) => {
 
         retryCount++;
         if (retryCount < maxRetries) {
-          const backoffTime = 1000 * Math.pow(1.5, retryCount); // Shorter backoff
+          const backoffTime = 1500 * Math.pow(1.5, retryCount); // Longer backoff for mobile
           console.log(`No relays connected. Waiting ${backoffTime}ms before retry...`);
           await new Promise((resolve) => setTimeout(resolve, backoffTime));
         }
@@ -159,7 +159,7 @@ export const initializeNostr = async (forceReconnect = false) => {
         console.error('Error during connection attempt:', err);
         retryCount++;
         if (retryCount < maxRetries) {
-          const backoffTime = 1000 * Math.pow(1.5, retryCount);
+          const backoffTime = 1500 * Math.pow(1.5, retryCount);
           await new Promise((resolve) => setTimeout(resolve, backoffTime));
         }
       }
@@ -188,6 +188,7 @@ if (ndk) {
   });
 }
 
+// Android-friendly publishing function
 export const publishToNostr = async (event) => {
   if (!isBrowser) {
     console.error('Not in browser environment');
@@ -205,11 +206,12 @@ export const publishToNostr = async (event) => {
   }
 
   try {
-    if (!window.nostr) {
-      console.error(
-        'Nostr provider not found. Please ensure you are logged in.'
-      );
-      throw new Error('Nostr provider not found');
+    // For Android, we may need to use NIP-07 or a native signer
+    const canUseNostrExtension = !!window.nostr;
+    
+    if (!canUseNostrExtension && !event.sig) {
+      console.error('No Nostr signer available and event is not pre-signed');
+      throw new Error('Authentication required. Please log in to continue.');
     }
 
     // Check current connection state
@@ -218,7 +220,7 @@ export const publishToNostr = async (event) => {
       const isConnected = await initializeNostr();
       if (!isConnected) {
         throw new Error(
-          'Could not establish relay connections. Please check your internet connection and try again.'
+          'Could not connect to the network. Please check your internet connection and try again.'
         );
       }
     } else {
@@ -227,18 +229,24 @@ export const publishToNostr = async (event) => {
       );
     }
 
-    console.log('Publishing event:', event);
-    const signedEvent = await window.nostr.signEvent(event);
-    console.log('Event signed:', signedEvent);
+    let signedEvent = event;
+    
+    // Sign the event if not already signed and nostr extension available
+    if (canUseNostrExtension && !event.sig) {
+      console.log('Signing event using Nostr provider...');
+      signedEvent = await window.nostr.signEvent(event);
+    }
+    
+    console.log('Publishing event:', signedEvent);
 
     // Create NDK event
     const ndkEvent = new NDKEvent(ndk, signedEvent);
 
-    // Publish with timeout
+    // Publish with timeout - longer for mobile
     const published = await Promise.race([
       ndkEvent.publish(),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Publication timeout')), 10000) // Reduced timeout
+        setTimeout(() => reject(new Error('Publication timeout')), 15000) // Mobile needs longer timeout
       )
     ]);
 
@@ -253,15 +261,34 @@ export const publishToNostr = async (event) => {
 // NIP-28 Group Chat Functions
 
 /**
- * Create a new NIP-28 channel (group)
- * @param {string} name - Channel name
- * @param {string} about - Channel description
- * @param {string} picture - URL to channel picture
- * @returns {Promise<string>} - The channel ID (event ID of the creation event)
+ * Create a new NIP-28 channel (group) - Android-optimized version
+ * @param {string|object} nameOrMetadata - Channel name or metadata object {name, about, picture}
+ * @param {string} [about] - Channel description (optional if first param is object)
+ * @param {string} [picture] - URL to channel picture (optional if first param is object)
+ * @returns {Promise<object>} - The channel object with id and metadata
  */
-export const createChannel = async (name, about, picture = "") => {
+export const createChannel = async (nameOrMetadata, about = "", picture = "") => {
   try {
-    await initializeNostr();
+    // Ensure connection - more retries for mobile
+    const connected = await initializeNostr(true);
+    if (!connected) {
+      throw new Error("Unable to connect to the network. Please check your connection and try again.");
+    }
+    
+    // Handle both parameter formats
+    let name, metadata;
+    
+    if (typeof nameOrMetadata === 'object') {
+      // If first parameter is an object with metadata
+      metadata = nameOrMetadata;
+      name = metadata.name;
+      about = metadata.about || about;
+      picture = metadata.picture || picture;
+    } else {
+      // If parameters are passed separately
+      name = nameOrMetadata;
+      metadata = { name, about, picture };
+    }
     
     // Create a unique identifier for the channel
     const uniqueId = typeof crypto.randomUUID === 'function' 
@@ -287,7 +314,15 @@ export const createChannel = async (name, about, picture = "") => {
     await event.sign();
     await publishToNostr(event);
     
-    return event.id;
+    // Return a channel object with id and metadata
+    return {
+      id: event.id,
+      name: name,
+      description: about,
+      picture: picture,
+      owner: event.pubkey,
+      created_at: event.created_at
+    };
   } catch (error) {
     console.error("Error creating channel:", error);
     throw error;
@@ -511,7 +546,7 @@ export const muteChannelUser = async (userPubkey, reason = "") => {
 };
 
 /**
- * Get messages that the user has hidden
+ * Get hidden messages
  * @returns {Promise<Map>} - Map of hidden message IDs
  */
 export const getHiddenMessages = async () => {
@@ -533,7 +568,7 @@ export const getHiddenMessages = async () => {
         try {
           const content = JSON.parse(event.content);
           reason = content.reason || '';
-        } catch (e) {
+        } catch {
           // Content not JSON or no reason
         }
         hiddenMessages.set(messageId, { reason });
@@ -570,7 +605,7 @@ export const getMutedUsers = async () => {
         try {
           const content = JSON.parse(event.content);
           reason = content.reason || '';
-        } catch (e) {
+        } catch {
           // Content not JSON or no reason
         }
         mutedUsers.set(userPubkey, { reason });
