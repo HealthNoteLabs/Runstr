@@ -329,9 +329,11 @@ export const RunHistory = () => {
       // Pace calculations - apply reasonable limits
       // Most elite runners do 2-3 min/km, normal range 4-10 min/km
       // 1 min/km would be 60 km/h which is impossible running speed
-      const pace = run.duration / 60 / run.distance;
+      // Calculate pace in minutes per unit (km or mi)
+      const distanceInSelectedUnit = distanceUnit === 'km' ? run.distance / 1000 : run.distance / 1609.344;
+      const pace = run.duration / 60 / distanceInSelectedUnit;
       
-      // Minimum valid pace is 2 min/km, maximum is 20 min/km
+      // Minimum valid pace is 2 min/unit, maximum is 20 min/unit (appropriate range for both km & mi)
       const validPace = !isNaN(pace) && pace >= 2 && pace <= 20;
       
       if (validPace) {
@@ -342,17 +344,22 @@ export const RunHistory = () => {
           newStats.fastestPace = pace;
         }
         
-        // Personal bests by distance
-        if (run.distance >= 5 && pace < newStats.personalBests['5k']) {
+        // Personal bests by distance - convert threshold distances to meters for comparison
+        const fiveKmInMeters = distanceUnit === 'km' ? 5000 : 5000 * 1.609344;
+        const tenKmInMeters = distanceUnit === 'km' ? 10000 : 10000 * 1.609344;
+        const halfMarathonInMeters = distanceUnit === 'km' ? 21097.5 : 21097.5 * 1.609344;
+        const marathonInMeters = distanceUnit === 'km' ? 42195 : 42195 * 1.609344;
+        
+        if (run.distance >= fiveKmInMeters && pace < newStats.personalBests['5k']) {
           newStats.personalBests['5k'] = pace;
         }
-        if (run.distance >= 10 && pace < newStats.personalBests['10k']) {
+        if (run.distance >= tenKmInMeters && pace < newStats.personalBests['10k']) {
           newStats.personalBests['10k'] = pace;
         }
-        if (run.distance >= 21.0975 && pace < newStats.personalBests['halfMarathon']) {
+        if (run.distance >= halfMarathonInMeters && pace < newStats.personalBests['halfMarathon']) {
           newStats.personalBests['halfMarathon'] = pace;
         }
-        if (run.distance >= 42.195 && pace < newStats.personalBests['marathon']) {
+        if (run.distance >= marathonInMeters && pace < newStats.personalBests['marathon']) {
           newStats.personalBests['marathon'] = pace;
         }
       }
@@ -391,9 +398,10 @@ export const RunHistory = () => {
     // Set total calories burned
     newStats.totalCaloriesBurned = Math.round(totalCalories);
     
-    // Calculate average calories per km
-    newStats.averageCaloriesPerKm = newStats.totalDistance > 0 
-      ? totalCalories / newStats.totalDistance 
+    // Calculate average calories per KM
+    const distanceInSelectedUnit = distanceUnit === 'km' ? newStats.totalDistance / 1000 : newStats.totalDistance / 1609.344;
+    newStats.averageCaloriesPerKm = distanceInSelectedUnit > 0 
+      ? totalCalories / distanceInSelectedUnit 
       : 0;
 
     setStats(newStats);
@@ -672,14 +680,19 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           </div>
           <div className="stat-card">
             <h3>Average Pace</h3>
-            <p>{stats.averagePace.toFixed(2)} min/{distanceUnit}</p>
+            <p>
+              {stats.averagePace === 0 
+                ? '-' 
+                : `${Math.floor(stats.averagePace)}:${Math.round(stats.averagePace % 1 * 60).toString().padStart(2, '0')}`}{' '}
+              min/{distanceUnit}
+            </p>
           </div>
           <div className="stat-card">
             <h3>Fastest Pace</h3>
             <p>
               {stats.fastestPace === Infinity || stats.fastestPace === 0
                 ? '-'
-                : stats.fastestPace.toFixed(2)}{' '}
+                : `${Math.floor(stats.fastestPace)}:${Math.round(stats.fastestPace % 1 * 60).toString().padStart(2, '0')}`}{' '}
               min/{distanceUnit}
             </p>
           </div>
@@ -725,7 +738,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <p>
                 {stats.personalBests['5k'] === Infinity || stats.personalBests['5k'] === 0
                   ? '-'
-                  : stats.personalBests['5k'].toFixed(2)}{' '}
+                  : `${Math.floor(stats.personalBests['5k'])}:${Math.round(stats.personalBests['5k'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
                 min/{distanceUnit}
               </p>
             </div>
@@ -734,7 +747,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <p>
                 {stats.personalBests['10k'] === Infinity || stats.personalBests['10k'] === 0
                   ? '-'
-                  : stats.personalBests['10k'].toFixed(2)}{' '}
+                  : `${Math.floor(stats.personalBests['10k'])}:${Math.round(stats.personalBests['10k'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
                 min/{distanceUnit}
               </p>
             </div>
@@ -743,7 +756,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <p>
                 {stats.personalBests['halfMarathon'] === Infinity || stats.personalBests['halfMarathon'] === 0
                   ? '-'
-                  : stats.personalBests['halfMarathon'].toFixed(2)}{' '}
+                  : `${Math.floor(stats.personalBests['halfMarathon'])}:${Math.round(stats.personalBests['halfMarathon'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
                 min/{distanceUnit}
               </p>
             </div>
@@ -752,7 +765,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <p>
                 {stats.personalBests['marathon'] === Infinity || stats.personalBests['marathon'] === 0
                   ? '-'
-                  : stats.personalBests['marathon'].toFixed(2)}{' '}
+                  : `${Math.floor(stats.personalBests['marathon'])}:${Math.round(stats.personalBests['marathon'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
                 min/{distanceUnit}
               </p>
             </div>
