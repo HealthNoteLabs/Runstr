@@ -5160,21 +5160,15 @@ input:checked + .toggle-slider:before {
 
 /* Competition Description */
 .competition-description {
-  text-align: center;
-  margin: 0 0 20px;
-  padding: 10px;
-  background-color: #f8f9fa;
-  border-radius: 10px;
+  display: none;
 }
 
 .competition-description p {
-  margin: 5px 0;
+  display: none;
 }
 
 .auto-enroll {
-  font-style: italic;
-  color: #666;
-  font-size: 0.9rem;
+  display: none;
 }
 
 /* RUNSTR CHALLENGE Coming Soon */
@@ -5219,58 +5213,34 @@ input:checked + .toggle-slider:before {
   color: #555;
 }
 
+/* Hide removed elements */
 .challenge-features {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-around;
-  margin: 30px 0;
+  display: none;
 }
 
 .feature {
-  flex: 1;
-  min-width: 200px;
-  margin: 10px;
-  padding: 20px;
-  background: white;
-  border-radius: 10px;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+  display: none;
 }
 
 .feature h3 {
-  color: #3a86ff;
-  margin-bottom: 10px;
+  display: none;
 }
 
 .notify-section {
-  margin-top: 30px;
+  display: none;
 }
 
 .notify-btn {
-  background: #3a86ff;
-  color: white;
-  border: none;
-  padding: 12px 30px;
-  border-radius: 30px;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  margin-top: 10px;
-}
-
-.notify-btn:hover {
-  background: #2a75e8;
-  transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(58, 134, 255, 0.3);
+  display: none;
 }
 
 @media (max-width: 768px) {
   .challenge-features {
-    flex-direction: column;
+    display: none;
   }
   
   .feature {
-    min-width: 100%;
-    margin: 10px 0;
+    display: none;
   }
   
   .coming-soon-card {
@@ -5284,4 +5254,27 @@ input:checked + .toggle-slider:before {
   .speed-header, .streak-header {
     grid-template-columns: 40px 1fr 100px !important;
   }
+}
+
+/* Empty Leaderboard Styles */
+.empty-leaderboard {
+  text-align: center;
+  padding: 30px 20px;
+  background-color: #f8f9fa;
+  border-radius: 10px;
+  margin: 20px 0;
+  box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.1);
+}
+
+.empty-leaderboard p:first-child {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #3a86ff;
+  margin-bottom: 10px;
+}
+
+.empty-leaderboard p:last-child {
+  font-size: 1rem;
+  color: #666;
+  line-height: 1.5;
 }
