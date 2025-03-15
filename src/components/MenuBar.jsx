@@ -7,10 +7,10 @@ export const MenuBar = () => {
   const menuItems = [
     { name: 'DASHBOARD', path: '/' },
     { name: 'STATS', path: '/history' },
-    { name: 'GOALS', path: '/goals' },
+    //{ name: 'GOALS', path: '/goals' },
     { name: 'RUNSTR FEED', path: '/club' },
-    //{ name: 'RUN CLUB', path: '/team' },
-    //{ name: 'COMPETITIONS', path: '/events' },
+    { name: 'RUN CLUB', path: '/team' },
+    { name: 'COMPETITIONS', path: '/events' },
     { name: 'WAVLAKE', path: '/music' },
     { name: 'WALLET', path: '/nwc' }
   ];

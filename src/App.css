@@ -5042,3 +5042,246 @@ input:checked + .toggle-slider:before {
   margin: 20px 0;
   text-align: center;
 }
+
+/* Streak Leaderboard Styles */
+.streak-header {
+  grid-template-columns: 80px 1fr 120px !important;
+}
+
+.streak-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.streak-count {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  line-height: 1;
+}
+
+.streak-label {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.leaderboard-entry .runner-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* Streak Challenge Card */
+.challenge-card {
+  background: linear-gradient(135deg, var(--bg-dark) 0%, #242436 100%);
+  border-left: 4px solid var(--primary-color);
+}
+
+.streak-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background-color: var(--primary-color);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-left: 10px;
+}
+
+/* For smaller screens, adjust streak leaderboard */
+@media (max-width: 768px) {
+  .streak-header {
+    grid-template-columns: 50px 1fr 80px !important;
+  }
+  
+  .streak-count {
+    font-size: 1.2rem;
+  }
+  
+  .streak-label {
+    font-size: 0.7rem;
+  }
+}
+
+/* Distance Selector */
+.distance-selector {
+  display: flex;
+  justify-content: center;
+  margin: 15px 0;
+  background: #f8f8f8;
+  border-radius: 30px;
+  padding: 5px;
+  max-width: 300px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.distance-selector button {
+  background: transparent;
+  border: none;
+  padding: 8px 20px;
+  border-radius: 25px;
+  font-weight: 600;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.distance-selector button.active {
+  background: #3a86ff;
+  color: white;
+}
+
+/* Speed Leaderboard */
+.speed-header {
+  grid-template-columns: 60px 1fr 160px !important;
+}
+
+.time-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.time-value {
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.pace-value {
+  font-size: 0.8rem;
+  color: #666;
+  margin-top: 4px;
+}
+
+/* Competition Description */
+.competition-description {
+  text-align: center;
+  margin: 0 0 20px;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 10px;
+}
+
+.competition-description p {
+  margin: 5px 0;
+}
+
+.auto-enroll {
+  font-style: italic;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+/* RUNSTR CHALLENGE Coming Soon */
+.upcoming-challenge-tab {
+  padding: 20px;
+}
+
+.coming-soon-card {
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4eaef 100%);
+  border-radius: 15px;
+  padding: 30px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+}
+
+.coming-soon-badge {
+  position: absolute;
+  top: 20px;
+  right: -35px;
+  background: #ff5e5b;
+  color: white;
+  padding: 8px 50px;
+  font-weight: bold;
+  transform: rotate(45deg);
+  font-size: 0.8rem;
+  letter-spacing: 1px;
+}
+
+.coming-soon-card h2 {
+  margin-top: 40px;
+  font-size: 2rem;
+  color: #333;
+  letter-spacing: 2px;
+}
+
+.challenge-description {
+  margin: 20px 0;
+  font-size: 1.1rem;
+  line-height: 1.6;
+  color: #555;
+}
+
+.challenge-features {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-around;
+  margin: 30px 0;
+}
+
+.feature {
+  flex: 1;
+  min-width: 200px;
+  margin: 10px;
+  padding: 20px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+}
+
+.feature h3 {
+  color: #3a86ff;
+  margin-bottom: 10px;
+}
+
+.notify-section {
+  margin-top: 30px;
+}
+
+.notify-btn {
+  background: #3a86ff;
+  color: white;
+  border: none;
+  padding: 12px 30px;
+  border-radius: 30px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 10px;
+}
+
+.notify-btn:hover {
+  background: #2a75e8;
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(58, 134, 255, 0.3);
+}
+
+@media (max-width: 768px) {
+  .challenge-features {
+    flex-direction: column;
+  }
+  
+  .feature {
+    min-width: 100%;
+    margin: 10px 0;
+  }
+  
+  .coming-soon-card {
+    padding: 20px;
+  }
+  
+  .coming-soon-card h2 {
+    font-size: 1.5rem;
+  }
+  
+  .speed-header, .streak-header {
+    grid-template-columns: 40px 1fr 100px !important;
+  }
+}
