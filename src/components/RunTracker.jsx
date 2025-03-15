@@ -325,6 +325,7 @@ ${
         .map((split, index) => {
           // Use 1-based mile/km numbering for better readability
           const displayNumber = index + 1;
+          // Format the pace correctly - ensure we're using formatPace which returns MM:SS format
           return `${distanceUnit === 'km' ? `Km ${displayNumber}` : `Mile ${displayNumber}`}: ${formatPace(split.pace, distanceUnit)}`;
         })
         .join('\n')

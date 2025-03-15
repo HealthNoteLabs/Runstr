@@ -151,7 +151,8 @@ class RunTracker extends EventEmitter {
         const splitDuration = this.duration - previousSplitTime;
         
         // Calculate pace for this split - pace is in time per distance unit
-        const splitPace = splitDuration / (splitDistance / 1000); // seconds per km or mile
+        // Pace should be in seconds per meter for proper formatting later
+        const splitPace = splitDuration / splitDistance; 
         
         console.log(`Recording split at ${currentSplitNumber} ${this.distanceUnit}s with pace ${splitPace}`);
 
@@ -358,7 +359,7 @@ class RunTracker extends EventEmitter {
         }
         
         // Calculate pace for this final split
-        const finalSplitPace = finalSplitDuration / (finalSplitDistance / 1000);
+        const finalSplitPace = finalSplitDuration / finalSplitDistance;
         
         console.log(`Recording final split at ${splitNumber} ${this.distanceUnit}s with pace ${finalSplitPace}`);
   

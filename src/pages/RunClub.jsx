@@ -671,9 +671,9 @@ export const RunClub = () => {
     // Process each line
     const formattedLines = lines.map(line => {
       // Check if this is a split line - handles both formats:
-      // - Old format: "Mile 0.6: 8816:43" or fractional miles with invalid times
+      // - Old format with very large numbers: "Mile 1: 11350:34" or "Mile 25: 1081263:38"
       // - New format: "Mile 1: 8:16" or sequential miles with proper time format
-      const splitRegex = /(Mile|Km)\s+(\d+\.?\d*):\s+(\d+:\d+|\d+)/i;
+      const splitRegex = /(Mile|Km)\s+(\d+\.?\d*):\s+(\d+:\d+:\d+|\d+:\d+|\d+)/i;
       const match = line.match(splitRegex);
       
       if (match) {
@@ -686,12 +686,32 @@ export const RunClub = () => {
         
         // If time format is valid (like 8:43) keep it, otherwise convert
         let formattedTime = time;
-        if (!time.includes(':')) {
-          // Try to convert a number like 8816 to 8:16
+        
+        // Handle the large number cases seen in the issue (e.g., 11350:34, 1081263:38)
+        if (time.includes(':')) {
+          // Already has a colon - could be valid MM:SS format or problematic large number format
+          const parts = time.split(':');
+          
+          // Check if the first part is unusually large (more than 3 digits), indicating an error
+          if (parts[0].length > 3) {
+            // For values like "11350:34" convert to more sensible format
+            // In this case, try to interpret as minutes and seconds
+            const minutes = parseInt(parts[0]) % 60; // Get just the minutes part
+            const seconds = parseInt(parts[1]);
+            formattedTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+          }
+        } else if (!isNaN(parseInt(time))) {
+          // Handle single large number with no colon
           const timeNumber = parseInt(time);
-          if (!isNaN(timeNumber)) {
-            const minutes = Math.floor(timeNumber / 100);
+          if (timeNumber > 1000) {
+            // Try to convert a number like 8816 to 8:16
+            const minutes = Math.floor((timeNumber % 10000) / 100);
             const seconds = timeNumber % 100;
+            formattedTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+          } else {
+            // For smaller numbers, assume it's just seconds
+            const minutes = Math.floor(timeNumber / 60);
+            const seconds = timeNumber % 60;
             formattedTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
           }
         }
