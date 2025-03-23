@@ -88,6 +88,25 @@ export const RunTrackerProvider = ({ children }) => {
         }));
       };
 
+      // Handler for saving completed runs to localStorage
+      const handleRunStopped = (finalResults) => {
+        // Get existing run history
+        const existingRuns = JSON.parse(localStorage.getItem('runHistory') || '[]');
+        
+        // Create new run entry with current date and generated ID
+        const newRun = {
+          id: Date.now() + '-' + Math.random().toString(36).substr(2, 9),
+          date: new Date().toLocaleDateString(),
+          ...finalResults
+        };
+        
+        // Add to history and save
+        const updatedRuns = [newRun, ...existingRuns];
+        localStorage.setItem('runHistory', JSON.stringify(updatedRuns));
+        
+        console.log('Run saved to history:', newRun);
+      };
+
       // Subscribe to events from the run tracker
       runTracker.on('distanceChange', handleDistanceChange);
       runTracker.on('durationChange', handleDurationChange);
@@ -95,6 +114,7 @@ export const RunTrackerProvider = ({ children }) => {
       runTracker.on('splitRecorded', handleSplitRecorded);
       runTracker.on('elevationChange', handleElevationChange);
       runTracker.on('statusChange', handleStatusChange);
+      runTracker.on('stopped', handleRunStopped);
 
       // Check for active run state in localStorage on mount
       const savedRunState = localStorage.getItem('activeRunState');
@@ -141,6 +161,7 @@ export const RunTrackerProvider = ({ children }) => {
         runTracker.off('splitRecorded', handleSplitRecorded);
         runTracker.off('elevationChange', handleElevationChange); 
         runTracker.off('statusChange', handleStatusChange);
+        runTracker.off('stopped', handleRunStopped);
       };
     } catch (error) {
       console.error('Error setting up run tracker event listeners:', error);

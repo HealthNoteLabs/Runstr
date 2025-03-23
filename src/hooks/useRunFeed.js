@@ -117,6 +117,24 @@ export const useRunFeed = () => {
     const post = posts[postIndex];
     
     try {
+      // Get user's pubkey for like/repost detection
+      let userPubkey = '';
+      try {
+        // Try to get from window.nostr first (browser extension)
+        if (window.nostr) {
+          userPubkey = await window.nostr.getPublicKey().catch(() => '');
+        }
+        
+        // If that fails, use our internal implementation
+        if (!userPubkey) {
+          userPubkey = await import('../utils/nostr').then(module => module.getUserPublicKey());
+        }
+        
+        console.log('Using public key for interactions:', userPubkey ? userPubkey.substring(0, 10) + '...' : 'none');
+      } catch (keyError) {
+        console.error('Error getting user pubkey:', keyError);
+      }
+      
       // Mobile optimization: Run these in series with shorter timeouts instead of in parallel
       // to reduce memory pressure and avoid network congestion
       const commentsSet = await fetchEvents({
@@ -169,9 +187,6 @@ export const useRunFeed = () => {
           }
         })
       );
-
-      // Mobile optimization: use device storage for user pubkey
-      const userPubkey = '';
 
       let likesCount = likes.length;
       let userLiked = false;
@@ -269,12 +284,14 @@ export const useRunFeed = () => {
 
       // Initialize Nostr connection with retry for mobile networks
       let connected = await initializeNostr();
+      console.log('Initial connection attempt result:', connected);
       
       // Mobile optimization: retry connection with exponential backoff
       if (!connected && networkRetryCount.current < 3) {
         console.log(`Android network retry ${networkRetryCount.current + 1}/3...`);
         await new Promise(resolve => setTimeout(resolve, 2000 * Math.pow(2, networkRetryCount.current)));
         connected = await initializeNostr();
+        console.log('Retry connection result:', connected);
         networkRetryCount.current++;
       } else {
         networkRetryCount.current = 0;
@@ -394,7 +411,6 @@ export const useRunFeed = () => {
       timeoutRef.current = setTimeout(() => {
         if (loading) {
           console.log('Subscription timeout reached on Android');
-          setLoading(false);
           
           if (runEventsCollector.size > 0) {
             // If we have events but EOSE never fired, still process what we have
@@ -403,19 +419,73 @@ export const useRunFeed = () => {
               if (page === 1) {
                 setPosts(processedPosts);
               } else {
-                setPosts(prevPosts => [...prevPosts, ...processedPosts]);
+                setPosts(prevPosts => {
+                  // Filter out duplicates by ID
+                  const existingIds = new Set(prevPosts.map(p => p.id));
+                  const newUniqueEvents = processedPosts.filter(p => !existingIds.has(p.id));
+                  return [...prevPosts, ...newUniqueEvents];
+                });
               }
               setInitialLoadComplete(true);
+              setLoading(false);
             });
           } else {
-            setError('Timed out waiting for posts. Please check your connection and try again.');
+            // No events received, try the broader search as a fallback
+            console.log('No events received by timeout, trying broader search as fallback');
+            
+            const broadSubscription = subscribe({
+              kinds: [1],
+              since: Math.floor(Date.now() / 1000) - (7 * 24 * 60 * 60), // Last 7 days
+              limit: 100 // Increased limit for broader search
+            });
+            
+            const broadEvents = new Set();
+            
+            broadSubscription.on('event', (event) => {
+              // Filter events that might be running-related but don't have the tags
+              const content = event.content.toLowerCase();
+              const runningTerms = ['run', 'running', 'marathon', 'jog', '5k', '10k', 'km', 'miles', 'strava', 'race', 'training', 'workout'];
+              
+              // Check content for running terms
+              if (runningTerms.some(term => content.includes(term))) {
+                broadEvents.add(event);
+              }
+            });
+            
+            broadSubscription.on('eose', async () => {
+              console.log(`Broad search complete as fallback, found ${broadEvents.size} potential running posts`);
+              
+              if (broadEvents.size > 0) {
+                const postsArray = Array.from(broadEvents);
+                const processedPosts = await processBasicPostData(postsArray);
+                setPosts(processedPosts);
+                setLoading(false);
+                setInitialLoadComplete(true);
+              } else {
+                setError('No running posts found. Please try again later.');
+                setLoading(false);
+              }
+              
+              broadSubscription.stop();
+            });
+            
+            // Set a shorter timeout for the fallback search
+            setTimeout(() => {
+              if (broadSubscription) {
+                broadSubscription.stop();
+                if (!initialLoadComplete) {
+                  setError('Timed out waiting for posts. Please check your connection and try again.');
+                  setLoading(false);
+                }
+              }
+            }, 15000);
           }
         }
-      }, 25000); // 25 seconds for mobile timeout
+      }, 30000); // Increased from 25 seconds to 30 seconds
       
     } catch (err) {
-      console.error('Error in subscription on Android:', err);
-      setError('Failed to load posts. Please check your connection and try again.');
+      console.error('Error in subscription on Android:', err.message, err.stack);
+      setError(`Failed to load posts: ${err.message}. Please check your connection and try again.`);
       setLoading(false);
     }
   }, [page, processBasicPostData]);

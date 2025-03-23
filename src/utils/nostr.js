@@ -3,9 +3,9 @@ import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 
 // Create a relay pool with optimized settings for mobile
 const pool = new SimplePool({
-  eoseSubTimeout: 15_000, // Increased timeout for mobile networks
-  getTimeout: 20_000,
-  connectTimeout: 5_000
+  eoseSubTimeout: 30_000, // Increased from 15_000 to allow more time
+  getTimeout: 35_000,    // Increased from 20_000
+  connectTimeout: 10_000  // Increased from 5_000
 });
 
 // List of reliable relays for mobile connections
@@ -19,7 +19,12 @@ const relays = [
   'wss://relay.nostr.bg',
   'wss://relay.snort.social',
   'wss://nostr.fmt.wiz.biz',
-  'wss://nostr.mutinywallet.com'
+  'wss://nostr.mutinywallet.com',
+  'wss://relay.nostr.info',
+  'wss://nostr.zebedee.cloud',
+  'wss://relay.nostr.com',
+  'wss://nostr.oxtr.dev',
+  'wss://relay.nostr.vision'
 ];
 
 // Android storage for keys (simulating native storage)
@@ -33,18 +38,35 @@ export const initializeNostr = async () => {
   try {
     console.log('Initializing Nostr for Android...');
     
-    // Mobile-optimized approach: test only one relay with a minimal filter
-    const testEvents = await pool.list([relays[0]], [
-      {
-        kinds: [1],
-        limit: 1
+    // Try multiple relays in sequence until one works
+    for (let i = 0; i < Math.min(5, relays.length); i++) {
+      console.log(`Attempting to connect to relay ${i+1}/${Math.min(5, relays.length)}:`, relays[i]);
+      
+      try {
+        // Simple test query with short timeout
+        const testEvents = await pool.list([relays[i]], [
+          {
+            kinds: [1],
+            limit: 1
+          }
+        ], {
+          timeout: 7000 // 7 seconds per relay
+        });
+        
+        if (testEvents && testEvents.length > 0) {
+          console.log('Connection test successful with relay:', relays[i]);
+          return true;
+        } else {
+          console.log('No events found from relay:', relays[i]);
+        }
+      } catch (relayError) {
+        console.log('Failed to connect to relay:', relays[i], relayError.message);
+        // Continue to the next relay
       }
-    ], {
-      // Lower timeout for initial check
-      timeout: 5000
-    });
+    }
     
-    return testEvents && testEvents.length > 0;
+    console.log('All relay connection attempts failed');
+    return false;
   } catch (error) {
     console.error('Failed to initialize Nostr connection on Android:', error);
     return false;
@@ -60,15 +82,55 @@ export const fetchEvents = async (filter) => {
   try {
     // For mobile: add timeouts and limit results
     const options = {
-      timeout: 10_000 // 10 seconds max to avoid battery drain
+      timeout: 15_000 // Increased from 10_000 to give more time
     };
     
     if (!filter.limit) {
       filter.limit = 50; // Ensure we always have a reasonable limit for mobile
     }
     
-    const events = await pool.list(relays, [filter], options);
-    return new Set(events);
+    // Try with all relays first
+    try {
+      console.log('Attempting to fetch events from all relays with filter:', filter);
+      const events = await pool.list(relays, [filter], options);
+      if (events && events.length > 0) {
+        console.log(`Successfully fetched ${events.length} events from relays`);
+        return new Set(events);
+      }
+    } catch (multiRelayError) {
+      console.warn('Error fetching from multiple relays, falling back to single relay strategy:', multiRelayError.message);
+      // Continue to fallback strategy
+    }
+    
+    // Fallback: Try individual relays one by one (based on issue #225)
+    console.log('Trying individual relays one by one');
+    const allEvents = new Set();
+    
+    // Only try first 5 relays to avoid excessive requests
+    for (let i = 0; i < Math.min(5, relays.length); i++) {
+      try {
+        console.log(`Trying individual relay ${i+1}/${Math.min(5, relays.length)}: ${relays[i]}`);
+        const singleRelayEvents = await pool.list([relays[i]], [filter], {
+          timeout: 8000 // Shorter timeout for individual relays
+        });
+        
+        if (singleRelayEvents && singleRelayEvents.length > 0) {
+          console.log(`Got ${singleRelayEvents.length} events from relay: ${relays[i]}`);
+          singleRelayEvents.forEach(event => allEvents.add(event));
+          
+          // If we got enough events, we can stop trying more relays
+          if (allEvents.size >= filter.limit) {
+            console.log(`Reached desired event count (${allEvents.size}), stopping relay iteration`);
+            break;
+          }
+        }
+      } catch (singleRelayError) {
+        console.warn(`Error with relay ${relays[i]}:`, singleRelayError.message);
+        // Continue to next relay
+      }
+    }
+    
+    return allEvents;
   } catch (error) {
     console.error('Error fetching events on mobile:', error);
     return new Set();
@@ -86,7 +148,13 @@ export const subscribe = (filter) => {
     filter.limit = 30;
   }
   
-  const sub = pool.sub(relays, [filter]);
+  console.log('Creating subscription with filter:', filter);
+  
+  // Try to determine best relays to use
+  const targetRelays = [...relays].slice(0, 5); // Use first 5 relays by default
+  
+  // Create subscription with selected relays
+  const sub = pool.sub(targetRelays, [filter]);
   
   // Create an event handler interface
   const eventHandlers = {
@@ -94,13 +162,48 @@ export const subscribe = (filter) => {
     'eose': []
   };
   
+  // Track if we've received any events
+  let receivedEvents = false;
+  
   sub.on('event', (event) => {
+    receivedEvents = true;
     eventHandlers['event'].forEach(handler => handler(event));
   });
   
   sub.on('eose', () => {
     eventHandlers['eose'].forEach(handler => handler());
   });
+  
+  // If no events after a short period, try individual relays
+  const fallbackTimeoutId = setTimeout(() => {
+    if (!receivedEvents) {
+      console.log('No events received from multiple relays, trying individual relays');
+      // Close the initial subscription
+      sub.unsub();
+      
+      // Try individual relays one by one
+      for (let i = 0; i < Math.min(3, relays.length); i++) {
+        console.log(`Trying individual relay subscription to: ${relays[i]}`);
+        const singleRelaySub = pool.sub([relays[i]], [filter]);
+        
+        singleRelaySub.on('event', (event) => {
+          receivedEvents = true;
+          eventHandlers['event'].forEach(handler => handler(event));
+        });
+        
+        singleRelaySub.on('eose', () => {
+          eventHandlers['eose'].forEach(handler => handler());
+        });
+        
+        // Close individual subscriptions after a shorter period
+        setTimeout(() => {
+          if (singleRelaySub) {
+            singleRelaySub.unsub();
+          }
+        }, 20000);
+      }
+    }
+  }, 10000);
   
   // Mobile-optimized subscription with built-in timeout
   const timeoutId = setTimeout(() => {
@@ -123,6 +226,7 @@ export const subscribe = (filter) => {
     },
     stop: () => {
       clearTimeout(timeoutId);
+      clearTimeout(fallbackTimeoutId);
       sub.unsub();
     }
   };

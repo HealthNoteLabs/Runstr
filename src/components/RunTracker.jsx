@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRunTracker } from '../contexts/RunTrackerContext';
-import { convertDistance, formatPaceWithUnit, formatTime } from '../utils/formatters';
+import { convertDistance, formatPaceWithUnit, formatTime, formatElevation } from '../utils/formatters';
 import { PermissionDialog } from './PermissionDialog';
 import { createAndPublishEvent } from '../utils/nostr';
 import { displayDistance } from '../utils/formatters';
@@ -203,18 +203,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     localStorage.setItem('distanceUnit', newUnit);
   };
 
-  const formatElevation = (meters) => {
-    if (meters === null || isNaN(meters)) return '-';
-    
-    // Convert from meters based on distance unit preference
-    if (distanceUnit === 'mi') {
-      // Convert to feet (1m ≈ 3.28084ft)
-      return `${Math.round(meters * 3.28084)}ft`;
-    }
-    // Keep as meters
-    return `${Math.round(meters)}m`;
-  };
-
   return (
     <div className="w-full h-full flex flex-col bg-[#111827] text-white relative">
       {/* Stats Grid */}
@@ -271,8 +259,8 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             </div>
             <span className="text-sm text-gray-400">Elevation</span>
           </div>
-          <div className="text-3xl font-bold">{elevation ? formatElevation(elevation.gain) : '0'}</div>
-          <div className="text-sm text-gray-400">ft</div>
+          <div className="text-3xl font-bold">{elevation ? formatElevation(elevation.gain, distanceUnit) : '0'}</div>
+          <div className="text-sm text-gray-400">{distanceUnit === 'mi' ? 'ft' : 'm'}</div>
         </div>
       </div>
       

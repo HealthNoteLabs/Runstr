@@ -9,7 +9,6 @@ import './App.css';
 
 // Lazy load components
 const AppRoutes = lazy(() => import('./AppRoutes').then(module => ({ default: module.AppRoutes })));
-const FloatingMusicPlayer = lazy(() => import('./components/FloatingMusicPlayer').then(module => ({ default: module.FloatingMusicPlayer })));
 
 // Loading fallback
 const LoadingFallback = () => (
@@ -30,9 +29,6 @@ const App = () => {
                     <AppRoutes />
                   </Suspense>
                 </main>
-                <Suspense fallback={null}>
-                  <FloatingMusicPlayer />
-                </Suspense>
               </div>
             </RunTrackerProvider>
           </AudioPlayerProvider>

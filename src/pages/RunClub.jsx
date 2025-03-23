@@ -1,4 +1,4 @@
-import { useEffect, useContext } from 'react';
+import { useEffect, useContext, useState } from 'react';
 import { NostrContext } from '../contexts/NostrContext';
 import { useAuth } from '../hooks/useAuth';
 import { useRunFeed } from '../hooks/useRunFeed';
@@ -8,6 +8,7 @@ import { PostList } from '../components/PostList';
 export const RunClub = () => {
   const { defaultZapAmount } = useContext(NostrContext);
   const { wallet } = useAuth();
+  const [retryCount, setRetryCount] = useState(0);
   
   // Use the custom hooks optimized for Android
   const {
@@ -42,6 +43,13 @@ export const RunClub = () => {
     loadedSupplementaryData,
     defaultZapAmount
   });
+
+  // Implement a more robust retry mechanism
+  const handleRetry = () => {
+    setRetryCount(prev => prev + 1);
+    console.log(`Retry attempt ${retryCount + 1}`);
+    fetchRunPostsViaSubscription();
+  };
 
   // Android-specific scroll handler with throttling for performance
   useEffect(() => {
@@ -86,6 +94,23 @@ export const RunClub = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, [loadMorePosts]);
 
+  // Auto-retry with increasing delay if initial load fails
+  useEffect(() => {
+    if (error && retryCount < 3) {
+      // Retry with exponential backoff
+      const backoffTime = 2000 * Math.pow(2, retryCount);
+      console.log(`Scheduling automatic retry #${retryCount + 1} in ${backoffTime}ms`);
+      
+      const retryTimeout = setTimeout(() => {
+        console.log(`Auto-retry attempt #${retryCount + 1}`);
+        fetchRunPostsViaSubscription();
+        setRetryCount(prev => prev + 1);
+      }, backoffTime);
+      
+      return () => clearTimeout(retryTimeout);
+    }
+  }, [error, retryCount, fetchRunPostsViaSubscription]);
+
   return (
     <div className="run-club-container">
       <h2>RUNSTR FEED</h2>
@@ -97,13 +122,13 @@ export const RunClub = () => {
       ) : error ? (
         <div className="error-message">
           <p>{error}</p>
+          <p className="retry-attempts">{retryCount > 0 ? `Retry attempts: ${retryCount}/3` : ''}</p>
           <button 
             className="retry-button" 
-            onClick={() => {
-              fetchRunPostsViaSubscription();
-            }}
+            onClick={handleRetry}
+            disabled={retryCount >= 3}
           >
-            Retry
+            {retryCount >= 3 ? 'Max retries reached' : 'Retry'}
           </button>
         </div>
       ) : posts.length === 0 ? (
@@ -111,9 +136,7 @@ export const RunClub = () => {
           <p>No running posts found</p>
           <button 
             className="retry-button" 
-            onClick={() => {
-              fetchRunPostsViaSubscription();
-            }}
+            onClick={handleRetry}
           >
             Refresh
           </button>
