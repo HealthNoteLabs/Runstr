@@ -1,6 +1,6 @@
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { NostrContext } from '../contexts/NostrContext';
-import { initializeNostr, ndk } from '../utils/nostr';
+import { initializeNostr, fetchEvents } from '../utils/nostr';
 
 export const Events = () => {
   const { publicKey } = useContext(NostrContext);
@@ -69,17 +69,63 @@ export const Events = () => {
     return `${paceMinutes.toString().padStart(2, '0')}:${paceSeconds.toString().padStart(2, '0')}`;
   }, []);
   
+  // Get profile data for a specific npub
+  const fetchProfileInfo = async (npub) => {
+    if (!npub) return null;
+    
+    try {
+      // Check if we already have this profile
+      if (profiles.has(npub)) {
+        return profiles.get(npub);
+      }
+      
+      // Ensure Nostr is initialized
+      if (!publicKey) {
+        console.warn('Not logged in yet');
+        return null;
+      }
+      
+      const profileEvents = await fetchEvents({
+        kinds: [0],
+        authors: [npub],
+        limit: 1
+      });
+      
+      if (profileEvents.size === 0) {
+        return null;
+      }
+      
+      // Get the first profile event
+      const event = Array.from(profileEvents)[0];
+      let profile = { name: 'Unknown runner' };
+      
+      try {
+        profile = JSON.parse(event.content);
+      } catch {
+        // Error parsing profile, use default
+      }
+      
+      // Update profiles cache
+      setProfiles(prev => new Map(prev).set(npub, profile));
+      
+      return profile;
+    } catch (error) {
+      console.error('Error fetching profile info:', error);
+      return null;
+    }
+  };
+  
   // Load user profiles
   const loadProfiles = useCallback(async (pubkeys) => {
     try {
       if (!pubkeys || !pubkeys.length) return;
       
-      if (!ndk) {
-        console.warn('NDK not initialized yet');
+      if (!publicKey) {
+        console.warn('Not logged in yet');
         return;
       }
       
-      const profileEvents = await ndk.fetchEvents({
+      const profileEvents = await fetchEvents({
         kinds: [0],
         authors: pubkeys
       });
@@ -106,7 +152,7 @@ export const Events = () => {
     } catch (err) {
       console.error('Error loading profiles:', err);
     }
-  }, [profiles]);
+  }, [publicKey, profiles]);
   
   // Generate real-world streak data based only on this user's data
   const generateUserStreakData = useCallback(() => {

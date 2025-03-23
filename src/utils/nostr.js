@@ -188,3 +188,231 @@ export const getUserPublicKey = async () => {
 };
 
 export { pool };
+
+// Channel-related constants
+export const GROUP_KINDS = {
+  METADATA: 40,
+  MESSAGE: 42,
+  HIDE_MESSAGE: 43,
+  MUTE_USER: 44,
+  INVITE: 45
+};
+
+/**
+ * Create a new channel with metadata
+ * @param {Object} metadata - Channel metadata
+ * @returns {Promise<Object>} Created channel event
+ */
+export const createChannel = async (metadata) => {
+  try {
+    const eventTemplate = {
+      kind: GROUP_KINDS.METADATA,
+      tags: [],
+      content: JSON.stringify(metadata),
+      created_at: Math.floor(Date.now() / 1000)
+    };
+    
+    const privateKey = await getSigningKey();
+    return await createAndPublishEvent(eventTemplate, privateKey);
+  } catch (error) {
+    console.error('Error creating channel:', error);
+    throw error;
+  }
+};
+
+/**
+ * Send a message to a channel
+ * @param {string} channelId - Channel ID
+ * @param {string} content - Message content
+ * @returns {Promise<Object>} Sent message event
+ */
+export const sendChannelMessage = async (channelId, content) => {
+  try {
+    const eventTemplate = {
+      kind: GROUP_KINDS.MESSAGE,
+      tags: [
+        ['e', channelId, '', 'root']
+      ],
+      content,
+      created_at: Math.floor(Date.now() / 1000)
+    };
+    
+    const privateKey = await getSigningKey();
+    return await createAndPublishEvent(eventTemplate, privateKey);
+  } catch (error) {
+    console.error('Error sending channel message:', error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch messages from a channel
+ * @param {string} channelId - Channel ID
+ * @returns {Promise<Array>} Channel messages
+ */
+export const fetchChannelMessages = async (channelId) => {
+  try {
+    const filter = {
+      kinds: [GROUP_KINDS.MESSAGE],
+      '#e': [channelId],
+      limit: 100
+    };
+    
+    const events = await fetchEvents(filter);
+    return Array.from(events).sort((a, b) => a.created_at - b.created_at);
+  } catch (error) {
+    console.error('Error fetching channel messages:', error);
+    return [];
+  }
+};
+
+/**
+ * Search for channels based on query
+ * @param {string} query - Search query
+ * @returns {Promise<Array>} Found channels
+ */
+export const searchChannels = async (query) => {
+  try {
+    const filter = {
+      kinds: [GROUP_KINDS.METADATA],
+      limit: 50
+    };
+    
+    const events = await fetchEvents(filter);
+    
+    // Filter results based on query
+    return Array.from(events)
+      .filter(event => {
+        try {
+          const metadata = JSON.parse(event.content);
+          return metadata.name?.toLowerCase().includes(query.toLowerCase()) ||
+                 metadata.about?.toLowerCase().includes(query.toLowerCase());
+        } catch {
+          return false;
+        }
+      });
+  } catch (error) {
+    console.error('Error searching channels:', error);
+    return [];
+  }
+};
+
+/**
+ * Hide a channel message
+ * @param {string} messageId - Message ID to hide
+ * @returns {Promise<Object>} Hide event
+ */
+export const hideChannelMessage = async (messageId) => {
+  try {
+    const eventTemplate = {
+      kind: GROUP_KINDS.HIDE_MESSAGE,
+      tags: [
+        ['e', messageId]
+      ],
+      content: '',
+      created_at: Math.floor(Date.now() / 1000)
+    };
+    
+    const privateKey = await getSigningKey();
+    return await createAndPublishEvent(eventTemplate, privateKey);
+  } catch (error) {
+    console.error('Error hiding channel message:', error);
+    throw error;
+  }
+};
+
+/**
+ * Mute a user in a channel
+ * @param {string} userPubkey - Public key of user to mute
+ * @returns {Promise<Object>} Mute event
+ */
+export const muteChannelUser = async (userPubkey) => {
+  try {
+    const eventTemplate = {
+      kind: GROUP_KINDS.MUTE_USER,
+      tags: [
+        ['p', userPubkey]
+      ],
+      content: '',
+      created_at: Math.floor(Date.now() / 1000)
+    };
+    
+    const privateKey = await getSigningKey();
+    return await createAndPublishEvent(eventTemplate, privateKey);
+  } catch (error) {
+    console.error('Error muting channel user:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get list of hidden messages
+ * @returns {Promise<Array>} List of hidden message IDs
+ */
+export const getHiddenMessages = async () => {
+  try {
+    const publicKey = await getUserPublicKey();
+    const filter = {
+      kinds: [GROUP_KINDS.HIDE_MESSAGE],
+      authors: [publicKey],
+      limit: 100
+    };
+    
+    const events = await fetchEvents(filter);
+    return Array.from(events).flatMap(event => 
+      event.tags.filter(tag => tag[0] === 'e').map(tag => tag[1])
+    );
+  } catch (error) {
+    console.error('Error getting hidden messages:', error);
+    return [];
+  }
+};
+
+/**
+ * Get list of muted users
+ * @returns {Promise<Array>} List of muted user pubkeys
+ */
+export const getMutedUsers = async () => {
+  try {
+    const publicKey = await getUserPublicKey();
+    const filter = {
+      kinds: [GROUP_KINDS.MUTE_USER],
+      authors: [publicKey],
+      limit: 100
+    };
+    
+    const events = await fetchEvents(filter);
+    return Array.from(events).flatMap(event => 
+      event.tags.filter(tag => tag[0] === 'p').map(tag => tag[1])
+    );
+  } catch (error) {
+    console.error('Error getting muted users:', error);
+    return [];
+  }
+};
+
+/**
+ * Send an invite to a channel
+ * @param {string} channelId - Channel ID
+ * @param {string} recipientPubkey - Public key of recipient
+ * @returns {Promise<Object>} Invite event
+ */
+export const sendChannelInvite = async (channelId, recipientPubkey) => {
+  try {
+    const eventTemplate = {
+      kind: GROUP_KINDS.INVITE,
+      tags: [
+        ['e', channelId],
+        ['p', recipientPubkey]
+      ],
+      content: '',
+      created_at: Math.floor(Date.now() / 1000)
+    };
+    
+    const privateKey = await getSigningKey();
+    return await createAndPublishEvent(eventTemplate, privateKey);
+  } catch (error) {
+    console.error('Error sending channel invite:', error);
+    throw error;
+  }
+};

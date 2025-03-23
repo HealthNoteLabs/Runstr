@@ -2,7 +2,6 @@ import { useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { NostrContext } from '../contexts/NostrContext';
 import { 
-  ndk, 
   initializeNostr, 
   createChannel,
   sendChannelMessage, 
@@ -13,7 +12,9 @@ import {
   getHiddenMessages,
   getMutedUsers,
   sendChannelInvite,
-  GROUP_KINDS
+  GROUP_KINDS,
+  subscribe,
+  fetchEvents
 } from '../utils/nostr';
 import '../components/RunClub.css';
 
@@ -79,17 +80,20 @@ export const Team = () => {
 
   // Subscribe to messages from a channel
   const subscribeToChannelMessages = useCallback((channelId) => {
-    if (!ndk || !channelId || subscribedChannels.has(channelId)) return null;
+    if (!channelId || subscribedChannels.has(channelId)) return null;
 
     // Add to subscribed channels
     setSubscribedChannels(prevChannels => new Set([...prevChannels, channelId]));
 
-    const filter = { 
-      kinds: [GROUP_KINDS.CHANNEL_MESSAGE],
-      "#e": [channelId]
+    // Create the subscription filter
+    const filter = {
+      kinds: [GROUP_KINDS.MESSAGE],
+      '#e': [channelId],
+      limit: 50
     };
 
-    const subscription = ndk.subscribe(filter);
+    // Subscribe to messages
+    const subscription = subscribe(filter);
     
     subscription.on('event', (event) => {
       // Skip messages from muted users
@@ -176,10 +180,10 @@ export const Team = () => {
 
   // Load user profile
   const fetchUserProfile = useCallback(async (userPubkey) => {
-    if (!userPubkey || !ndk || profiles.has(userPubkey)) return;
+    if (!userPubkey || !profiles.has(userPubkey)) return;
 
     try {
-      const profileEvents = await ndk.fetchEvents({
+      const profileEvents = await fetchEvents({
         kinds: [0],
         authors: [userPubkey],
         limit: 1
@@ -253,42 +257,38 @@ export const Team = () => {
   // Load channels the user has participated in
   const loadMyChannels = async () => {
     try {
-      if (!pubkey || !ndk) {
+      if (!pubkey) {
         setMyTeams([]);
         return;
       }
 
-      // Find channels the user has sent messages to
+      // Fetch user's messages in channels
       const userMessageFilter = {
-        kinds: [GROUP_KINDS.CHANNEL_MESSAGE],
+        kinds: [GROUP_KINDS.MESSAGE],
         authors: [pubkey],
         limit: 100
       };
       
-      const userMessages = await ndk.fetchEvents(userMessageFilter);
+      const userMessages = await fetchEvents(userMessageFilter);
       
       if (userMessages.size === 0) {
         setMyTeams([]);
         return;
       }
       
-      // Extract unique channel IDs from user messages
-      const channelIds = new Set();
-      userMessages.forEach(msg => {
+      // Fetch channels the user has participated in
+      const channelIds = Array.from(userMessages).map(msg => {
         const rootTag = msg.tags.find(tag => tag[0] === 'e' && tag[3] === 'root');
-        if (rootTag && rootTag[1]) {
-          channelIds.add(rootTag[1]);
-        }
-      });
+        return rootTag ? rootTag[1] : null;
+      }).filter(Boolean);
       
-      // Fetch channel metadata
       const channelFilter = {
-        kinds: [GROUP_KINDS.CHANNEL_CREATION],
-        ids: Array.from(channelIds),
-        limit: 100
+        kinds: [GROUP_KINDS.METADATA],
+        ids: channelIds,
+        limit: 20
       };
       
-      const channelEvents = await ndk.fetchEvents(channelFilter);
+      const channelEvents = await fetchEvents(channelFilter);
       
       // Process channel data
       const channels = Array.from(channelEvents).map(event => {
@@ -331,20 +331,20 @@ export const Team = () => {
 
   // Open team/channel and load messages
   const openTeam = async (teamId) => {
-    if (!teamId || !ndk) {
+    if (!teamId) {
       setError('Invalid channel ID');
       return;
     }
 
     try {
-      // Find channel metadata
+      // First, fetch the team metadata
       const channelFilter = {
-        kinds: [GROUP_KINDS.CHANNEL_CREATION],
+        kinds: [GROUP_KINDS.METADATA],
         ids: [teamId],
         limit: 1
       };
       
-      const channelEvents = await ndk.fetchEvents(channelFilter);
+      const channelEvents = await fetchEvents(channelFilter);
       
       if (channelEvents.size === 0) {
         setError('Channel not found');
