@@ -1,20 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
-  initNostr, 
+  initializeNostr, 
   fetchRunningPosts, 
-  processPostsWithProfiles
-} from '../utils/nostr-simplified';
+  loadSupplementaryData, 
+  processPostsWithData,
+  searchRunningContent
+} from '../utils/nostr';
 
 export const useRunFeed = () => {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [userLikes, setUserLikes] = useState(new Set());
+  const [userReposts, setUserReposts] = useState(new Set());
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const [loadedSupplementaryData, setLoadedSupplementaryData] = useState(new Set());
   const timeoutRef = useRef(null);
   const initialLoadRef = useRef(false);
 
-  // Main function to fetch run posts - simplified version
+  // Main function to fetch run posts - closely matches working implementation
   const fetchRunPostsViaSubscription = useCallback(async () => {
     try {
       setLoading(true);
@@ -26,16 +31,69 @@ export const useRunFeed = () => {
       }
 
       // Initialize Nostr first
-      await initNostr();
+      await initializeNostr();
 
       // Set timestamp for paginated loading
       const since = page > 1 ? Date.now() - (page * 7 * 24 * 60 * 60 * 1000) : undefined;
-      const limit = 20; // Increased limit for better results
+      const limit = 10; // Load 10 posts per page just like the working implementation
 
-      // Fetch posts with running hashtags
+      // Fetch posts with running hashtags - EXACT same approach as working version
       const runPostsArray = await fetchRunningPosts(limit, since);
       
       console.log(`Fetched ${runPostsArray.length} running posts`);
+      
+      // If we got no results with tags, try a content search as fallback
+      if (runPostsArray.length === 0 && page === 1) {
+        console.log('No tagged running posts found, trying content search');
+        const contentPosts = await searchRunningContent(limit, 72); // 72 hours
+        
+        if (contentPosts.length > 0) {
+          console.log(`Found ${contentPosts.length} posts through content search`);
+          
+          // Load supplementary data in parallel for all posts
+          const supplementaryData = await loadSupplementaryData(contentPosts);
+          
+          // Process posts with all the data
+          const processedPosts = await processPostsWithData(contentPosts, supplementaryData);
+          
+          // Update state with processed posts
+          setPosts(processedPosts);
+          
+          // Capture which posts the user has liked/reposted
+          const newUserLikes = new Set();
+          const newUserReposts = new Set();
+          
+          supplementaryData.likes?.forEach(like => {
+            try {
+              if (window.nostr && like.pubkey === window.nostr.getPublicKey()) {
+                const postId = like.tags.find(tag => tag[0] === 'e')?.[1];
+                if (postId) newUserLikes.add(postId);
+              }
+            } catch (err) {
+              console.error('Error processing user likes:', err);
+            }
+          });
+          
+          supplementaryData.reposts?.forEach(repost => {
+            try {
+              if (window.nostr && repost.pubkey === window.nostr.getPublicKey()) {
+                const postId = repost.tags.find(tag => tag[0] === 'e')?.[1];
+                if (postId) newUserReposts.add(postId);
+              }
+            } catch (err) {
+              console.error('Error processing user reposts:', err);
+            }
+          });
+          
+          setUserLikes(newUserLikes);
+          setUserReposts(newUserReposts);
+          
+          setHasMore(contentPosts.length >= limit);
+          setLoading(false);
+          initialLoadRef.current = true;
+          return;
+        }
+      }
       
       // If we didn't get enough posts, there may not be more to load
       if (runPostsArray.length < limit) {
@@ -52,8 +110,11 @@ export const useRunFeed = () => {
         return;
       }
       
-      // Process posts with profile information
-      const processedPosts = await processPostsWithProfiles(runPostsArray);
+      // Load supplementary data in parallel for all posts
+      const supplementaryData = await loadSupplementaryData(runPostsArray);
+      
+      // Process posts with all the data
+      const processedPosts = await processPostsWithData(runPostsArray, supplementaryData);
       
       // Update state with processed posts
       if (page === 1) {
@@ -67,6 +128,35 @@ export const useRunFeed = () => {
         });
       }
       
+      // Capture which posts the user has liked/reposted
+      const newUserLikes = new Set();
+      const newUserReposts = new Set();
+      
+      supplementaryData.likes?.forEach(like => {
+        try {
+          if (window.nostr && like.pubkey === window.nostr.getPublicKey()) {
+            const postId = like.tags.find(tag => tag[0] === 'e')?.[1];
+            if (postId) newUserLikes.add(postId);
+          }
+        } catch (err) {
+          console.error('Error processing user likes:', err);
+        }
+      });
+      
+      supplementaryData.reposts?.forEach(repost => {
+        try {
+          if (window.nostr && repost.pubkey === window.nostr.getPublicKey()) {
+            const postId = repost.tags.find(tag => tag[0] === 'e')?.[1];
+            if (postId) newUserReposts.add(postId);
+          }
+        } catch (err) {
+          console.error('Error processing user reposts:', err);
+        }
+      });
+      
+      setUserLikes(newUserLikes);
+      setUserReposts(newUserReposts);
+      
       initialLoadRef.current = true;
     } catch (err) {
       console.error('Error fetching running posts:', err);
@@ -76,12 +166,46 @@ export const useRunFeed = () => {
     }
   }, [page]);
 
-  // Load more posts when user scrolls to bottom
+  // Load more posts when user scrolls to bottom - like working implementation
   const loadMorePosts = useCallback(() => {
     if (!loading && hasMore) {
       setPage(prevPage => prevPage + 1);
     }
   }, [loading, hasMore]);
+
+  // Load supplementary data for a single post (for comments, etc)
+  const loadPostSupplementaryData = useCallback(async (postId) => {
+    if (loadedSupplementaryData.has(postId)) {
+      return;
+    }
+
+    setLoadedSupplementaryData(prev => new Set([...prev, postId]));
+    
+    const postIndex = posts.findIndex(p => p.id === postId);
+    if (postIndex === -1) return;
+    
+    try {
+      // Find the post that needs supplementary data
+      const post = posts[postIndex];
+      
+      // Use our parallel loading function to get all data for this post
+      const supplementData = await loadSupplementaryData([post]);
+      
+      // Process this single post with the data
+      const processedPosts = await processPostsWithData([post], supplementData);
+      
+      if (processedPosts.length > 0) {
+        // Update just this post in the state
+        setPosts(currentPosts => {
+          const newPosts = [...currentPosts];
+          newPosts[postIndex] = processedPosts[0];
+          return newPosts;
+        });
+      }
+    } catch (error) {
+      console.error('Error loading supplementary data:', error);
+    }
+  }, [posts, loadedSupplementaryData]);
 
   // Initial load effect
   useEffect(() => {
@@ -102,8 +226,14 @@ export const useRunFeed = () => {
     setPosts,
     loading,
     error,
+    userLikes,
+    setUserLikes,
+    userReposts,
+    setUserReposts,
+    loadSupplementaryData: loadPostSupplementaryData,
     loadMorePosts,
     fetchRunPostsViaSubscription,
+    loadedSupplementaryData,
     hasMore
   };
 }; 
