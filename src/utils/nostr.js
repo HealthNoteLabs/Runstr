@@ -1,4 +1,4 @@
-import { NDKEvent, NDK } from '@nostr-dev-kit/ndk';
+import NDK, { NDKEvent } from '@nostr-dev-kit/ndk';
 
 // Create a new NDK instance
 const ndk = new NDK({
