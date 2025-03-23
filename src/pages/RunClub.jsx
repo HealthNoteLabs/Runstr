@@ -1,112 +1,36 @@
-import { useEffect, useContext, useState } from 'react';
-import { NostrContext } from '../contexts/NostrContext';
-import { useAuth } from '../hooks/useAuth';
+import { useEffect, useState } from 'react';
 import { useRunFeed } from '../hooks/useRunFeed';
-import { usePostInteractions } from '../hooks/usePostInteractions';
-import { PostList } from '../components/PostList';
-import { handleAppBackground } from '../utils/nostr';
+import { cleanup } from '../utils/nostr-simplified';
 
 export const RunClub = () => {
-  const { defaultZapAmount } = useContext(NostrContext);
-  const { wallet } = useAuth();
   const [diagnosticInfo, setDiagnosticInfo] = useState('');
   
-  // Use the custom hooks
+  // Use the simplified hook
   const {
     posts,
-    setPosts,
     loading,
     error,
-    userLikes,
-    setUserLikes,
-    userReposts,
-    setUserReposts,
-    loadSupplementaryData,
     loadMorePosts,
     fetchRunPostsViaSubscription,
-    loadedSupplementaryData
+    hasMore
   } = useRunFeed();
-  
-  const {
-    commentText,
-    setCommentText,
-    handleCommentClick,
-    handleLike,
-    handleRepost,
-    handleZap,
-    handleComment
-  } = usePostInteractions({
-    posts,
-    setPosts,
-    setUserLikes,
-    setUserReposts,
-    loadSupplementaryData,
-    loadedSupplementaryData,
-    defaultZapAmount
-  });
 
-  // Handle app lifecycle events for Android
+  // Handle app lifecycle events
   useEffect(() => {
-    // This code would use AppState in a real React Native app
-    // For example: AppState.addEventListener('change', (nextAppState) => {
-    //   // Handle app state changes: background, foreground, etc.
-    // });
-    
     // Cleanup function for when component unmounts
     return () => {
       // Close any active connections when component unmounts
-      handleAppBackground();
+      cleanup();
     };
   }, []);
 
-  // Simple diagnostic function to test connectivity
+  // Simple diagnostic function
   const diagnoseConnection = async () => {
     setDiagnosticInfo('Testing connection to Nostr relays...');
     try {
-      // Import the diagnose function from our simplified nostr.js
-      const { diagnoseConnection } = await import('../utils/nostr');
-      
-      // Run the comprehensive diagnostic
-      const results = await diagnoseConnection();
-      
-      if (results.error) {
-        setDiagnosticInfo(`Connection error: ${results.error}`);
-        return;
-      }
-      
-      if (results.generalEvents > 0) {
-        // We can at least connect and fetch some posts
-        setDiagnosticInfo(`Connection successful! Fetched ${results.generalEvents} general posts.`);
-        
-        if (results.runningEvents > 0) {
-          // We found running-specific posts too
-          setDiagnosticInfo(`Success! Found ${results.runningEvents} running-related posts. Refreshing feed...`);
-          fetchRunPostsViaSubscription();
-        } else {
-          // Connected but no running posts
-          setDiagnosticInfo('Connected to relays and found general posts, but no running posts found. Trying broader search...');
-          
-          // Try the content-based search as a fallback
-          const { searchRunningContent } = await import('../utils/nostr');
-          const contentResults = await searchRunningContent(50, 72); // Search last 72 hours
-          
-          if (contentResults.length > 0) {
-            setDiagnosticInfo(`Success! Found ${contentResults.length} posts mentioning running in their content. Refreshing feed...`);
-            // You'll need to process these events similarly to how fetchRunPostsViaSubscription does
-            // For now, just refresh the feed
-            fetchRunPostsViaSubscription();
-          } else {
-            setDiagnosticInfo('No running-related posts found by tag or content. There may not be any recent running posts on the network.');
-          }
-        }
-      } else {
-        // We connected but got no events
-        const relayStatus = Object.entries(results.relayStatus)
-          .map(([relay, status]) => `${relay}: ${status}`)
-          .join(', ');
-        
-        setDiagnosticInfo(`Connected to relays but couldn't fetch any events. Relay status: ${relayStatus}`);
-      }
+      // Attempt to fetch posts as a diagnostic
+      await fetchRunPostsViaSubscription();
+      setDiagnosticInfo('Connection successful! Feed refreshed.');
     } catch (error) {
       setDiagnosticInfo(`Diagnostic error: ${error.message}`);
       console.error('Error running diagnostic:', error);
@@ -121,14 +45,44 @@ export const RunClub = () => {
       const screenHeight = window.innerHeight || document.documentElement.clientHeight;
       
       // Load more when we're close to the bottom
-      if (scrollPosition + screenHeight > height - 300) {
+      if (scrollPosition + screenHeight > height - 300 && hasMore) {
         loadMorePosts();
       }
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [loadMorePosts]);
+  }, [loadMorePosts, hasMore]);
+
+  // Simplified post rendering function
+  const renderPosts = () => {
+    return posts.map(post => (
+      <div key={post.id} className="post">
+        <div className="post-header">
+          <div className="post-avatar">
+            {post.author.profile.picture ? (
+              <img 
+                src={post.author.profile.picture} 
+                alt={post.author.profile.name || 'Anonymous'} 
+              />
+            ) : (
+              <div className="default-avatar"></div>
+            )}
+          </div>
+          <div className="post-author">
+            <h3>{post.author.profile.name || 'Anonymous'}</h3>
+            <p>{post.author.profile.nip05 || '@' + post.author.pubkey.slice(0, 8)}</p>
+          </div>
+        </div>
+        <div className="post-content">
+          {post.content}
+        </div>
+        <div className="post-timestamp">
+          {new Date(post.created_at * 1000).toLocaleString()}
+        </div>
+      </div>
+    ));
+  };
 
   return (
     <div className="run-club-container">
@@ -172,21 +126,20 @@ export const RunClub = () => {
           </button>
         </div>
       ) : (
-        <PostList
-          posts={posts}
-          loading={loading}
-          page={1}
-          userLikes={userLikes}
-          userReposts={userReposts}
-          handleLike={handleLike}
-          handleRepost={handleRepost}
-          handleZap={(post) => handleZap(post, wallet)}
-          handleCommentClick={handleCommentClick}
-          handleComment={handleComment}
-          commentText={commentText}
-          setCommentText={setCommentText}
-          wallet={wallet}
-        />
+        <div className="posts-container">
+          {renderPosts()}
+          {loading && posts.length > 0 && (
+            <div className="loading-more">
+              <div className="loading-spinner"></div>
+              <p>Loading more posts...</p>
+            </div>
+          )}
+          {!hasMore && posts.length > 0 && (
+            <div className="no-more-posts">
+              <p>No more posts to load</p>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
