@@ -1,8 +1,7 @@
 import { useState, useCallback } from 'react';
-import { createAndPublishEvent, getUserPublicKey } from '../utils/nostr';
+import { createAndPublishEvent } from '../utils/nostr';
 
 export const usePostInteractions = ({
-  posts,
   setPosts,
   setUserLikes,
   setUserReposts,
@@ -11,30 +10,33 @@ export const usePostInteractions = ({
   defaultZapAmount
 }) => {
   const [commentText, setCommentText] = useState('');
+  const [activeCommentPost, setActiveCommentPost] = useState(null);
 
   const handleCommentClick = useCallback((postId) => {
+    // Make sure we have post's comments loaded
     if (!loadedSupplementaryData.has(postId)) {
       loadSupplementaryData(postId);
     }
     
-    setPosts(
-      posts.map((post) =>
-        post.id === postId
-          ? { ...post, showComments: !post.showComments }
-          : post
+    // Toggle comment visibility
+    setPosts(currentPosts => 
+      currentPosts.map(post => 
+        post.id === postId ? { ...post, showComments: !post.showComments } : post
       )
     );
-  }, [posts, setPosts, loadSupplementaryData, loadedSupplementaryData]);
+    
+    // Set this as the active post for commenting
+    setActiveCommentPost(postId);
+  }, [loadSupplementaryData, loadedSupplementaryData, setPosts]);
 
   const handleLike = useCallback(async (post) => {
-    if (!loadedSupplementaryData.has(post.id)) {
-      await loadSupplementaryData(post.id);
+    if (!window.nostr) {
+      alert('Please login to like posts');
+      return;
     }
-    
+
     try {
-      // Get user's pubkey using Android-specific method
-      const userPubkey = await getUserPublicKey();
-      
+      // Create like event (kind 7)
       const likeEvent = {
         kind: 7,
         created_at: Math.floor(Date.now() / 1000),
@@ -43,43 +45,41 @@ export const usePostInteractions = ({
           ['e', post.id],
           ['p', post.author.pubkey]
         ],
-        pubkey: userPubkey
+        pubkey: await window.nostr.getPublicKey()
       };
 
-      const publishedEvent = await createAndPublishEvent(likeEvent);
+      // Sign and publish
+      const signedEvent = await window.nostr.signEvent(likeEvent);
+      await createAndPublishEvent(signedEvent);
 
+      // Update UI optimistically
       setUserLikes(prev => {
         const newLikes = new Set(prev);
         newLikes.add(post.id);
         return newLikes;
       });
 
-      setPosts(currentPosts => {
-        return currentPosts.map(p => 
-          p.id === post.id 
-            ? { ...p, likes: p.likes + 1 } 
-            : p
-        );
-      });
+      setPosts(currentPosts => 
+        currentPosts.map(p => 
+          p.id === post.id ? { ...p, likes: p.likes + 1 } : p
+        )
+      );
 
-      console.log('Post liked successfully on Android');
-      return publishedEvent;
+      console.log('Post liked successfully');
     } catch (error) {
-      console.error('Error liking post on Android:', error);
-      // Use Android toast or notification instead of alert
-      console.warn('Failed to like post: ' + error.message);
+      console.error('Error liking post:', error);
+      alert('Failed to like post: ' + error.message);
     }
-  }, [loadSupplementaryData, loadedSupplementaryData, setPosts, setUserLikes]);
+  }, [setUserLikes, setPosts]);
 
   const handleRepost = useCallback(async (post) => {
-    if (!loadedSupplementaryData.has(post.id)) {
-      await loadSupplementaryData(post.id);
+    if (!window.nostr) {
+      alert('Please login to repost');
+      return;
     }
-    
+
     try {
-      // Get user's pubkey using Android-specific method
-      const userPubkey = await getUserPublicKey();
-      
+      // Create repost event (kind 6)
       const repostEvent = {
         kind: 6,
         created_at: Math.floor(Date.now() / 1000),
@@ -88,147 +88,185 @@ export const usePostInteractions = ({
           ['e', post.id, '', 'mention'],
           ['p', post.author.pubkey]
         ],
-        pubkey: userPubkey
+        pubkey: await window.nostr.getPublicKey()
       };
 
-      const publishedEvent = await createAndPublishEvent(repostEvent);
+      // Sign and publish
+      const signedEvent = await window.nostr.signEvent(repostEvent);
+      await createAndPublishEvent(signedEvent);
 
+      // Update UI optimistically
       setUserReposts(prev => {
         const newReposts = new Set(prev);
         newReposts.add(post.id);
         return newReposts;
       });
 
-      setPosts(currentPosts => {
-        return currentPosts.map(p => 
-          p.id === post.id 
-            ? { ...p, reposts: p.reposts + 1 } 
-            : p
-        );
-      });
+      setPosts(currentPosts => 
+        currentPosts.map(p => 
+          p.id === post.id ? { ...p, reposts: p.reposts + 1 } : p
+        )
+      );
 
-      console.log('Post reposted successfully on Android');
-      return publishedEvent;
+      console.log('Post reposted successfully');
     } catch (error) {
-      console.error('Error reposting on Android:', error);
-      // Use Android toast or notification instead of alert
-      console.warn('Failed to repost: ' + error.message);
+      console.error('Error reposting:', error);
+      alert('Failed to repost: ' + error.message);
     }
-  }, [loadSupplementaryData, loadedSupplementaryData, setPosts, setUserReposts]);
+  }, [setUserReposts, setPosts]);
 
   const handleZap = useCallback(async (post, wallet) => {
-    if (!loadedSupplementaryData.has(post.id)) {
-      await loadSupplementaryData(post.id);
+    if (!window.nostr) {
+      alert('Please login to send zaps');
+      return;
     }
 
-    // Find the author's Lightning address
-    const lud16 = post.author.profile?.lud16;
-    const lud06 = post.author.profile?.lud06;
-    
-    if (!lud16 && !lud06) {
-      // Use Android toast or notification instead of alert
-      console.warn('This user does not have a Lightning address set up');
+    if (!wallet) {
+      alert('Please connect a Bitcoin wallet to send zaps');
       return;
     }
 
     try {
-      // Call the zapInvoice method if it exists
-      if (wallet && typeof wallet.zapInvoice === 'function') {
-        const userPubkey = await getUserPublicKey();
-        
-        const result = await wallet.zapInvoice({
-          lud16: lud16,
-          lud06: lud06,
-          amount: defaultZapAmount,
-          comment: `Zap from RUNSTR for your running post`,
-          eventId: post.id,
-          authorId: post.author.pubkey,
-          senderPubkey: userPubkey
-        });
-        
-        console.log('Zap result on Android:', result);
-        
-        if (result && result.success) {
-          setPosts(currentPosts => {
-            return currentPosts.map(p => 
-              p.id === post.id 
-                ? { ...p, zaps: p.zaps + 1, zapAmount: p.zapAmount + (defaultZapAmount / 1000) } 
-                : p
-            );
-          });
-        }
-        
-        return result;
-      } else {
-        console.warn('Zapping not available on this device');
+      // Check if author has Lightning address
+      if (!post.author.lud16 && !post.author.lud06) {
+        alert('This user has not set up their Lightning address');
+        return;
       }
+
+      // Create zap request
+      const zapEvent = {
+        kind: 9734, // Zap request
+        created_at: Math.floor(Date.now() / 1000),
+        content: 'Zap for your run! ⚡️',
+        tags: [
+          ['p', post.author.pubkey],
+          ['e', post.id],
+          ['amount', (defaultZapAmount * 1000).toString()], // millisats
+        ],
+        pubkey: await window.nostr.getPublicKey()
+      };
+      
+      // Sign the event
+      const signedEvent = await window.nostr.signEvent(zapEvent);
+      
+      // Parse Lightning address
+      let zapEndpoint;
+      const lnurl = post.author.lud16 || post.author.lud06;
+      
+      if (lnurl.includes('@')) {
+        // Handle Lightning address (lud16)
+        const [username, domain] = lnurl.split('@');
+        zapEndpoint = `https://${domain}/.well-known/lnurlp/${username}`;
+      } else {
+        // Handle raw LNURL (lud06)
+        zapEndpoint = lnurl;
+      }
+      
+      // Get LNURL-pay metadata
+      const response = await fetch(zapEndpoint);
+      const lnurlPayData = await response.json();
+      
+      if (!lnurlPayData.callback) {
+        throw new Error('Invalid LNURL-pay response');
+      }
+      
+      // Construct callback URL
+      const callbackUrl = new URL(lnurlPayData.callback);
+      callbackUrl.searchParams.append('amount', defaultZapAmount * 1000);
+      callbackUrl.searchParams.append('nostr', JSON.stringify(signedEvent));
+      
+      if (lnurlPayData.commentAllowed) {
+        callbackUrl.searchParams.append('comment', 'Zap for your run! ⚡️');
+      }
+      
+      // Get invoice
+      const invoiceResponse = await fetch(callbackUrl);
+      const invoiceData = await invoiceResponse.json();
+      
+      if (!invoiceData.pr) {
+        throw new Error('Invalid LNURL-pay response');
+      }
+      
+      // Pay invoice using wallet
+      await wallet.makePayment(invoiceData.pr);
+      
+      // Update UI optimistically
+      setPosts(currentPosts => 
+        currentPosts.map(p => {
+          if (p.id === post.id) {
+            return {
+              ...p,
+              zaps: (p.zaps || 0) + 1,
+              zapAmount: (p.zapAmount || 0) + defaultZapAmount
+            };
+          }
+          return p;
+        })
+      );
+      
+      alert('Zap sent successfully! ⚡️');
     } catch (error) {
-      console.error('Error zapping on Android:', error);
-      // Use Android toast or notification instead of alert
-      console.warn('Failed to zap: ' + error.message);
+      console.error('Error sending zap:', error);
+      alert('Failed to send zap: ' + error.message);
     }
-  }, [loadSupplementaryData, loadedSupplementaryData, setPosts, defaultZapAmount]);
+  }, [defaultZapAmount, setPosts]);
 
   const handleComment = useCallback(async (postId) => {
-    if (!commentText.trim()) return;
-    
-    try {
-      const post = posts.find(p => p.id === postId);
-      if (!post) return;
+    if (!commentText.trim() || !window.nostr) {
+      alert('Please login and enter a comment');
+      return;
+    }
 
-      // Get user's pubkey using Android-specific method
-      const userPubkey = await getUserPublicKey();
-      
+    try {
       const commentEvent = {
         kind: 1,
         created_at: Math.floor(Date.now() / 1000),
         content: commentText,
         tags: [
-          ['e', postId],
-          ['p', post.author.pubkey]
+          ['e', postId, '', 'reply'],
+          ['k', '1']
         ],
-        pubkey: userPubkey
+        pubkey: await window.nostr.getPublicKey()
       };
 
-      const publishedEvent = await createAndPublishEvent(commentEvent);
+      // Sign the event
+      const signedEvent = await window.nostr.signEvent(commentEvent);
+      await createAndPublishEvent(signedEvent);
 
-      // For Android, use a simplified profile
-      const profile = {
-        name: 'RUNSTR User',
-        about: 'Running on Nostr'
-      };
+      // Create a simple profile for immediate UI update
+      const userProfile = { name: 'You' };
 
-      // Add the comment to the UI
-      setPosts(currentPosts => {
-        return currentPosts.map(p => {
-          if (p.id === postId) {
-            const newComment = {
-              id: publishedEvent.id,
-              content: commentText,
-              created_at: commentEvent.created_at,
-              author: {
-                pubkey: userPubkey,
-                profile: profile
-              }
-            };
-            
+      // Add comment to UI right away
+      setPosts(currentPosts =>
+        currentPosts.map(post => {
+          if (post.id === postId) {
             return {
-              ...p,
-              comments: [...p.comments, newComment]
+              ...post,
+              comments: [
+                ...post.comments,
+                {
+                  id: signedEvent.id,
+                  content: commentText,
+                  created_at: Math.floor(Date.now() / 1000),
+                  author: {
+                    pubkey: signedEvent.pubkey,
+                    profile: userProfile
+                  }
+                }
+              ]
             };
           }
-          return p;
-        });
-      });
+          return post;
+        })
+      );
 
+      // Clear comment text
       setCommentText('');
-      return publishedEvent;
     } catch (error) {
-      console.error('Error commenting on Android:', error);
-      // Use Android toast or notification instead of alert
-      console.warn('Failed to post comment: ' + error.message);
+      console.error('Error posting comment:', error);
+      alert('Failed to post comment: ' + error.message);
     }
-  }, [commentText, posts, setPosts]);
+  }, [commentText, setPosts]);
 
   return {
     commentText,
@@ -237,6 +275,7 @@ export const usePostInteractions = ({
     handleLike,
     handleRepost,
     handleZap,
-    handleComment
+    handleComment,
+    activeCommentPost
   };
 }; 
