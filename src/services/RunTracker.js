@@ -109,7 +109,7 @@ class RunTracker extends EventEmitter {
       
       // Add a minimum threshold to filter out GPS noise (e.g., 3 meters)
       // Only count movement if it's above the threshold
-      const MOVEMENT_THRESHOLD = 3; // 3 meters
+      const MOVEMENT_THRESHOLD = 1.5; // 1.5 meters (reduced from 3m)
       if (distanceIncrement >= MOVEMENT_THRESHOLD) {
         this.distance += distanceIncrement;
         this.emit('distanceChange', this.distance); // Emit distance change

@@ -285,7 +285,7 @@ export const useRunFeed = () => {
       }
 
       // Mobile optimization: shorter time window for older pages to reduce data usage
-      const timeWindow = page > 1 ? (page * 3 * 24 * 60 * 60) : (14 * 24 * 60 * 60); // 2 weeks or less
+      const timeWindow = page > 1 ? (page * 3 * 24 * 60 * 60) : (30 * 24 * 60 * 60); // 30 days instead of 14
       const since = Math.floor(Date.now() / 1000) - timeWindow;
       
       console.log('Creating subscription for running posts since', new Date(since * 1000).toISOString());
@@ -296,8 +296,8 @@ export const useRunFeed = () => {
       const subscription = subscribe({
         kinds: [1],
         since,
-        "#t": ["running", "run", "runner", "runstr", "5k", "10k", "marathon", "jog"],
-        limit: 30 // Smaller limit for mobile
+        "#t": ["running", "run", "runner", "runstr", "5k", "10k", "marathon", "jog", "jogging", "fitness", "workout", "training", "strava", "race", "halfmarathon", "ultramarathon", "trail", "trailrunning"],
+        limit: 50 // Increased limit
       });
       
       activeSubscription.current = subscription;
@@ -316,7 +316,7 @@ export const useRunFeed = () => {
           const broadSubscription = subscribe({
             kinds: [1],
             since,
-            limit: 20 // Smaller limit for mobile
+            limit: 50 // Increased limit for broader search
           });
           
           const broadEvents = new Set();
@@ -324,13 +324,21 @@ export const useRunFeed = () => {
           broadSubscription.on('event', (event) => {
             // Filter events that might be running-related but don't have the tags
             const content = event.content.toLowerCase();
-            if (content.includes('run') || 
-                content.includes('running') || 
-                content.includes('marathon') || 
-                content.includes('jog') ||
-                content.includes('5k') ||
-                content.includes('10k')) {
+            const runningTerms = ['run', 'running', 'marathon', 'jog', '5k', '10k', 'km', 'miles', 'strava', 'race', 'training', 'workout'];
+            
+            // Check content for running terms
+            if (runningTerms.some(term => content.includes(term))) {
               console.log('Found potential running post from broader search on Android:', event.id);
+              broadEvents.add(event);
+            }
+            
+            // Check for running-related hashtags in content
+            const hashtagRegex = /#(\w+)/g;
+            const matches = content.match(hashtagRegex) || [];
+            const hashtags = matches.map(match => match.substring(1).toLowerCase());
+            
+            if (hashtags.some(tag => runningTerms.includes(tag))) {
+              console.log('Found potential running post with hashtag on Android:', event.id);
               broadEvents.add(event);
             }
           });
@@ -354,7 +362,7 @@ export const useRunFeed = () => {
               console.log('Closing broad search subscription after timeout on Android');
               broadSubscription.stop();
             }
-          }, 8000); // 8 seconds max for mobile
+          }, 15000); // 15 seconds instead of 8
           
           return;
         }
@@ -403,7 +411,7 @@ export const useRunFeed = () => {
             setError('Timed out waiting for posts. Please check your connection and try again.');
           }
         }
-      }, 15000); // 15 seconds for mobile timeout
+      }, 25000); // 25 seconds for mobile timeout
       
     } catch (err) {
       console.error('Error in subscription on Android:', err);

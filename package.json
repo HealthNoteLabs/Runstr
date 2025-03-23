@@ -16,7 +16,8 @@
     "setup-icons": "node scripts/download-icon.js && node scripts/generate-icons.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:manual": "vite --config vite.config.test.js"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.20",

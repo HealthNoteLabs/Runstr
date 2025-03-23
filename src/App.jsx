@@ -23,9 +23,9 @@ const App = () => {
         <AuthProvider>
           <AudioPlayerProvider>
             <RunTrackerProvider>
-              <div className="app">
+              <div className="relative w-full h-full bg-[#111827] text-white">
                 <MenuBar />
-                <main className="main-content">
+                <main className="pb-24 max-w-[375px] mx-auto">
                   <Suspense fallback={<LoadingFallback />}>
                     <AppRoutes />
                   </Suspense>

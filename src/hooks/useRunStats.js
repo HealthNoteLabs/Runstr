@@ -25,8 +25,8 @@ export const useRunStats = (runHistory, userProfile) => {
     personalBests: {
       '5k': 0,
       '10k': 0,
-      halfMarathon: 0,
-      marathon: 0
+      'halfMarathon': 0,
+      'marathon': 0
     }
   });
 
@@ -121,8 +121,8 @@ export const useRunStats = (runHistory, userProfile) => {
         personalBests: {
           '5k': 0,
           '10k': 0,
-          halfMarathon: 0,
-          marathon: 0
+          'halfMarathon': 0,
+          'marathon': 0
         }
       });
       return;
@@ -143,8 +143,8 @@ export const useRunStats = (runHistory, userProfile) => {
       personalBests: {
         '5k': Infinity,
         '10k': Infinity,
-        halfMarathon: Infinity,
-        marathon: Infinity
+        'halfMarathon': Infinity,
+        'marathon': Infinity
       }
     };
 
@@ -189,13 +189,14 @@ export const useRunStats = (runHistory, userProfile) => {
     yesterdayDate.setDate(yesterdayDate.getDate() - 1);
     const yesterdayStr = yesterdayDate.toDateString();
     
+    // Check if there's a run today or yesterday to start counting the streak
     if (runDays.has(todayStr) || runDays.has(yesterdayStr)) {
-      // Initialize with the first day
-      streak = 1;
+      // Initialize with the first day (today or yesterday)
+      streak = runDays.has(todayStr) ? 1 : 1;
       
       // Start checking from yesterday or the day before
       let checkDate = runDays.has(todayStr) ? yesterdayDate : new Date(yesterdayDate);
-      checkDate.setDate(checkDate.getDate() - 1);
+      checkDate.setDate(checkDate.getDate() - (runDays.has(todayStr) ? 0 : 1));
       
       // Check consecutive days backwards with a limit to avoid excess processing
       let maxIterations = 365; // Limit to a year

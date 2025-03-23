@@ -5307,3 +5307,63 @@ input:checked + .toggle-slider:before {
 .retry-button:hover {
   background-color: #2980b9;
 }
+
+/* Recent Run Section on Dashboard */
+.recent-run-section {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.recent-run-section h3 {
+  color: var(--primary-color);
+  margin-bottom: 15px;
+  text-align: center;
+  font-size: 1.2rem;
+}
+
+.recent-run-card {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.recent-run-card .run-date {
+  font-weight: bold;
+  color: var(--accent-color);
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 5px;
+}
+
+.recent-run-card .run-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.recent-run-card .run-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.recent-run-card .share-btn {
+  background-color: var(--accent-color);
+  color: #000;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.recent-run-card .share-btn:hover {
+  background-color: var(--primary-color);
+  color: #fff;
+}

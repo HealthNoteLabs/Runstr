@@ -1,59 +1,126 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 export const MenuBar = () => {
-  const [isOpen, setIsOpen] = useState(false);
+  const location = useLocation();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const menuItems = [
-    { name: 'DASHBOARD', path: '/' },
-    { name: 'STATS', path: '/history' },
-    //{ name: 'GOALS', path: '/goals' },
-    { name: 'RUNSTR FEED', path: '/club' },
-    //{ name: 'RUN CLUB', path: '/team' },
-    //{ name: 'COMPETITIONS', path: '/events' },
-    { name: 'WAVLAKE', path: '/music' },
-    { name: 'WALLET', path: '/nwc' }
+    { 
+      name: 'DASHBOARD', 
+      path: '/', 
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+      ) 
+    },
+    { 
+      name: 'STATS', 
+      path: '/history', 
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      ) 
+    },
+    { 
+      name: 'FEED', 
+      path: '/club', 
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
+        </svg>
+      ) 
+    },
+    { 
+      name: 'MUSIC', 
+      path: '/music', 
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+        </svg>
+      ) 
+    }
   ];
 
-  const toggleMenu = () => {
-    setIsOpen(!isOpen);
-    // Prevent body scrolling when menu is open
-    document.body.style.overflow = isOpen ? 'auto' : 'hidden';
-  };
-
-  // Ensure body scrolling is restored when component unmounts
-  const closeMenu = () => {
-    setIsOpen(false);
-    document.body.style.overflow = 'auto';
+  const toggleSettings = () => {
+    setSettingsOpen(!settingsOpen);
   };
 
   return (
-    <header className="menu-header">
-      <h1 className="app-title">RUNSTR</h1>
+    <div className="w-full">
+      {/* Header with Settings */}
+      <header className="flex justify-between items-center p-4 w-full max-w-[375px] mx-auto">
+        <h1 className="text-xl font-bold">RUNSTR</h1>
+        <span className="text-sm">Good morning, Runner</span>
+        <button className="text-gray-400" onClick={toggleSettings}>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+      </header>
 
-      <button
-        className="hamburger-menu"
-        onClick={toggleMenu}
-        aria-label="Toggle menu"
-      >
-        <span></span>
-        <span></span>
-        <span></span>
-      </button>
-
-      <nav className={`sidebar-nav ${isOpen ? 'open' : ''}`}>
-        <ul className="menu-list">
-          {menuItems.map((item) => (
-            <li key={item.name} className="menu-item">
-              <Link to={item.path} onClick={closeMenu}>
-                {item.name}
+      {/* Settings Modal */}
+      {settingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black bg-opacity-70">
+          <div className="bg-[#1a222e] rounded-t-xl sm:rounded-xl w-full max-w-md p-6 shadow-lg">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-semibold">Settings</h3>
+              <button onClick={toggleSettings} className="text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex flex-col space-y-4">
+              <Link 
+                to="/nwc" 
+                className="flex items-center p-3 bg-[#111827] rounded-lg text-white"
+                onClick={toggleSettings}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-3 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                </svg>
+                <span>Wallet</span>
               </Link>
-            </li>
-          ))}
-        </ul>
-      </nav>
+              <button className="flex items-center p-3 bg-[#111827] rounded-lg text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-3 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
+                <span>Preferences</span>
+              </button>
+              <button className="flex items-center p-3 bg-[#111827] rounded-lg text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-3 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>About Runstr</span>
+              </button>
+              <button className="flex items-center p-3 bg-[#111827] rounded-lg text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-3 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span>Logout</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {isOpen && <div className="overlay" onClick={closeMenu}></div>}
-    </header>
+      {/* Bottom Navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 flex justify-around items-center bg-[#111827] border-t border-gray-800 py-4 max-w-[375px] mx-auto z-30">
+        {menuItems.map((item) => (
+          <Link 
+            key={item.name} 
+            to={item.path} 
+            className={`flex flex-col items-center text-xs ${location.pathname === item.path ? 'text-gray-300' : 'text-gray-500'}`}
+          >
+            {item.icon}
+            <span>{item.name}</span>
+          </Link>
+        ))}
+      </nav>
+    </div>
   );
 };

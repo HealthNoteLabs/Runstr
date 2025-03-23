@@ -3,9 +3,9 @@ import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 
 // Create a relay pool with optimized settings for mobile
 const pool = new SimplePool({
-  eoseSubTimeout: 8_000, // Increased timeout for mobile networks
-  getTimeout: 10_000,
-  connectTimeout: 3_000
+  eoseSubTimeout: 15_000, // Increased timeout for mobile networks
+  getTimeout: 20_000,
+  connectTimeout: 5_000
 });
 
 // List of reliable relays for mobile connections
@@ -14,7 +14,12 @@ const relays = [
   'wss://relay.nostr.band',
   'wss://nos.lol',
   'wss://relay.current.fyi',
-  'wss://purplepag.es'
+  'wss://purplepag.es',
+  'wss://nostr.wine',
+  'wss://relay.nostr.bg',
+  'wss://relay.snort.social',
+  'wss://nostr.fmt.wiz.biz',
+  'wss://nostr.mutinywallet.com'
 ];
 
 // Android storage for keys (simulating native storage)
