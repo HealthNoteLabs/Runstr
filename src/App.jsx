@@ -3,6 +3,7 @@ import { BrowserRouter as Router } from 'react-router-dom';
 import { NostrProvider } from './contexts/NostrProvider';
 import { AuthProvider } from './components/AuthProvider';
 import { AudioPlayerProvider } from './contexts/AudioPlayerProvider';
+import { RunTrackerProvider } from './contexts/RunTrackerContext';
 import { MenuBar } from './components/MenuBar';
 import './App.css';
 
@@ -21,17 +22,19 @@ const App = () => {
       <NostrProvider>
         <AuthProvider>
           <AudioPlayerProvider>
-            <div className="app">
-              <MenuBar />
-              <main className="main-content">
-                <Suspense fallback={<LoadingFallback />}>
-                  <AppRoutes />
+            <RunTrackerProvider>
+              <div className="app">
+                <MenuBar />
+                <main className="main-content">
+                  <Suspense fallback={<LoadingFallback />}>
+                    <AppRoutes />
+                  </Suspense>
+                </main>
+                <Suspense fallback={null}>
+                  <FloatingMusicPlayer />
                 </Suspense>
-              </main>
-              <Suspense fallback={null}>
-                <FloatingMusicPlayer />
-              </Suspense>
-            </div>
+              </div>
+            </RunTrackerProvider>
           </AudioPlayerProvider>
         </AuthProvider>
       </NostrProvider>

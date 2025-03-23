@@ -280,6 +280,9 @@ class RunTracker extends EventEmitter {
     this.startTracking();
     this.startTimer(); // Start the timer
     this.startPaceCalculator(); // Start the pace calculator
+    
+    // Emit status change event
+    this.emit('statusChange', { isTracking: this.isTracking, isPaused: this.isPaused });
   }
 
   async pause() {
@@ -293,6 +296,9 @@ class RunTracker extends EventEmitter {
 
     clearInterval(this.timerInterval); // Stop the timer
     clearInterval(this.paceInterval); // Stop the pace calculator
+    
+    // Emit status change event
+    this.emit('statusChange', { isTracking: this.isTracking, isPaused: this.isPaused });
   }
 
   async resume() {
@@ -303,6 +309,9 @@ class RunTracker extends EventEmitter {
     this.startTracking();
     this.startTimer(); // Restart the timer
     this.startPaceCalculator(); // Restart the pace calculator
+    
+    // Emit status change event
+    this.emit('statusChange', { isTracking: this.isTracking, isPaused: this.isPaused });
   }
 
   async stop() {
@@ -417,6 +426,13 @@ class RunTracker extends EventEmitter {
       loss: 0,
       lastAltitude: null
     };
+    
+    // Update tracking state
+    this.isTracking = false;
+    this.isPaused = false;
+    
+    // Emit status change event
+    this.emit('statusChange', { isTracking: this.isTracking, isPaused: this.isPaused });
   }
 
   // Restore an active tracking session that was not paused
@@ -486,6 +502,13 @@ class RunTracker extends EventEmitter {
     this.emit('paceChange', this.pace);
     this.emit('splitRecorded', this.splits);
     this.emit('elevationChange', {...this.elevation});
+  }
+
+  // Make sure the off method is properly documented
+  // This is inherited from EventEmitter but we'll add a simple wrapper
+  // for clarity and to ensure it's not overridden
+  off(event, callback) {
+    return super.off(event, callback);
   }
 }
 

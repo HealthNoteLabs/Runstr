@@ -1,50 +1,35 @@
-import { useState, useEffect, useCallback } from 'react';
-import { publishToNostr } from '../utils/nostr';
+import { useState, useEffect } from 'react';
+import { createAndPublishEvent } from '../utils/nostr';
+import { useRunStats } from '../hooks/useRunStats';
+import { useRunProfile } from '../hooks/useRunProfile';
+import { formatTime, displayDistance, formatElevation, formatDate } from '../utils/formatters';
 
 export const RunHistory = () => {
+  // State for run history
   const [runHistory, setRunHistory] = useState([]);
   const [selectedRun, setSelectedRun] = useState(null);
   const [additionalContent, setAdditionalContent] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [showProfileModal, setShowProfileModal] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
-  const [distanceUnit, setDistanceUnit] = useState(
-    () => localStorage.getItem('distanceUnit') || 'km'
-  );
-  const [userProfile, setUserProfile] = useState(() => {
-    const storedProfile = localStorage.getItem('userProfile');
-    return storedProfile
-      ? JSON.parse(storedProfile)
-      : {
-          weight: 70, // default weight in kg
-          heightFeet: 5, // default height in feet
-          heightInches: 7, // default height in inches
-          heightCm: 170, // store equivalent in cm for calculations
-          gender: 'male', // default gender
-          age: 30, // default age
-          fitnessLevel: 'intermediate' // default fitness level
-        };
-  });
-  const [stats, setStats] = useState({
-    totalDistance: 0,
-    totalRuns: 0,
-    averagePace: 0,
-    fastestPace: Infinity,
-    longestRun: 0,
-    currentStreak: 0,
-    bestStreak: 0,
-    thisWeekDistance: 0,
-    thisMonthDistance: 0,
-    totalCaloriesBurned: 0,
-    averageCaloriesPerKm: 0,
-    personalBests: {
-      '5k': Infinity,
-      '10k': Infinity,
-      halfMarathon: Infinity,
-      marathon: Infinity
-    }
-  });
 
+  // Get user profile and distance unit from custom hooks
+  const { 
+    userProfile, 
+    showProfileModal, 
+    setShowProfileModal, 
+    handleProfileChange, 
+    handleProfileSubmit 
+  } = useRunProfile();
+
+  const {
+    stats,
+    distanceUnit,
+    setDistanceUnit,
+    calculateStats,
+    calculateCaloriesBurned
+  } = useRunStats(runHistory, userProfile);
+
+  // Load run history on component mount and listen for updates
   useEffect(() => {
     loadRunHistory();
     
@@ -55,9 +40,11 @@ export const RunHistory = () => {
     };
     
     document.addEventListener('runHistoryUpdated', handleRunHistoryUpdate);
+    document.addEventListener('runCompleted', handleRunHistoryUpdate);
     
     return () => {
       document.removeEventListener('runHistoryUpdated', handleRunHistoryUpdate);
+      document.removeEventListener('runCompleted', handleRunHistoryUpdate);
     };
   }, []);
 
@@ -65,19 +52,22 @@ export const RunHistory = () => {
   useEffect(() => {
     const handleStorageChange = () => {
       const newUnit = localStorage.getItem('distanceUnit') || 'km';
-      setDistanceUnit(newUnit);
+      if (newUnit !== distanceUnit) {
+        setDistanceUnit(newUnit);
+      }
     };
 
     window.addEventListener('storage', handleStorageChange);
     
-    // Check for changes frequently to localStorage to catch updates from other tabs/components
+    // Using a shorter interval for Android optimization
     const checkInterval = setInterval(() => {
+      // Check for unit changes
       const currentUnit = localStorage.getItem('distanceUnit') || 'km';
       if (currentUnit !== distanceUnit) {
         setDistanceUnit(currentUnit);
       }
       
-      // Also check for changes to run history
+      // Check for run history changes
       const storedRuns = localStorage.getItem('runHistory');
       if (storedRuns) {
         const parsedRuns = JSON.parse(storedRuns);
@@ -85,329 +75,15 @@ export const RunHistory = () => {
           loadRunHistory();
         }
       }
-    }, 1000);
+    }, 1500); // Increased from 1000ms to 1500ms to reduce battery usage
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       clearInterval(checkInterval);
     };
-  }, [distanceUnit, runHistory.length]);
+  }, [distanceUnit, runHistory.length, setDistanceUnit]);
 
-  // Recalculate stats when distanceUnit changes
-  useEffect(() => {
-    if (runHistory.length > 0) {
-      calculateStats();
-    }
-  }, [distanceUnit]);
-
-  // Recalculate stats when run history or user profile changes
-  useEffect(() => {
-    if (runHistory.length > 0) {
-      calculateStats();
-    }
-  }, [runHistory, userProfile]);
-
-  // Listen for run completed events to update stats in real-time
-  useEffect(() => {
-    const handleRunCompleted = () => {
-      console.log("Run completed event received in RunHistory");
-      
-      // Force reload run history and recalculate stats
-      loadRunHistory();
-    };
-    
-    document.addEventListener('runCompleted', handleRunCompleted);
-    
-    return () => {
-      document.removeEventListener('runCompleted', handleRunCompleted);
-    };
-  }, []);
-
-  // Format date to a consistent readable format
-  const formatDate = (dateString) => {
-    try {
-      const date = new Date(dateString);
-      
-      // Check if date is valid
-      if (isNaN(date.getTime())) {
-        return new Date().toLocaleDateString();
-      }
-      
-      // Check if date is in the future (use current date instead)
-      const now = new Date();
-      if (date > now) {
-        return now.toLocaleDateString();
-      }
-      
-      return date.toLocaleDateString();
-    } catch (error) {
-      console.error('Error formatting date:', error);
-      return new Date().toLocaleDateString();
-    }
-  };
-
-  // Calculate calories burned based on user profile and run data
-  const calculateCaloriesBurned = useCallback((distance, duration, userProfile) => {
-    // MET (Metabolic Equivalent of Task) values for running at different intensities
-    // The higher the pace, the higher the MET value
-    const getPaceMET = (paceMinPerKm) => {
-      if (paceMinPerKm < 4) return 11.5; // Very fast
-      if (paceMinPerKm < 5) return 10.0; // Fast
-      if (paceMinPerKm < 6) return 9.0; // Moderate to fast
-      if (paceMinPerKm < 7) return 8.0; // Moderate
-      if (paceMinPerKm < 8) return 7.0; // Moderate to slow
-      return 6.0; // Slow
-    };
-
-    // Adjustments based on fitness level
-    const fitnessAdjustment = {
-      beginner: 1.0,
-      intermediate: 0.95,
-      advanced: 0.9
-    };
-
-    // Adjustments based on gender (due to different body compositions)
-    const genderAdjustment = {
-      male: 1.0,
-      female: 0.9
-    };
-
-    // Age adjustment (generally, calorie burn decreases with age)
-    const getAgeAdjustment = (age) => {
-      if (age < 20) return 1.10;
-      if (age < 30) return 1.05;
-      if (age < 40) return 1.0;
-      if (age < 50) return 0.95;
-      if (age < 60) return 0.90;
-      return 0.85;
-    };
-
-    // Calculate pace in minutes per km
-    const pace = duration / 60 / distance;
-    
-    // Get MET value based on pace
-    const met = getPaceMET(pace);
-    
-    // Calculate base calories
-    // Formula: MET * weight in kg * duration in hours
-    const durationHours = duration / 3600;
-    const baseCalories = met * userProfile.weight * durationHours;
-    
-    // Apply adjustments
-    const adjustedCalories = 
-      baseCalories * 
-      fitnessAdjustment[userProfile.fitnessLevel] * 
-      genderAdjustment[userProfile.gender] * 
-      getAgeAdjustment(userProfile.age);
-    
-    return Math.round(adjustedCalories);
-  }, []);
-
-  const calculateStats = () => {
-    // Skip calculation if there are no runs
-    if (runHistory.length === 0) {
-      setStats({
-        totalDistance: 0,
-        totalRuns: 0,
-        averagePace: 0,
-        fastestPace: 0, // Changed from Infinity to 0
-        longestRun: 0,
-        currentStreak: 0,
-        bestStreak: 0,
-        thisWeekDistance: 0,
-        thisMonthDistance: 0,
-        totalCaloriesBurned: 0,
-        averageCaloriesPerKm: 0,
-        personalBests: {
-          '5k': 0, // Changed from Infinity to 0
-          '10k': 0, // Changed from Infinity to 0
-          halfMarathon: 0, // Changed from Infinity to 0
-          marathon: 0 // Changed from Infinity to 0
-        }
-      });
-      return;
-    }
-    
-    const newStats = {
-      totalDistance: 0,
-      totalRuns: runHistory.length,
-      averagePace: 0,
-      fastestPace: Infinity,
-      longestRun: 0,
-      currentStreak: 0,
-      bestStreak: 0,
-      thisWeekDistance: 0,
-      thisMonthDistance: 0,
-      totalCaloriesBurned: 0,
-      averageCaloriesPerKm: 0,
-      personalBests: {
-        '5k': Infinity,
-        '10k': Infinity,
-        halfMarathon: Infinity,
-        marathon: Infinity
-      }
-    };
-
-    let totalPace = 0;
-    let validPaceCount = 0; // Added counter for valid paces
-    let totalCalories = 0;
-    const now = new Date();
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - now.getDay());
-    weekStart.setHours(0, 0, 0, 0);
-    
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    monthStart.setHours(0, 0, 0, 0);
-
-    // Create date objects for all runs (once)
-    const runsWithDates = runHistory.map(run => ({
-      ...run,
-      dateObj: new Date(run.date)
-    }));
-    
-    // Sort runs by date (newest first) for streak calculation
-    const sortedRuns = [...runsWithDates].sort(
-      (a, b) => b.dateObj - a.dateObj
-    );
-
-    // Calculate current streak - consecutive days of running from the most recent
-    let streak = 0;
-    let currentDate = sortedRuns.length > 0 ? sortedRuns[0].dateObj : null;
-    
-    // Map to track which days have runs
-    const runDays = new Map();
-    
-    // First mark all days that have runs
-    sortedRuns.forEach(run => {
-      const dateStr = run.dateObj.toDateString();
-      runDays.set(dateStr, true);
-    });
-    
-    // Now calculate streak by checking consecutive days
-    if (currentDate) {
-      // Check if the most recent run is from today or yesterday
-      const todayStr = new Date().toDateString();
-      const yesterdayDate = new Date();
-      yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-      const yesterdayStr = yesterdayDate.toDateString();
-      
-      if (runDays.has(todayStr) || runDays.has(yesterdayStr)) {
-        // Initialize with the first day
-        streak = 1;
-        
-        // Start checking from yesterday or the day before
-        let checkDate = runDays.has(todayStr) ? yesterdayDate : new Date(yesterdayDate);
-        checkDate.setDate(checkDate.getDate() - 1);
-        
-        // Check consecutive days backwards
-        while (runDays.has(checkDate.toDateString())) {
-          streak++;
-          checkDate.setDate(checkDate.getDate() - 1);
-        }
-      }
-    }
-    
-    newStats.currentStreak = streak;
-
-    // Process each run for other stats
-    runHistory.forEach((run) => {
-      // Skip runs with invalid data
-      if (isNaN(run.distance) || run.distance <= 0 || 
-          isNaN(run.duration) || run.duration <= 0) {
-        console.warn('Skipping invalid run data:', run);
-        return;
-      }
-      
-      // Total distance
-      newStats.totalDistance += run.distance;
-
-      // Longest run
-      if (run.distance > newStats.longestRun) {
-        newStats.longestRun = run.distance;
-      }
-
-      // Pace calculations - apply reasonable limits
-      // Most elite runners do 2-3 min/km, normal range 4-10 min/km
-      // 1 min/km would be 60 km/h which is impossible running speed
-      // Calculate pace in minutes per unit (km or mi)
-      const distanceInSelectedUnit = distanceUnit === 'km' ? run.distance / 1000 : run.distance / 1609.344;
-      const pace = run.duration / 60 / distanceInSelectedUnit;
-      
-      // Minimum valid pace is 2 min/unit, maximum is 20 min/unit (appropriate range for both km & mi)
-      const validPace = !isNaN(pace) && pace >= 2 && pace <= 20;
-      
-      if (validPace) {
-        totalPace += pace;
-        validPaceCount++; // Increment valid pace counter
-        
-        if (pace < newStats.fastestPace) {
-          newStats.fastestPace = pace;
-        }
-        
-        // Personal bests by distance - convert threshold distances to meters for comparison
-        const fiveKmInMeters = distanceUnit === 'km' ? 5000 : 5000 * 1.609344;
-        const tenKmInMeters = distanceUnit === 'km' ? 10000 : 10000 * 1.609344;
-        const halfMarathonInMeters = distanceUnit === 'km' ? 21097.5 : 21097.5 * 1.609344;
-        const marathonInMeters = distanceUnit === 'km' ? 42195 : 42195 * 1.609344;
-        
-        if (run.distance >= fiveKmInMeters && pace < newStats.personalBests['5k']) {
-          newStats.personalBests['5k'] = pace;
-        }
-        if (run.distance >= tenKmInMeters && pace < newStats.personalBests['10k']) {
-          newStats.personalBests['10k'] = pace;
-        }
-        if (run.distance >= halfMarathonInMeters && pace < newStats.personalBests['halfMarathon']) {
-          newStats.personalBests['halfMarathon'] = pace;
-        }
-        if (run.distance >= marathonInMeters && pace < newStats.personalBests['marathon']) {
-          newStats.personalBests['marathon'] = pace;
-        }
-      }
-      
-      // This week and month distances
-      const runDate = new Date(run.date);
-      if (runDate >= weekStart) {
-        newStats.thisWeekDistance += run.distance;
-      }
-      if (runDate >= monthStart) {
-        newStats.thisMonthDistance += run.distance;
-      }
-      
-      // Calories
-      const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration, userProfile);
-      if (!isNaN(caloriesBurned)) {
-        totalCalories += caloriesBurned;
-      }
-    });
-
-    // Calculate average pace only if there's at least one valid run
-    newStats.averagePace = validPaceCount > 0 ? totalPace / validPaceCount : 0;
-    
-    // If fastestPace is still Infinity, set it to 0
-    if (newStats.fastestPace === Infinity) {
-      newStats.fastestPace = 0;
-    }
-
-    // Set personal bests to 0 if they remain at Infinity
-    Object.keys(newStats.personalBests).forEach(key => {
-      if (newStats.personalBests[key] === Infinity) {
-        newStats.personalBests[key] = 0;
-      }
-    });
-
-    // Set total calories burned
-    newStats.totalCaloriesBurned = Math.round(totalCalories);
-    
-    // Calculate average calories per KM
-    const distanceInSelectedUnit = distanceUnit === 'km' ? newStats.totalDistance / 1000 : newStats.totalDistance / 1609.344;
-    newStats.averageCaloriesPerKm = distanceInSelectedUnit > 0 
-      ? totalCalories / distanceInSelectedUnit 
-      : 0;
-
-    setStats(newStats);
-    console.log('Stats recalculated:', newStats);
-  };
-
+  // Load and process run history from localStorage
   const loadRunHistory = () => {
     const storedRuns = localStorage.getItem('runHistory');
     if (storedRuns) {
@@ -416,7 +92,6 @@ export const RunHistory = () => {
         const parsedRuns = JSON.parse(storedRuns);
         
         // Create a map to store unique runs by their date and metrics
-        // This will help identify and remove complete duplicates
         const uniqueRunsMap = new Map();
         const seenIds = new Set();
         const now = new Date();
@@ -430,10 +105,9 @@ export const RunHistory = () => {
           }
           
           // Fix unrealistic distance values (>100 km is extremely unlikely for normal runs)
-          // World record for 24-hour run is ~300 km, so 100 km is already very generous
-          const MAX_REALISTIC_DISTANCE = 100; // in km
+          const MAX_REALISTIC_DISTANCE = 100 * 1000; // 100 km in meters
           if (isNaN(run.distance) || run.distance <= 0) {
-            run.distance = 5; // Default to 5 km for invalid distances
+            run.distance = 5000; // Default to 5 km for invalid distances
           } else if (run.distance > MAX_REALISTIC_DISTANCE) {
             run.distance = Math.min(run.distance, MAX_REALISTIC_DISTANCE);
           }
@@ -443,7 +117,7 @@ export const RunHistory = () => {
           if (isNaN(run.duration) || run.duration <= 0) {
             run.duration = 30 * 60; // Default to 30 minutes for invalid durations
           } else if (run.duration > MAX_DURATION) {
-            run.duration = Math.min(run.duration, MAX_DURATION);
+            run.distance = Math.min(run.duration, MAX_DURATION);
           }
           
           // Create a signature for each run based on key properties
@@ -472,7 +146,7 @@ export const RunHistory = () => {
           return acc;
         }, []);
         
-        // Save the fixed runs back to localStorage
+        // Save the fixed runs back to localStorage if needed
         if (fixedRuns.length !== parsedRuns.length || 
             fixedRuns.some((run, i) => 
               run.id !== parsedRuns[i]?.id || 
@@ -485,12 +159,13 @@ export const RunHistory = () => {
         }
         
         setRunHistory(fixedRuns);
-        // Calculate stats immediately after loading run history
-        setTimeout(() => {
+        
+        // Android optimization: Use requestAnimationFrame for non-urgent UI updates
+        requestAnimationFrame(() => {
           if (fixedRuns.length > 0) {
-            calculateStats();
+            calculateStats(fixedRuns);
           }
-        }, 0);
+        });
       } catch (error) {
         console.error('Error loading run history:', error);
         // If there's an error, try to recover with an empty array
@@ -520,21 +195,22 @@ export const RunHistory = () => {
     
     try {
       const run = selectedRun;
-      const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration, userProfile);
+      const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration);
       
       const content = `
 Just completed a run with Runstr! 🏃‍♂️💨
 
 ⏱️ Duration: ${formatTime(run.duration)}
-📏 Distance: ${displayDistance(run.distance)}
-⚡ Pace: ${(run.duration / 60 / run.distance).toFixed(2)} min/${distanceUnit}
+📏 Distance: ${displayDistance(run.distance, distanceUnit)}
+⚡ Pace: ${(run.duration / 60 / (distanceUnit === 'km' ? run.distance/1000 : run.distance/1609.344)).toFixed(2)} min/${distanceUnit}
 🔥 Calories: ${caloriesBurned} kcal
-${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gain)}\n📉 Elevation Loss: ${formatElevation(run.elevation.loss)}` : ''}
+${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gain, distanceUnit)}\n📉 Elevation Loss: ${formatElevation(run.elevation.loss, distanceUnit)}` : ''}
 ${additionalContent ? `\n${additionalContent}` : ''}
 #Runstr #Running
 `.trim();
 
-      const event = {
+      // Create the event template for nostr-tools
+      const eventTemplate = {
         kind: 1,
         created_at: Math.floor(Date.now() / 1000),
         tags: [
@@ -544,96 +220,36 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         content: content
       };
 
-      await publishToNostr(event);
+      // Use the new createAndPublishEvent function from nostr-tools
+      await createAndPublishEvent(eventTemplate);
+      
       setShowModal(false);
       setAdditionalContent('');
-      alert('Successfully posted to Nostr!');
+      
+      // Use a toast notification instead of alert for Android
+      console.log('Successfully posted to Nostr!');
+      // Show Android toast
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Successfully posted to Nostr!');
+      } else {
+        alert('Successfully posted to Nostr!');
+      }
     } catch (error) {
       console.error('Error posting to Nostr:', error);
-      alert('Failed to post to Nostr: ' + error.message);
+      
+      // Use a toast notification instead of alert for Android
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Failed to post to Nostr: ' + error.message);
+      } else {
+        alert('Failed to post to Nostr: ' + error.message);
+      }
     } finally {
       setIsPosting(false);
       setShowModal(false);
     }
   };
 
-  const formatTime = (seconds) => {
-    // Round to 2 decimal places to avoid excessive precision
-    seconds = Math.round(seconds * 100) / 100;
-    
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    
-    return `${hours.toString().padStart(2, '0')}:${minutes
-      .toString()
-      .padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
-  const displayDistance = (value) => {
-    // Ensure value is a number and not too small
-    const numValue = Number(value);
-    if (isNaN(numValue) || numValue < 0.01) {
-      return `0.00 ${distanceUnit}`;
-    }
-    
-    // Convert from meters to km or miles as needed
-    const converted = distanceUnit === 'mi' ? numValue / 1609.344 : numValue / 1000;
-    
-    // Format to 2 decimal places
-    return `${converted.toFixed(2)} ${distanceUnit}`;
-  };
-
-  const handleProfileSubmit = () => {
-    // Convert feet and inches to cm for storage and calculations
-    const heightCm = (userProfile.heightFeet * 30.48) + (userProfile.heightInches * 2.54);
-    
-    const updatedProfile = {
-      ...userProfile,
-      heightCm: Math.round(heightCm)
-    };
-    
-    localStorage.setItem('userProfile', JSON.stringify(updatedProfile));
-    setUserProfile(updatedProfile);
-    setShowProfileModal(false);
-    // Recalculate stats with new profile data
-    calculateStats();
-  };
-
-  const handleProfileChange = (field, value) => {
-    console.log(`Updating ${field} to ${value}`); // Add logging for debugging
-    
-    setUserProfile((prev) => {
-      const updated = {
-        ...prev,
-        [field]: value
-      };
-      
-      // If feet or inches are updated, also update the cm value
-      if (field === 'heightFeet' || field === 'heightInches') {
-        const feet = field === 'heightFeet' ? value : prev.heightFeet;
-        const inches = field === 'heightInches' ? value : prev.heightInches;
-        updated.heightCm = Math.round((feet * 30.48) + (inches * 2.54));
-      }
-      
-      console.log('Updated profile:', updated); // Log the updated profile
-      return updated;
-    });
-  };
-
-  // Add a function to format elevation display
-  const formatElevation = (meters) => {
-    if (!meters || meters === null || isNaN(meters)) return '-- ';
-    
-    if (distanceUnit === 'mi') {
-      // Convert to feet (1 meter = 3.28084 feet)
-      return `${Math.round(meters * 3.28084)} ft`;
-    } else {
-      return `${Math.round(meters)} m`;
-    }
-  };
-
-  // Add a toggle function for distance unit
+  // Toggle distance unit function
   const toggleDistanceUnit = () => {
     const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
     setDistanceUnit(newUnit);
@@ -668,7 +284,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         <div className="stats-grid">
           <div className="stat-card">
             <h3>Total Distance</h3>
-            <p>{displayDistance(stats.totalDistance)}</p>
+            <p>{displayDistance(stats.totalDistance, distanceUnit)}</p>
           </div>
           <div className="stat-card">
             <h3>Total Runs</h3>
@@ -690,7 +306,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           <div className="stat-card">
             <h3>Fastest Pace</h3>
             <p>
-              {stats.fastestPace === Infinity || stats.fastestPace === 0
+              {stats.fastestPace === 0
                 ? '-'
                 : `${Math.floor(stats.fastestPace)}:${Math.round(stats.fastestPace % 1 * 60).toString().padStart(2, '0')}`}{' '}
               min/{distanceUnit}
@@ -698,7 +314,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           </div>
           <div className="stat-card">
             <h3>Longest Run</h3>
-            <p>{displayDistance(stats.longestRun)}</p>
+            <p>{displayDistance(stats.longestRun, distanceUnit)}</p>
           </div>
         </div>
 
@@ -710,7 +326,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <p>{stats.totalCaloriesBurned.toLocaleString()} kcal</p>
             </div>
             <div className="stat-card">
-              <h4>Avg. Calories per KM</h4>
+              <h4>Avg. Calories per {distanceUnit.toUpperCase()}</h4>
               <p>{Math.round(stats.averageCaloriesPerKm)} kcal</p>
             </div>
           </div>
@@ -721,11 +337,11 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           <div className="stats-grid">
             <div className="stat-card">
               <h4>This Week</h4>
-              <p>{displayDistance(stats.thisWeekDistance)}</p>
+              <p>{displayDistance(stats.thisWeekDistance, distanceUnit)}</p>
             </div>
             <div className="stat-card">
               <h4>This Month</h4>
-              <p>{displayDistance(stats.thisMonthDistance)}</p>
+              <p>{displayDistance(stats.thisMonthDistance, distanceUnit)}</p>
             </div>
           </div>
         </div>
@@ -736,7 +352,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             <div className="stat-card">
               <h4>5K</h4>
               <p>
-                {stats.personalBests['5k'] === Infinity || stats.personalBests['5k'] === 0
+                {stats.personalBests['5k'] === 0
                   ? '-'
                   : `${Math.floor(stats.personalBests['5k'])}:${Math.round(stats.personalBests['5k'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
                 min/{distanceUnit}
@@ -745,7 +361,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             <div className="stat-card">
               <h4>10K</h4>
               <p>
-                {stats.personalBests['10k'] === Infinity || stats.personalBests['10k'] === 0
+                {stats.personalBests['10k'] === 0
                   ? '-'
                   : `${Math.floor(stats.personalBests['10k'])}:${Math.round(stats.personalBests['10k'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
                 min/{distanceUnit}
@@ -754,7 +370,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             <div className="stat-card">
               <h4>Half Marathon</h4>
               <p>
-                {stats.personalBests['halfMarathon'] === Infinity || stats.personalBests['halfMarathon'] === 0
+                {stats.personalBests['halfMarathon'] === 0
                   ? '-'
                   : `${Math.floor(stats.personalBests['halfMarathon'])}:${Math.round(stats.personalBests['halfMarathon'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
                 min/{distanceUnit}
@@ -763,7 +379,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             <div className="stat-card">
               <h4>Marathon</h4>
               <p>
-                {stats.personalBests['marathon'] === Infinity || stats.personalBests['marathon'] === 0
+                {stats.personalBests['marathon'] === 0
                   ? '-'
                   : `${Math.floor(stats.personalBests['marathon'])}:${Math.round(stats.personalBests['marathon'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
                 min/{distanceUnit}
@@ -772,7 +388,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           </div>
         </div>
 
-        {/* Add elevation stats to overview */}
         <div className="elevation-stats-overview">
           <h3>Elevation Data</h3>
           <div className="stats-grid">
@@ -780,7 +395,8 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <h4>Total Elevation Gain</h4>
               <p>
                 {formatElevation(
-                  runHistory.reduce((sum, run) => sum + (run.elevation?.gain || 0), 0)
+                  runHistory.reduce((sum, run) => sum + (run.elevation?.gain || 0), 0),
+                  distanceUnit
                 )}
               </p>
             </div>
@@ -788,7 +404,8 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <h4>Total Elevation Loss</h4>
               <p>
                 {formatElevation(
-                  runHistory.reduce((sum, run) => sum + (run.elevation?.loss || 0), 0)
+                  runHistory.reduce((sum, run) => sum + (run.elevation?.loss || 0), 0),
+                  distanceUnit
                 )}
               </p>
             </div>
@@ -802,11 +419,11 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       ) : (
         <ul className="history-list">
           {runHistory.map((run) => {
-            const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration, userProfile);
+            const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration);
             
             // Calculate pace with proper validation
             const pace = run.distance > 0.01 
-              ? (run.duration / 60 / run.distance).toFixed(2) 
+              ? (run.duration / 60 / (distanceUnit === 'km' ? run.distance/1000 : run.distance/1609.344)).toFixed(2) 
               : '0.00';
             
             return (
@@ -814,19 +431,18 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                 <div className="run-date">{formatDate(run.date)}</div>
                 <div className="run-details">
                   <span>Duration: {formatTime(run.duration)}</span>
-                  <span>Distance: {displayDistance(run.distance)}</span>
+                  <span>Distance: {displayDistance(run.distance, distanceUnit)}</span>
                   <span>
                     Pace: {pace} min/{distanceUnit}
                   </span>
                   <span>Calories: {caloriesBurned} kcal</span>
-                  {/* Add elevation data */}
                   {run.elevation && (
                     <>
                       <span>
-                        Elevation Gain: {formatElevation(run.elevation.gain)}
+                        Elevation Gain: {formatElevation(run.elevation.gain, distanceUnit)}
                       </span>
                       <span>
-                        Elevation Loss: {formatElevation(run.elevation.loss)}
+                        Elevation Loss: {formatElevation(run.elevation.loss, distanceUnit)}
                       </span>
                     </>
                   )}

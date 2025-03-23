@@ -1,30 +1,101 @@
 /**
- * Formats a given number of seconds into a string in HH:MM:SS format.
- *
- * @param {number} seconds - The total number of seconds to format.
- * @returns {string} The formatted time string.
+ * Format time in seconds to HH:MM:SS format
+ * @param {number} seconds - Time in seconds
+ * @returns {string} Formatted time string
  */
-export function formatTime(seconds) {
-  // Ensure we have a positive integer value of seconds
-  const totalSeconds = Math.max(0, Math.floor(seconds));
+export const formatTime = (seconds) => {
+  // Round to 2 decimal places to avoid excessive precision
+  seconds = Math.round(seconds * 100) / 100;
+  
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  
+  return `${hours.toString().padStart(2, '0')}:${minutes
+    .toString()
+    .padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
 
-  // Calculate the number of hours
-  const hours = Math.floor(totalSeconds / 3600);
+/**
+ * Format distance in meters to km or miles
+ * @param {number} meters - Distance in meters
+ * @param {string} unit - Distance unit ('km' or 'mi')
+ * @returns {string} Formatted distance string
+ */
+export const displayDistance = (meters, unit = 'km') => {
+  // Ensure value is a number and not too small
+  const numValue = Number(meters);
+  if (isNaN(numValue) || numValue < 0.01) {
+    return `0.00 ${unit}`;
+  }
+  
+  // Convert from meters to km or miles as needed
+  const converted = unit === 'mi' ? numValue / 1609.344 : numValue / 1000;
+  
+  // Format to 2 decimal places
+  return `${converted.toFixed(2)} ${unit}`;
+};
 
-  // Calculate the number of minutes from the remaining seconds after hours are accounted for
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
+/**
+ * Format elevation in meters to meters or feet
+ * @param {number} meters - Elevation in meters
+ * @param {string} unit - Distance unit system ('km' for metric, 'mi' for imperial)
+ * @returns {string} Formatted elevation string
+ */
+export const formatElevation = (meters, unit = 'km') => {
+  if (!meters || meters === null || isNaN(meters)) return '-- ';
+  
+  if (unit === 'mi') {
+    // Convert to feet (1 meter = 3.28084 feet)
+    return `${Math.round(meters * 3.28084)} ft`;
+  } else {
+    return `${Math.round(meters)} m`;
+  }
+};
 
-  // The remaining seconds after removing hours and minutes
-  const remainingSeconds = totalSeconds % 60;
+/**
+ * Format date to a consistent readable format
+ * @param {string} dateString - Date string to format
+ * @returns {string} Formatted date string
+ */
+export const formatDate = (dateString) => {
+  try {
+    const date = new Date(dateString);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return new Date().toLocaleDateString();
+    }
+    
+    // Check if date is in the future (use current date instead)
+    const now = new Date();
+    if (date > now) {
+      return now.toLocaleDateString();
+    }
+    
+    return date.toLocaleDateString();
+  } catch (error) {
+    console.error('Error formatting date:', error);
+    return new Date().toLocaleDateString();
+  }
+};
 
-  // Format hours, minutes, and seconds to always have at least two digits (with leading zeros if needed)
-  const formattedHours = hours.toString().padStart(2, '0');
-  const formattedMinutes = minutes.toString().padStart(2, '0');
-  const formattedSeconds = remainingSeconds.toString().padStart(2, '0');
-
-  // Return the formatted time string in the format HH:MM:SS
-  return `${formattedHours}:${formattedMinutes}:${formattedSeconds}`;
-}
+/**
+ * Format pace to MM:SS format
+ * @param {number} pace - Pace in minutes per unit
+ * @param {string} unit - Distance unit ('km' or 'mi')
+ * @returns {string} Formatted pace string
+ */
+export const formatPace = (pace, unit = 'km') => {
+  if (!pace || pace === 0 || pace === Infinity) {
+    return '-- min/' + unit;
+  }
+  
+  const minutes = Math.floor(pace);
+  const seconds = Math.round((pace - minutes) * 60);
+  
+  return `${minutes}:${seconds.toString().padStart(2, '0')} min/${unit}`;
+};
 
 /**
  * Convert a distance in meters to kilometers or miles.
@@ -55,38 +126,6 @@ export function convertDistance(meters, unit) {
  * @param {number} pace - The pace in seconds per meter.
  * @param {string} unit - The unit to format pace in ("km" or "mi"). Defaults to "km".
  * @returns {string} A formatted pace string in "MM:SS" per kilometer/mile format.
- */
-export function formatPace(pace, unit = 'km') {
-  // Handle invalid or non-positive pace values
-  if (!pace || pace <= 0) return '--:--';
-
-  // Convert pace from seconds per meter to seconds per unit (km or mi)
-  let secondsPerUnit;
-  
-  if (unit === 'mi') {
-    // 1 mile = 1609.344 meters
-    secondsPerUnit = pace * 1609.344;
-  } else {
-    // Default to km
-    secondsPerUnit = pace * 1000;
-  }
-
-  // Extract the number of whole minutes from the total seconds
-  const minutes = Math.floor(secondsPerUnit / 60);
-
-  // Get the remaining seconds after extracting the minutes
-  const seconds = Math.round(secondsPerUnit % 60);
-
-  // Format the output as "MM:SS", ensuring two-digit seconds
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
-
-/**
- * Formats pace with the appropriate unit label for display.
- * 
- * @param {number} pace - The pace in seconds per meter.
- * @param {string} unit - The unit to format pace in ("km" or "mi"). Defaults to "km".
- * @returns {string} A formatted pace string with unit label, e.g., "4:30 min/km" or "7:15 min/mi".
  */
 export function formatPaceWithUnit(pace, unit = 'km') {
   return `${formatPace(pace, unit)} min/${unit}`;
