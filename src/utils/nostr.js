@@ -1,246 +1,176 @@
 import { SimplePool, finalizeEvent, verifyEvent } from 'nostr-tools';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 
-// Create a relay pool with optimized settings for mobile
+// Create a simple pool with reasonable timeouts
 const pool = new SimplePool({
-  eoseSubTimeout: 30_000, // Increased from 15_000 to allow more time
-  getTimeout: 35_000,    // Increased from 20_000
-  connectTimeout: 10_000  // Increased from 5_000
+  eoseSubTimeout: 10_000,
+  getTimeout: 15_000,
+  connectTimeout: 8_000
 });
 
-// List of reliable relays for mobile connections
+// Focus on a smaller set of the most reliable relays
 const relays = [
   'wss://relay.damus.io',
-  'wss://relay.nostr.band',
   'wss://nos.lol',
-  'wss://relay.current.fyi',
-  'wss://purplepag.es',
-  'wss://nostr.wine',
-  'wss://relay.nostr.bg',
+  'wss://relay.nostr.band',
   'wss://relay.snort.social',
-  'wss://nostr.fmt.wiz.biz',
-  'wss://nostr.mutinywallet.com',
-  'wss://relay.nostr.info',
-  'wss://nostr.zebedee.cloud',
-  'wss://relay.nostr.com',
-  'wss://nostr.oxtr.dev',
-  'wss://relay.nostr.vision'
+  'wss://purplepag.es'
 ];
 
-// Android storage for keys (simulating native storage)
+// Storage for keys
 let cachedKeyPair = null;
 
 /**
- * Initialize connection to Nostr network with mobile optimization
- * @returns {Promise<boolean>} Connection success status
+ * Initialize the Nostr client
+ * @returns {Promise<boolean>} Success status
  */
 export const initializeNostr = async () => {
   try {
-    console.log('Initializing Nostr for Android...');
+    // Check if the environment supports WebSockets
+    if (typeof WebSocket === 'undefined') {
+      console.warn('WebSocket not supported in this environment');
+      return false;
+    }
     
-    // Try multiple relays in sequence until one works
-    for (let i = 0; i < Math.min(5, relays.length); i++) {
-      console.log(`Attempting to connect to relay ${i+1}/${Math.min(5, relays.length)}:`, relays[i]);
-      
+    // Test connection to relays
+    const connectedRelays = [];
+    
+    for (const relay of relays) {
       try {
-        // Simple test query with short timeout
-        const testEvents = await pool.list([relays[i]], [
-          {
-            kinds: [1],
-            limit: 1
-          }
-        ], {
-          timeout: 7000 // 7 seconds per relay
-        });
-        
-        if (testEvents && testEvents.length > 0) {
-          console.log('Connection test successful with relay:', relays[i]);
-          return true;
-        } else {
-          console.log('No events found from relay:', relays[i]);
+        const conn = pool.ensureRelay(relay);
+        if (conn) {
+          connectedRelays.push(relay);
         }
-      } catch (relayError) {
-        console.log('Failed to connect to relay:', relays[i], relayError.message);
-        // Continue to the next relay
+      } catch (error) {
+        console.warn(`Failed to connect to relay: ${relay}`, error);
       }
     }
     
-    console.log('All relay connection attempts failed');
-    return false;
+    console.log(`Connected to ${connectedRelays.length}/${relays.length} relays`);
+    
+    // Consider initialization successful if we connect to at least one relay
+    return connectedRelays.length > 0;
   } catch (error) {
-    console.error('Failed to initialize Nostr connection on Android:', error);
+    console.error('Error initializing Nostr:', error);
     return false;
   }
 };
 
 /**
- * Fetch events from relays based on filter - optimized for mobile
+ * Simple function to fetch events from relays
  * @param {Object} filter - Nostr filter
- * @returns {Promise<Set>} Set of events
+ * @returns {Promise<Array>} Array of events
  */
 export const fetchEvents = async (filter) => {
   try {
-    // For mobile: add timeouts and limit results
-    const options = {
-      timeout: 15_000 // Increased from 10_000 to give more time
-    };
+    console.log('Fetching events with filter:', filter);
     
+    // Ensure we have a limit to prevent excessive data usage
     if (!filter.limit) {
-      filter.limit = 50; // Ensure we always have a reasonable limit for mobile
+      filter.limit = 50;
     }
     
-    // Try with all relays first
-    try {
-      console.log('Attempting to fetch events from all relays with filter:', filter);
-      const events = await pool.list(relays, [filter], options);
-      if (events && events.length > 0) {
-        console.log(`Successfully fetched ${events.length} events from relays`);
-        return new Set(events);
-      }
-    } catch (multiRelayError) {
-      console.warn('Error fetching from multiple relays, falling back to single relay strategy:', multiRelayError.message);
-      // Continue to fallback strategy
-    }
-    
-    // Fallback: Try individual relays one by one (based on issue #225)
-    console.log('Trying individual relays one by one');
-    const allEvents = new Set();
-    
-    // Only try first 5 relays to avoid excessive requests
-    for (let i = 0; i < Math.min(5, relays.length); i++) {
-      try {
-        console.log(`Trying individual relay ${i+1}/${Math.min(5, relays.length)}: ${relays[i]}`);
-        const singleRelayEvents = await pool.list([relays[i]], [filter], {
-          timeout: 8000 // Shorter timeout for individual relays
-        });
-        
-        if (singleRelayEvents && singleRelayEvents.length > 0) {
-          console.log(`Got ${singleRelayEvents.length} events from relay: ${relays[i]}`);
-          singleRelayEvents.forEach(event => allEvents.add(event));
-          
-          // If we got enough events, we can stop trying more relays
-          if (allEvents.size >= filter.limit) {
-            console.log(`Reached desired event count (${allEvents.size}), stopping relay iteration`);
-            break;
-          }
-        }
-      } catch (singleRelayError) {
-        console.warn(`Error with relay ${relays[i]}:`, singleRelayError.message);
-        // Continue to next relay
-      }
-    }
-    
-    return allEvents;
+    // Simple fetch with timeout
+    const events = await pool.list(relays, [filter], { timeout: 10000 });
+    console.log(`Fetched ${events.length} events`);
+    return events;
   } catch (error) {
-    console.error('Error fetching events on mobile:', error);
-    return new Set();
+    console.error('Error fetching events:', error);
+    return [];
   }
 };
 
 /**
- * Subscribe to events from relays - mobile optimized
+ * Subscribe to events from relays
  * @param {Object} filter - Nostr filter
  * @returns {Object} Subscription object
  */
 export const subscribe = (filter) => {
-  // Always ensure a limit for mobile subscriptions
+  console.log('Creating subscription with filter:', filter);
+  
+  // Ensure we have a limit
   if (!filter.limit) {
     filter.limit = 30;
   }
   
-  console.log('Creating subscription with filter:', filter);
+  // Create subscription
+  const sub = pool.sub(relays, [filter]);
   
-  // Try to determine best relays to use
-  const targetRelays = [...relays].slice(0, 5); // Use first 5 relays by default
-  
-  // Create subscription with selected relays
-  const sub = pool.sub(targetRelays, [filter]);
-  
-  // Create an event handler interface
-  const eventHandlers = {
-    'event': [],
-    'eose': []
-  };
-  
-  // Track if we've received any events
-  let receivedEvents = false;
-  
-  sub.on('event', (event) => {
-    receivedEvents = true;
-    eventHandlers['event'].forEach(handler => handler(event));
-  });
-  
-  sub.on('eose', () => {
-    eventHandlers['eose'].forEach(handler => handler());
-  });
-  
-  // If no events after a short period, try individual relays
-  const fallbackTimeoutId = setTimeout(() => {
-    if (!receivedEvents) {
-      console.log('No events received from multiple relays, trying individual relays');
-      // Close the initial subscription
-      sub.unsub();
-      
-      // Try individual relays one by one
-      for (let i = 0; i < Math.min(3, relays.length); i++) {
-        console.log(`Trying individual relay subscription to: ${relays[i]}`);
-        const singleRelaySub = pool.sub([relays[i]], [filter]);
-        
-        singleRelaySub.on('event', (event) => {
-          receivedEvents = true;
-          eventHandlers['event'].forEach(handler => handler(event));
-        });
-        
-        singleRelaySub.on('eose', () => {
-          eventHandlers['eose'].forEach(handler => handler());
-        });
-        
-        // Close individual subscriptions after a shorter period
-        setTimeout(() => {
-          if (singleRelaySub) {
-            singleRelaySub.unsub();
-          }
-        }, 20000);
-      }
-    }
-  }, 10000);
-  
-  // Mobile-optimized subscription with built-in timeout
+  // Set a reasonable timeout to auto-close
   const timeoutId = setTimeout(() => {
-    console.log('Mobile subscription timeout reached, closing...');
+    console.log('Subscription timeout reached, closing...');
     sub.unsub();
-  }, 30000); // 30 seconds max for mobile battery preservation
+  }, 20000);
   
   return {
     on: (event, callback) => {
-      if (eventHandlers[event]) {
-        eventHandlers[event].push(callback);
-      }
-      return sub;
-    },
-    off: (event, callback) => {
-      if (eventHandlers[event]) {
-        eventHandlers[event] = eventHandlers[event].filter(cb => cb !== callback);
-      }
+      sub.on(event, callback);
       return sub;
     },
     stop: () => {
       clearTimeout(timeoutId);
-      clearTimeout(fallbackTimeoutId);
       sub.unsub();
     }
   };
 };
 
 /**
- * Create and publish an event - modified for Android
+ * Generate and store a key pair
+ * @returns {Object} Object containing public and private keys
+ */
+export const generateKeyPair = () => {
+  const sk = generateSecretKey();
+  const pk = getPublicKey(sk);
+  cachedKeyPair = { privateKey: sk, publicKey: pk };
+  return cachedKeyPair;
+};
+
+/**
+ * Get the current signing key
+ * @returns {string} Private key for signing
+ */
+export const getSigningKey = async () => {
+  if (!cachedKeyPair) {
+    cachedKeyPair = generateKeyPair();
+  }
+  return cachedKeyPair.privateKey;
+};
+
+/**
+ * Get the user's public key
+ * @returns {string} User's public key
+ */
+export const getUserPublicKey = async () => {
+  try {
+    // Try to get from browser extension first
+    if (window.nostr) {
+      try {
+        const pubkey = await window.nostr.getPublicKey();
+        if (pubkey) return pubkey;
+      } catch (e) {
+        console.log('Could not get pubkey from extension:', e);
+      }
+    }
+    
+    // Fall back to generated keypair
+    if (!cachedKeyPair) {
+      cachedKeyPair = generateKeyPair();
+    }
+    return cachedKeyPair.publicKey;
+  } catch (error) {
+    console.error('Error getting user public key:', error);
+    return '';
+  }
+};
+
+/**
+ * Create and publish an event
  * @param {Object} eventTemplate - Event template 
  * @param {string} privateKey - Private key for signing
  * @returns {Promise<Object>} Published event
  */
 export const createAndPublishEvent = async (eventTemplate, privateKey) => {
   try {
-    // For Android, we need to handle key management differently
     const signingKey = privateKey || await getSigningKey();
     
     // Sign the event
@@ -252,51 +182,14 @@ export const createAndPublishEvent = async (eventTemplate, privateKey) => {
       throw new Error('Event verification failed');
     }
     
-    // Mobile-optimized publish with timeout
+    // Publish to relays
     await pool.publish(relays, signedEvent, { timeout: 10000 });
     return signedEvent;
   } catch (error) {
-    console.error('Error publishing event on Android:', error);
+    console.error('Error publishing event:', error);
     throw error;
   }
 };
-
-/**
- * Generate and store a key pair for Android
- * @returns {Object} Object containing public and private keys
- */
-export const generateKeyPair = () => {
-  const sk = generateSecretKey();
-  const pk = getPublicKey(sk);
-  cachedKeyPair = { privateKey: sk, publicKey: pk };
-  return cachedKeyPair;
-};
-
-/**
- * Get the current signing key for Android 
- * @returns {string} Private key for signing
- */
-export const getSigningKey = async () => {
-  // In a real Android app, this would use secure device storage
-  if (!cachedKeyPair) {
-    cachedKeyPair = generateKeyPair();
-  }
-  return cachedKeyPair.privateKey;
-};
-
-/**
- * Get the user's public key for Android
- * @returns {string} User's public key
- */
-export const getUserPublicKey = async () => {
-  // In a real Android app, this would use secure device storage
-  if (!cachedKeyPair) {
-    cachedKeyPair = generateKeyPair();
-  }
-  return cachedKeyPair.publicKey;
-};
-
-export { pool };
 
 // Channel-related constants
 export const GROUP_KINDS = {
@@ -525,3 +418,5 @@ export const sendChannelInvite = async (channelId, recipientPubkey) => {
     throw error;
   }
 };
+
+export { pool };

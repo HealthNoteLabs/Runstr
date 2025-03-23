@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import runDataService from '../services/RunDataService';
 
 /**
  * Custom hook for calculating and managing run statistics
@@ -37,102 +38,36 @@ export const useRunStats = (runHistory, userProfile) => {
     }
   }, [runHistory, userProfile, distanceUnit]);
 
-  // Calculate calories burned based on user profile and run data
+  // Toggle between km and mi units
+  const toggleDistanceUnit = () => {
+    const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
+    setDistanceUnit(newUnit);
+    localStorage.setItem('distanceUnit', newUnit);
+  };
+
+  // Calculate calories burned for a run
   const calculateCaloriesBurned = useCallback((distance, duration) => {
-    // If user profile is missing or invalid, use default values
-    if (!userProfile || !userProfile.weight) {
-      return Math.round((distance / 1000) * 65); // Very simple estimation
-    }
+    // Default metabolic equivalent (MET) for running
+    const MET = 8;
     
-    // MET (Metabolic Equivalent of Task) values for running at different intensities
-    // The higher the pace, the higher the MET value
-    const getPaceMET = (paceMinPerKm) => {
-      if (paceMinPerKm < 4) return 11.5; // Very fast
-      if (paceMinPerKm < 5) return 10.0; // Fast
-      if (paceMinPerKm < 6) return 9.0; // Moderate to fast
-      if (paceMinPerKm < 7) return 8.0; // Moderate
-      if (paceMinPerKm < 8) return 7.0; // Moderate to slow
-      return 6.0; // Slow
-    };
-
-    // Adjustments based on fitness level
-    const fitnessAdjustment = {
-      beginner: 1.0,
-      intermediate: 0.95,
-      advanced: 0.9
-    };
-
-    // Adjustments based on gender (due to different body compositions)
-    const genderAdjustment = {
-      male: 1.0,
-      female: 0.9
-    };
-
-    // Age adjustment (generally, calorie burn decreases with age)
-    const getAgeAdjustment = (age) => {
-      if (age < 20) return 1.10;
-      if (age < 30) return 1.05;
-      if (age < 40) return 1.0;
-      if (age < 50) return 0.95;
-      if (age < 60) return 0.90;
-      return 0.85;
-    };
-
-    // Convert distance to km for calculation
-    const distanceInKm = distance / 1000;
+    // Use user profile weight if available, or default to 70kg
+    const weight = userProfile?.weight || 70;
     
-    // Calculate pace in minutes per km
-    const pace = duration / 60 / distanceInKm;
-    
-    // Get MET value based on pace
-    const met = getPaceMET(pace);
-    
-    // Calculate base calories
-    // Formula: MET * weight in kg * duration in hours
-    const durationHours = duration / 3600;
-    const baseCalories = met * userProfile.weight * durationHours;
-    
-    // Apply adjustments
-    const adjustedCalories = 
-      baseCalories * 
-      (fitnessAdjustment[userProfile.fitnessLevel] || 1.0) * 
-      (genderAdjustment[userProfile.gender] || 1.0) * 
-      getAgeAdjustment(userProfile.age || 30);
-    
-    return Math.round(adjustedCalories);
+    // Calculate calories: MET * weight (kg) * duration (hours)
+    const durationInHours = duration / 3600;
+    return Math.round(MET * weight * durationInHours);
   }, [userProfile]);
 
-  // Main function to calculate all stats
+  // Calculate all stats from run history
   const calculateStats = useCallback((runs) => {
-    // Skip calculation if there are no runs
-    if (!runs || runs.length === 0) {
-      setStats({
-        totalDistance: 0,
-        totalRuns: 0,
-        averagePace: 0,
-        fastestPace: 0,
-        longestRun: 0,
-        currentStreak: 0,
-        bestStreak: 0,
-        thisWeekDistance: 0,
-        thisMonthDistance: 0,
-        totalCaloriesBurned: 0,
-        averageCaloriesPerKm: 0,
-        personalBests: {
-          '5k': 0,
-          '10k': 0,
-          'halfMarathon': 0,
-          'marathon': 0
-        }
-      });
-      return;
-    }
-    
+    if (!runs || !runs.length) return;
+
+    // Initialize stats
     const newStats = {
       totalDistance: 0,
       totalRuns: runs.length,
       averagePace: 0,
-      fastestPace: Infinity,
+      fastestPace: 99999, // Start with high value to find minimum
       longestRun: 0,
       currentStreak: 0,
       bestStreak: 0,
@@ -141,72 +76,30 @@ export const useRunStats = (runHistory, userProfile) => {
       totalCaloriesBurned: 0,
       averageCaloriesPerKm: 0,
       personalBests: {
-        '5k': Infinity,
-        '10k': Infinity,
-        'halfMarathon': Infinity,
-        'marathon': Infinity
+        '5k': 99999,
+        '10k': 99999,
+        'halfMarathon': 99999,
+        'marathon': 99999
       }
     };
 
+    // For average pace calculation
     let totalPace = 0;
     let validPaceCount = 0;
-    let totalCalories = 0;
-    
-    // Set up date references for week and month calculations
+
+    // Group runs by date for streak calculations
+    const runsByDate = {};
     const now = new Date();
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - now.getDay());
-    weekStart.setHours(0, 0, 0, 0);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    monthStart.setHours(0, 0, 0, 0);
-
-    // Create date objects for all runs (once)
-    const runsWithDates = runs.map(run => ({
-      ...run,
-      dateObj: new Date(run.date)
-    }));
+    // Get the start of this week (Sunday)
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
     
-    // Calculate streak
-    // Sort runs by date (newest first) for streak calculation
-    const sortedRuns = [...runsWithDates].sort(
-      (a, b) => b.dateObj - a.dateObj
-    );
-
-    // Map to track which days have runs
-    const runDays = new Map();
-    
-    // Mark all days that have runs
-    sortedRuns.forEach(run => {
-      const dateStr = run.dateObj.toDateString();
-      runDays.set(dateStr, true);
-    });
-    
-    // Calculate current streak
-    let streak = 0;
-    const todayStr = new Date().toDateString();
-    const yesterdayDate = new Date();
-    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-    const yesterdayStr = yesterdayDate.toDateString();
-    
-    // Check if there's a run today or yesterday to start counting the streak
-    if (runDays.has(todayStr) || runDays.has(yesterdayStr)) {
-      // Initialize with the first day (today or yesterday)
-      streak = runDays.has(todayStr) ? 1 : 1;
-      
-      // Start checking from yesterday or the day before
-      let checkDate = runDays.has(todayStr) ? yesterdayDate : new Date(yesterdayDate);
-      checkDate.setDate(checkDate.getDate() - (runDays.has(todayStr) ? 0 : 1));
-      
-      // Check consecutive days backwards with a limit to avoid excess processing
-      let maxIterations = 365; // Limit to a year
-      while (runDays.has(checkDate.toDateString()) && maxIterations-- > 0) {
-        streak++;
-        checkDate.setDate(checkDate.getDate() - 1);
-      }
-    }
-    
-    newStats.currentStreak = streak;
+    // Get the start of this month
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    startOfMonth.setHours(0, 0, 0, 0);
 
     // Process each run for other stats
     runs.forEach((run) => {
@@ -224,10 +117,9 @@ export const useRunStats = (runHistory, userProfile) => {
         newStats.longestRun = run.distance;
       }
 
-      // Pace calculations
+      // Pace calculations using RunDataService
       // Calculate pace in minutes per unit (km or mi)
-      const distanceInSelectedUnit = distanceUnit === 'km' ? run.distance / 1000 : run.distance / 1609.344;
-      const pace = run.duration / 60 / distanceInSelectedUnit;
+      const pace = runDataService.calculatePace(run.distance, run.duration, distanceUnit);
       
       // Apply reasonable limits (2-20 min/unit)
       const validPace = !isNaN(pace) && pace >= 2 && pace <= 20;
@@ -262,47 +154,95 @@ export const useRunStats = (runHistory, userProfile) => {
       
       // This week and month distances
       const runDate = new Date(run.date);
-      if (runDate >= weekStart) {
-        newStats.thisWeekDistance += run.distance;
+      if (!isNaN(runDate.getTime())) {
+        // Format the date as YYYY-MM-DD for consistent grouping
+        const dateKey = runDate.toISOString().split('T')[0];
+        runsByDate[dateKey] = true;
+        
+        // Check if run is from this week
+        if (runDate >= startOfWeek) {
+          newStats.thisWeekDistance += run.distance;
+        }
+        
+        // Check if run is from this month
+        if (runDate >= startOfMonth) {
+          newStats.thisMonthDistance += run.distance;
+        }
       }
-      if (runDate >= monthStart) {
-        newStats.thisMonthDistance += run.distance;
-      }
-      
-      // Calories
+
+      // Calculate calories burned
       const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration);
-      if (!isNaN(caloriesBurned)) {
-        totalCalories += caloriesBurned;
-      }
+      newStats.totalCaloriesBurned += caloriesBurned;
     });
 
-    // Calculate average pace only if there's at least one valid run
-    newStats.averagePace = validPaceCount > 0 ? totalPace / validPaceCount : 0;
-    
-    // Set fastestPace to 0 if it's still Infinity
-    if (newStats.fastestPace === Infinity) {
-      newStats.fastestPace = 0;
+    // Calculate average pace if we have valid pace data
+    if (validPaceCount > 0) {
+      newStats.averagePace = totalPace / validPaceCount;
     }
-
-    // Set personal bests to 0 if they remain at Infinity
-    Object.keys(newStats.personalBests).forEach(key => {
-      if (newStats.personalBests[key] === Infinity) {
-        newStats.personalBests[key] = 0;
-      }
-    });
-
-    // Set total calories burned
-    newStats.totalCaloriesBurned = Math.round(totalCalories);
     
-    // Calculate average calories per KM/MI
-    const distanceInSelectedUnit = distanceUnit === 'km' ? 
-      newStats.totalDistance / 1000 : 
-      newStats.totalDistance / 1609.344;
+    // Calculate average calories per km
+    if (newStats.totalDistance > 0) {
+      const distanceInKm = newStats.totalDistance / 1000;
+      newStats.averageCaloriesPerKm = newStats.totalCaloriesBurned / distanceInKm;
+    }
+    
+    // Reset PBs if they weren't set
+    if (newStats.personalBests['5k'] === 99999) newStats.personalBests['5k'] = 0;
+    if (newStats.personalBests['10k'] === 99999) newStats.personalBests['10k'] = 0;
+    if (newStats.personalBests['halfMarathon'] === 99999) newStats.personalBests['halfMarathon'] = 0;
+    if (newStats.personalBests['marathon'] === 99999) newStats.personalBests['marathon'] = 0;
+    
+    // Calculate streaks
+    const dates = Object.keys(runsByDate).sort();
+    if (dates.length > 0) {
+      // Convert date strings to timestamps for easier comparison
+      const timestamps = dates.map(d => new Date(d).getTime());
       
-    newStats.averageCaloriesPerKm = distanceInSelectedUnit > 0 
-      ? totalCalories / distanceInSelectedUnit 
-      : 0;
-
+      // Current streak
+      let currentStreak = 0;
+      const yesterday = today - 86400000; // 24 hours in milliseconds
+      
+      // Check if there's a run today or yesterday to start the streak
+      if (timestamps.includes(today) || timestamps.includes(yesterday)) {
+        currentStreak = 1;
+        
+        // Go back in time day by day
+        let checkDate = yesterday;
+        while (true) {
+          checkDate -= 86400000; // Go back one day
+          
+          // If we find a run on this day, increment streak
+          if (timestamps.includes(checkDate)) {
+            currentStreak++;
+          } else {
+            // Streak is broken
+            break;
+          }
+        }
+      }
+      
+      // Best streak
+      let bestStreak = 0;
+      let currentBestStreak = 1;
+      
+      for (let i = 1; i < timestamps.length; i++) {
+        // Check if dates are consecutive
+        if (timestamps[i] - timestamps[i-1] <= 86400000) {
+          currentBestStreak++;
+        } else {
+          // Update best streak and reset current
+          bestStreak = Math.max(bestStreak, currentBestStreak);
+          currentBestStreak = 1;
+        }
+      }
+      
+      // Update best streak one more time after the loop
+      bestStreak = Math.max(bestStreak, currentBestStreak);
+      
+      newStats.currentStreak = currentStreak;
+      newStats.bestStreak = bestStreak;
+    }
+    
     setStats(newStats);
   }, [distanceUnit, calculateCaloriesBurned]);
 
@@ -310,6 +250,7 @@ export const useRunStats = (runHistory, userProfile) => {
     stats,
     distanceUnit,
     setDistanceUnit,
+    toggleDistanceUnit,
     calculateStats,
     calculateCaloriesBurned
   };

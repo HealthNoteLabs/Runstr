@@ -1,6 +1,6 @@
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { NostrContext } from '../contexts/NostrContext';
-import { initializeNostr, fetchEvents } from '../utils/nostr';
+import { initializeNostr, fetchEvents } from '../utils/nostrClient';
 
 export const Events = () => {
   const { publicKey } = useContext(NostrContext);

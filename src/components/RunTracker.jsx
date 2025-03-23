@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useRunTracker } from '../contexts/RunTrackerContext';
-import { convertDistance, formatPaceWithUnit, formatTime, formatElevation } from '../utils/formatters';
+import { convertDistance, formatPaceWithUnit, formatTime, formatElevation, formatPace } from '../utils/formatters';
 import { PermissionDialog } from './PermissionDialog';
 import { createAndPublishEvent } from '../utils/nostr';
 import { displayDistance } from '../utils/formatters';
+import SplitsTable from './SplitsTable';
+import runDataService from '../services/RunDataService';
 
 export const RunTracker = () => {
   const { 
@@ -203,6 +205,18 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     localStorage.setItem('distanceUnit', newUnit);
   };
 
+  // Format pace for display
+  const formattedPace = formatPaceWithUnit(
+    pace,
+    distanceUnit
+  );
+  
+  // Replace the direct pace calculation with RunDataService calculation
+  // when using the pace for any calculations in component
+  const calculateConsistentPace = (distance, duration, unit) => {
+    return runDataService.calculatePace(distance, duration, unit);
+  };
+
   return (
     <div className="w-full h-full flex flex-col bg-[#111827] text-white relative">
       {/* Stats Grid */}
@@ -245,8 +259,8 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             </div>
             <span className="text-sm text-gray-400">Pace</span>
           </div>
-          <div className="text-3xl font-bold">{formatPaceWithUnit(pace, distanceUnit).split(' ')[0]}</div>
-          <div className="text-sm text-gray-400">min/{distanceUnit}</div>
+          <div className="text-3xl font-bold">{formattedPace.split(' ')[0]}</div>
+          <div className="text-sm text-gray-400">{formattedPace.split(' ')[1]}</div>
         </div>
 
         {/* Elevation Card */}

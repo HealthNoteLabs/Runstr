@@ -3,20 +3,106 @@ import { useParams } from 'react-router-dom';
 import { NostrContext } from '../contexts/NostrContext';
 import { 
   initializeNostr, 
-  createChannel,
-  sendChannelMessage, 
-  fetchChannelMessages, 
-  searchChannels,
-  hideChannelMessage,
-  muteChannelUser,
-  getHiddenMessages,
-  getMutedUsers,
-  sendChannelInvite,
-  GROUP_KINDS,
+  createAndPublishEvent as createEvent,
+  fetchEvents,
   subscribe,
-  fetchEvents
-} from '../utils/nostr';
+} from '../utils/nostrClient';
 import '../components/RunClub.css';
+
+// Constants for group kinds
+const GROUP_KINDS = {
+  CHANNEL_CREATION: 40,
+  CHANNEL_METADATA: 41,
+  CHANNEL_MESSAGE: 42,
+  CHANNEL_HIDE_MESSAGE: 43,
+  CHANNEL_MUTE_USER: 44,
+  CHANNEL_INVITE: 45,
+};
+
+// Helper functions for channels
+const createChannel = async (metadata) => {
+  return createEvent({
+    kind: GROUP_KINDS.CHANNEL_CREATION,
+    content: JSON.stringify(metadata),
+    tags: []
+  });
+};
+
+const sendChannelMessage = async (channelId, content) => {
+  return createEvent({
+    kind: GROUP_KINDS.CHANNEL_MESSAGE,
+    content,
+    tags: [['e', channelId, '', 'root']]
+  });
+};
+
+const fetchChannelMessages = async (channelId) => {
+  return fetchEvents({
+    kinds: [GROUP_KINDS.CHANNEL_MESSAGE],
+    '#e': [channelId],
+    limit: 100
+  });
+};
+
+const searchChannels = async (query) => {
+  const results = await fetchEvents({
+    kinds: [GROUP_KINDS.CHANNEL_CREATION],
+    limit: 50
+  });
+  
+  if (!query) return results;
+  
+  // Filter by query if provided
+  return results.filter(event => {
+    try {
+      const metadata = JSON.parse(event.content);
+      return metadata.name.toLowerCase().includes(query.toLowerCase());
+    } catch {
+      return false;
+    }
+  });
+};
+
+const hideChannelMessage = async (messageId) => {
+  return createEvent({
+    kind: GROUP_KINDS.CHANNEL_HIDE_MESSAGE,
+    content: '',
+    tags: [['e', messageId]]
+  });
+};
+
+const muteChannelUser = async (userPubkey) => {
+  return createEvent({
+    kind: GROUP_KINDS.CHANNEL_MUTE_USER,
+    content: '',
+    tags: [['p', userPubkey]]
+  });
+};
+
+const getHiddenMessages = async () => {
+  return fetchEvents({
+    kinds: [GROUP_KINDS.CHANNEL_HIDE_MESSAGE],
+    limit: 100
+  });
+};
+
+const getMutedUsers = async () => {
+  return fetchEvents({
+    kinds: [GROUP_KINDS.CHANNEL_MUTE_USER],
+    limit: 100
+  });
+};
+
+const sendChannelInvite = async (channelId, recipientPubkey) => {
+  return createEvent({
+    kind: GROUP_KINDS.CHANNEL_INVITE,
+    content: '',
+    tags: [
+      ['e', channelId, '', 'root'],
+      ['p', recipientPubkey]
+    ]
+  });
+};
 
 export const Team = () => {
   const { teamId } = useParams();
@@ -87,7 +173,7 @@ export const Team = () => {
 
     // Create the subscription filter
     const filter = {
-      kinds: [GROUP_KINDS.MESSAGE],
+      kinds: [GROUP_KINDS.CHANNEL_MESSAGE],
       '#e': [channelId],
       limit: 50
     };
@@ -133,7 +219,7 @@ export const Team = () => {
     if (!pubkey || !messageId) return;
     
     try {
-      await hideChannelMessage(messageId, "Hidden by user");
+      await hideChannelMessage(messageId);
       
       // Update local state
       setHiddenMessages(prevHidden => {
@@ -158,7 +244,7 @@ export const Team = () => {
     if (!pubkey || !userPubkey) return;
     
     try {
-      await muteChannelUser(userPubkey, "Muted by user");
+      await muteChannelUser(userPubkey);
       
       // Update local state
       setMutedUsers(prevMuted => {
@@ -264,7 +350,7 @@ export const Team = () => {
 
       // Fetch user's messages in channels
       const userMessageFilter = {
-        kinds: [GROUP_KINDS.MESSAGE],
+        kinds: [GROUP_KINDS.CHANNEL_MESSAGE],
         authors: [pubkey],
         limit: 100
       };
@@ -283,7 +369,7 @@ export const Team = () => {
       }).filter(Boolean);
       
       const channelFilter = {
-        kinds: [GROUP_KINDS.METADATA],
+        kinds: [GROUP_KINDS.CHANNEL_METADATA],
         ids: channelIds,
         limit: 20
       };
@@ -339,7 +425,7 @@ export const Team = () => {
     try {
       // First, fetch the team metadata
       const channelFilter = {
-        kinds: [GROUP_KINDS.METADATA],
+        kinds: [GROUP_KINDS.CHANNEL_METADATA],
         ids: [teamId],
         limit: 1
       };

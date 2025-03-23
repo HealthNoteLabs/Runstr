@@ -90,21 +90,8 @@ export const RunTrackerProvider = ({ children }) => {
 
       // Handler for saving completed runs to localStorage
       const handleRunStopped = (finalResults) => {
-        // Get existing run history
-        const existingRuns = JSON.parse(localStorage.getItem('runHistory') || '[]');
-        
-        // Create new run entry with current date and generated ID
-        const newRun = {
-          id: Date.now() + '-' + Math.random().toString(36).substr(2, 9),
-          date: new Date().toLocaleDateString(),
-          ...finalResults
-        };
-        
-        // Add to history and save
-        const updatedRuns = [newRun, ...existingRuns];
-        localStorage.setItem('runHistory', JSON.stringify(updatedRuns));
-        
-        console.log('Run saved to history:', newRun);
+        console.log('Run completed:', finalResults);
+        // The actual saving is now handled by the RunTracker service using RunDataService
       };
 
       // Subscribe to events from the run tracker

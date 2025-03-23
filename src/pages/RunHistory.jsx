@@ -3,6 +3,7 @@ import { createAndPublishEvent } from '../utils/nostr';
 import { useRunStats } from '../hooks/useRunStats';
 import { useRunProfile } from '../hooks/useRunProfile';
 import { formatTime, displayDistance, formatElevation, formatDate } from '../utils/formatters';
+import runDataService from '../services/RunDataService';
 
 export const RunHistory = () => {
   // State for run history
@@ -11,23 +12,24 @@ export const RunHistory = () => {
   const [additionalContent, setAdditionalContent] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
+  const [distanceUnit, setDistanceUnit] = useState(() => localStorage.getItem('distanceUnit') || 'km');
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [npub, setNpub] = useState(() => localStorage.getItem('currentNpub'));
+  const [publishEnabled, setPublishEnabled] = useState(false);
 
   // Get user profile and distance unit from custom hooks
   const { 
-    userProfile, 
-    showProfileModal, 
-    setShowProfileModal, 
+    profile, 
+    updateUserProfile,
     handleProfileChange, 
     handleProfileSubmit 
   } = useRunProfile();
 
   const {
     stats,
-    distanceUnit,
-    setDistanceUnit,
     calculateStats,
     calculateCaloriesBurned
-  } = useRunStats(runHistory, userProfile);
+  } = useRunStats(runHistory, profile);
 
   // Load run history on component mount and listen for updates
   useEffect(() => {
@@ -85,92 +87,86 @@ export const RunHistory = () => {
 
   // Load and process run history from localStorage
   const loadRunHistory = () => {
-    const storedRuns = localStorage.getItem('runHistory');
-    if (storedRuns) {
-      try {
-        // Parse stored runs
-        const parsedRuns = JSON.parse(storedRuns);
-        
-        // Create a map to store unique runs by their date and metrics
-        const uniqueRunsMap = new Map();
-        const seenIds = new Set();
-        const now = new Date();
-        
-        // First pass: identify unique runs and fix missing IDs, future dates, and unrealistic values
-        const fixedRuns = parsedRuns.reduce((acc, run) => {
-          // Fix future dates - replace with current date
-          let runDate = new Date(run.date);
-          if (isNaN(runDate.getTime()) || runDate > now) {
-            run.date = now.toLocaleDateString();
-          }
-          
-          // Fix unrealistic distance values (>100 km is extremely unlikely for normal runs)
-          const MAX_REALISTIC_DISTANCE = 100 * 1000; // 100 km in meters
-          if (isNaN(run.distance) || run.distance <= 0) {
-            run.distance = 5000; // Default to 5 km for invalid distances
-          } else if (run.distance > MAX_REALISTIC_DISTANCE) {
-            run.distance = Math.min(run.distance, MAX_REALISTIC_DISTANCE);
-          }
-          
-          // Fix unrealistic durations (>24 hours is extremely unlikely)
-          const MAX_DURATION = 24 * 60 * 60; // 24 hours in seconds
-          if (isNaN(run.duration) || run.duration <= 0) {
-            run.duration = 30 * 60; // Default to 30 minutes for invalid durations
-          } else if (run.duration > MAX_DURATION) {
-            run.distance = Math.min(run.duration, MAX_DURATION);
-          }
-          
-          // Create a signature for each run based on key properties
-          const runSignature = `${run.date}-${run.distance}-${run.duration}`;
-          
-          // If this is a duplicate entry (same date, distance, duration)
-          // and we've already seen it, skip it
-          if (uniqueRunsMap.has(runSignature)) {
-            return acc;
-          }
-          
-          // Ensure run has a valid ID
-          let runWithId = { ...run };
-          if (!run.id || seenIds.has(run.id)) {
-            runWithId.id = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-          }
-          
-          // Mark this ID as seen
-          seenIds.add(runWithId.id);
-          
-          // Mark this run signature as seen
-          uniqueRunsMap.set(runSignature, true);
-          
-          // Add to our accumulator
-          acc.push(runWithId);
-          return acc;
-        }, []);
-        
-        // Save the fixed runs back to localStorage if needed
-        if (fixedRuns.length !== parsedRuns.length || 
-            fixedRuns.some((run, i) => 
-              run.id !== parsedRuns[i]?.id || 
-              run.date !== parsedRuns[i]?.date ||
-              run.distance !== parsedRuns[i]?.distance ||
-              run.duration !== parsedRuns[i]?.duration
-            )) {
-          localStorage.setItem('runHistory', JSON.stringify(fixedRuns));
-          console.log(`Fixed run history: Removed duplicates and fixed dates, distances, and durations`);
+    try {
+      // Use RunDataService to get runs instead of directly from localStorage
+      const parsedRuns = runDataService.getAllRuns();
+      
+      // Create a map to store unique runs by their date and metrics
+      const uniqueRunsMap = new Map();
+      const seenIds = new Set();
+      const now = new Date();
+      
+      // First pass: identify unique runs and fix missing IDs, future dates, and unrealistic values
+      const fixedRuns = parsedRuns.reduce((acc, run) => {
+        // Fix future dates - replace with current date
+        let runDate = new Date(run.date);
+        if (isNaN(runDate.getTime()) || runDate > now) {
+          run.date = now.toLocaleDateString();
+          // Update the run using the service
+          runDataService.updateRun(run.id, { date: run.date });
         }
         
-        setRunHistory(fixedRuns);
+        // Fix unrealistic distance values (>100 km is extremely unlikely for normal runs)
+        const MAX_REALISTIC_DISTANCE = 100 * 1000; // 100 km in meters
+        if (isNaN(run.distance) || run.distance <= 0) {
+          run.distance = 5000; // Default to 5 km for invalid distances
+          // Update the run using the service
+          runDataService.updateRun(run.id, { distance: run.distance });
+        } else if (run.distance > MAX_REALISTIC_DISTANCE) {
+          run.distance = Math.min(run.distance, MAX_REALISTIC_DISTANCE);
+          // Update the run using the service
+          runDataService.updateRun(run.id, { distance: run.distance });
+        }
         
-        // Android optimization: Use requestAnimationFrame for non-urgent UI updates
-        requestAnimationFrame(() => {
-          if (fixedRuns.length > 0) {
-            calculateStats(fixedRuns);
-          }
-        });
-      } catch (error) {
-        console.error('Error loading run history:', error);
-        // If there's an error, try to recover with an empty array
-        setRunHistory([]);
-      }
+        // Fix unrealistic durations (>24 hours is extremely unlikely)
+        const MAX_DURATION = 24 * 60 * 60; // 24 hours in seconds
+        if (isNaN(run.duration) || run.duration <= 0) {
+          run.duration = 30 * 60; // Default to 30 minutes for invalid durations
+          // Update the run using the service
+          runDataService.updateRun(run.id, { duration: run.duration });
+        } else if (run.duration > MAX_DURATION) {
+          run.duration = Math.min(run.duration, MAX_DURATION);
+          // Update the run using the service
+          runDataService.updateRun(run.id, { duration: run.duration });
+        }
+        
+        // Skip the rest of the checks if this run doesn't have an ID
+        if (!run.id) {
+          run.id = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+          // Update the run using the service
+          runDataService.updateRun(run.id, { id: run.id });
+        }
+        
+        // Create a signature for each run based on key properties
+        const runSignature = `${run.date}-${run.distance}-${run.duration}`;
+        
+        // If this is a duplicate entry (same date, distance, duration)
+        // and we've already seen it, skip it
+        if (uniqueRunsMap.has(runSignature)) {
+          return acc;
+        }
+
+        // Otherwise, this is a unique run, add it to the map and output
+        if (!seenIds.has(run.id)) {
+          uniqueRunsMap.set(runSignature, run);
+          seenIds.add(run.id);
+          acc.push(run);
+        }
+        
+        return acc;
+      }, []);
+
+      // Sort runs by date (newest first)
+      fixedRuns.sort((a, b) => {
+        const dateA = new Date(a.date);
+        const dateB = new Date(b.date);
+        return dateB - dateA;
+      });
+
+      setRunHistory(fixedRuns);
+    } catch (error) {
+      console.error('Error loading run history:', error);
+      setRunHistory([]);
     }
   };
 
@@ -421,10 +417,8 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           {runHistory.map((run) => {
             const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration);
             
-            // Calculate pace with proper validation
-            const pace = run.distance > 0.01 
-              ? (run.duration / 60 / (distanceUnit === 'km' ? run.distance/1000 : run.distance/1609.344)).toFixed(2) 
-              : '0.00';
+            // Calculate pace with the consistent service method
+            const pace = runDataService.calculatePace(run.distance, run.duration, distanceUnit).toFixed(2);
             
             return (
               <li key={run.id} className="history-item">
@@ -499,7 +493,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <input
                 id="weight"
                 type="number"
-                value={userProfile.weight}
+                value={profile.weight}
                 onChange={(e) => handleProfileChange('weight', Number(e.target.value))}
               />
             </div>
@@ -512,7 +506,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                     type="number"
                     min="0"
                     max="8"
-                    value={userProfile.heightFeet}
+                    value={profile.heightFeet}
                     onChange={(e) => handleProfileChange('heightFeet', Number(e.target.value))}
                   />
                   <label htmlFor="heightFeet">ft</label>
@@ -523,7 +517,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                     type="number"
                     min="0"
                     max="11"
-                    value={userProfile.heightInches}
+                    value={profile.heightInches}
                     onChange={(e) => handleProfileChange('heightInches', Number(e.target.value))}
                   />
                   <label htmlFor="heightInches">in</label>
@@ -534,7 +528,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <label htmlFor="gender">Gender</label>
               <select
                 id="gender"
-                value={userProfile.gender}
+                value={profile.gender}
                 onChange={(e) => handleProfileChange('gender', e.target.value)}
               >
                 <option value="male">Male</option>
@@ -546,7 +540,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <input
                 id="age"
                 type="number"
-                value={userProfile.age}
+                value={profile.age}
                 onChange={(e) => handleProfileChange('age', Number(e.target.value))}
               />
             </div>
@@ -554,7 +548,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <label htmlFor="fitnessLevel">Fitness Level</label>
               <select
                 id="fitnessLevel"
-                value={userProfile.fitnessLevel}
+                value={profile.fitnessLevel}
                 onChange={(e) => handleProfileChange('fitnessLevel', e.target.value)}
               >
                 <option value="beginner">Beginner</option>

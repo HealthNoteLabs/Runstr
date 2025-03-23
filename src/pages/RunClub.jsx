@@ -4,13 +4,14 @@ import { useAuth } from '../hooks/useAuth';
 import { useRunFeed } from '../hooks/useRunFeed';
 import { usePostInteractions } from '../hooks/usePostInteractions';
 import { PostList } from '../components/PostList';
+import { fetchEvents } from '../utils/nostr';
 
 export const RunClub = () => {
   const { defaultZapAmount } = useContext(NostrContext);
   const { wallet } = useAuth();
-  const [retryCount, setRetryCount] = useState(0);
+  const [diagnosticInfo, setDiagnosticInfo] = useState('');
   
-  // Use the custom hooks optimized for Android
+  // Use the custom hooks
   const {
     posts,
     setPosts,
@@ -44,72 +45,44 @@ export const RunClub = () => {
     defaultZapAmount
   });
 
-  // Implement a more robust retry mechanism
-  const handleRetry = () => {
-    setRetryCount(prev => prev + 1);
-    console.log(`Retry attempt ${retryCount + 1}`);
-    fetchRunPostsViaSubscription();
+  // Simple diagnostic function to test connectivity
+  const diagnoseConnection = async () => {
+    setDiagnosticInfo('Testing connection to Nostr relays...');
+    try {
+      // Fetch a single event to test connectivity
+      const testEvents = await fetchEvents({
+        kinds: [1],
+        limit: 1
+      });
+      
+      if (testEvents && testEvents.length > 0) {
+        setDiagnosticInfo(`Connection successful! Fetched ${testEvents.length} test event(s).`);
+        console.log('Test events:', testEvents);
+      } else {
+        setDiagnosticInfo('Connection seems to work but no events returned. Try again or check console for details.');
+      }
+    } catch (error) {
+      setDiagnosticInfo(`Connection error: ${error.message}`);
+      console.error('Diagnostic error:', error);
+    }
   };
 
-  // Android-specific scroll handler with throttling for performance
+  // Simple scroll handler
   useEffect(() => {
-    let isThrottled = false;
-    const throttleTime = 300; // ms
-    
     const handleScroll = () => {
-      if (isThrottled) return;
+      const scrollPosition = window.scrollY || document.documentElement.scrollTop;
+      const height = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+      const screenHeight = window.innerHeight || document.documentElement.clientHeight;
       
-      isThrottled = true;
-      setTimeout(() => {
-        isThrottled = false;
-      }, throttleTime);
-      
-      const scrollPosition = 
-        window.scrollY || 
-        document.documentElement.scrollTop ||
-        document.body.scrollTop || 
-        0;
-      
-      const height = Math.max(
-        document.body.scrollHeight,
-        document.documentElement.scrollHeight
-      );
-      
-      const screenHeight = 
-        window.innerHeight ||
-        document.documentElement.clientHeight ||
-        document.body.clientHeight || 
-        0;
-      
-      // Load more when we're 400px from the bottom (more buffer for mobile)
-      if (scrollPosition + screenHeight > height - 400) {
-        console.log('Android scroll trigger - loading more posts');
+      // Load more when we're close to the bottom
+      if (scrollPosition + screenHeight > height - 300) {
         loadMorePosts();
       }
     };
 
-    // Add passive listener for better scroll performance on Android
     window.addEventListener('scroll', handleScroll, { passive: true });
-    
     return () => window.removeEventListener('scroll', handleScroll);
   }, [loadMorePosts]);
-
-  // Auto-retry with increasing delay if initial load fails
-  useEffect(() => {
-    if (error && retryCount < 3) {
-      // Retry with exponential backoff
-      const backoffTime = 2000 * Math.pow(2, retryCount);
-      console.log(`Scheduling automatic retry #${retryCount + 1} in ${backoffTime}ms`);
-      
-      const retryTimeout = setTimeout(() => {
-        console.log(`Auto-retry attempt #${retryCount + 1}`);
-        fetchRunPostsViaSubscription();
-        setRetryCount(prev => prev + 1);
-      }, backoffTime);
-      
-      return () => clearTimeout(retryTimeout);
-    }
-  }, [error, retryCount, fetchRunPostsViaSubscription]);
 
   return (
     <div className="run-club-container">
@@ -122,21 +95,32 @@ export const RunClub = () => {
       ) : error ? (
         <div className="error-message">
           <p>{error}</p>
-          <p className="retry-attempts">{retryCount > 0 ? `Retry attempts: ${retryCount}/3` : ''}</p>
-          <button 
-            className="retry-button" 
-            onClick={handleRetry}
-            disabled={retryCount >= 3}
-          >
-            {retryCount >= 3 ? 'Max retries reached' : 'Retry'}
-          </button>
+          <div className="error-buttons">
+            <button 
+              className="retry-button" 
+              onClick={fetchRunPostsViaSubscription}
+            >
+              Retry
+            </button>
+            <button 
+              className="diagnose-button" 
+              onClick={diagnoseConnection}
+            >
+              Diagnose Connection
+            </button>
+          </div>
+          {diagnosticInfo && (
+            <div className="diagnostic-info">
+              <p>{diagnosticInfo}</p>
+            </div>
+          )}
         </div>
       ) : posts.length === 0 ? (
         <div className="no-posts-message">
           <p>No running posts found</p>
           <button 
             className="retry-button" 
-            onClick={handleRetry}
+            onClick={fetchRunPostsViaSubscription}
           >
             Refresh
           </button>

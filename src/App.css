@@ -2468,7 +2468,7 @@ textarea {
 /* Profile Button */
 .profile-btn {
   padding: 8px 16px;
-  background-color: #4a90e2;
+  background-color: var(--primary-color);
   color: white;
   border: none;
   border-radius: 4px;
@@ -2479,7 +2479,7 @@ textarea {
 }
 
 .profile-btn:hover {
-  background-color: #3a7bc8;
+  background-color: var(--primary-hover);
 }
 
 /* Calorie Stats Section */
