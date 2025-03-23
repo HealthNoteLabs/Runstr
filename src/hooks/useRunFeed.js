@@ -208,6 +208,32 @@ export const useRunFeed = () => {
       
       console.log('Creating subscription for running posts since', new Date(since * 1000).toISOString());
       
+      // First try direct fetch with broader tags for initial load
+      try {
+        console.log('Attempting direct fetch first...');
+        
+        const directEvents = await fetchEvents({
+          kinds: [1],
+          since,
+          "#t": ["running", "run", "runner", "runstr", "5k", "10k", "marathon"],
+          limit: 40
+        });
+        
+        if (directEvents && directEvents.length > 0) {
+          console.log(`Direct fetch successful, got ${directEvents.length} posts`);
+          const processedPosts = await processPostData(directEvents);
+          setPosts(processedPosts);
+          setLoading(false);
+          
+          // Continue with subscription for real-time updates
+        } else {
+          console.log('Direct fetch returned no events, trying broader search...');
+        }
+      } catch (error) {
+        console.warn('Direct fetch failed:', error);
+        // Continue with subscription approach
+      }
+      
       // Collect events
       const runEventsCollector = [];
       
@@ -233,27 +259,34 @@ export const useRunFeed = () => {
           console.log('No tagged running posts found, trying content search');
           setError(null);
           
-          const broadEvents = await fetchEvents({
-            kinds: [1],
-            since,
-            limit: 100
-          });
-          
-          // Filter for running-related content
-          const runningTerms = ['run', 'running', 'marathon', 'jog', '5k', '10k', 'strava', 'workout', 'training'];
-          const filteredEvents = broadEvents.filter(event => {
-            const content = event.content.toLowerCase();
-            return runningTerms.some(term => content.includes(term));
-          });
-          
-          if (filteredEvents.length > 0) {
-            console.log(`Found ${filteredEvents.length} running-related posts by content`);
-            const processedPosts = await processPostData(filteredEvents);
-            setPosts(processedPosts);
-            setLoading(false);
-            return;
-          } else {
-            setError('No running posts found. Please try again later.');
+          try {
+            const broadEvents = await fetchEvents({
+              kinds: [1],
+              since,
+              limit: 100
+            });
+            
+            // Filter for running-related content
+            const runningTerms = ['run', 'running', 'marathon', 'jog', '5k', '10k', 'strava', 'workout', 'training'];
+            const filteredEvents = broadEvents.filter(event => {
+              const content = event.content.toLowerCase();
+              return runningTerms.some(term => content.includes(term));
+            });
+            
+            if (filteredEvents.length > 0) {
+              console.log(`Found ${filteredEvents.length} running-related posts by content`);
+              const processedPosts = await processPostData(filteredEvents);
+              setPosts(processedPosts);
+              setLoading(false);
+              return;
+            } else {
+              setError('No running posts found. Please try again later.');
+              setLoading(false);
+              return;
+            }
+          } catch (error) {
+            console.error('Error in broad search:', error);
+            setError('Failed to load posts. Please try again.');
             setLoading(false);
             return;
           }
@@ -296,11 +329,38 @@ export const useRunFeed = () => {
               setLoading(false);
             });
           } else {
-            setError('Timed out waiting for posts. Please try again.');
-            setLoading(false);
+            // Attempt one final direct fetch without tags
+            fetchEvents({
+              kinds: [1],
+              since,
+              limit: 50
+            }).then(directEvents => {
+              if (directEvents && directEvents.length > 0) {
+                // Filter for running-related content
+                const runningTerms = ['run', 'running', 'marathon', 'jog', '5k', '10k', 'strava', 'workout', 'training'];
+                const filteredEvents = directEvents.filter(event => {
+                  const content = event.content.toLowerCase();
+                  return runningTerms.some(term => content.includes(term));
+                });
+                
+                if (filteredEvents.length > 0) {
+                  processPostData(filteredEvents).then(processedPosts => {
+                    setPosts(processedPosts);
+                    setLoading(false);
+                  });
+                  return;
+                }
+              }
+              
+              setError('Timed out waiting for posts. Please try again.');
+              setLoading(false);
+            }).catch(() => {
+              setError('Timed out waiting for posts. Please try again.');
+              setLoading(false);
+            });
           }
         }
-      }, 15000);
+      }, 20000);
       
     } catch (err) {
       console.error('Error fetching running posts:', err);

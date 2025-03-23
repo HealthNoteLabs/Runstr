@@ -49,17 +49,31 @@ export const RunClub = () => {
   const diagnoseConnection = async () => {
     setDiagnosticInfo('Testing connection to Nostr relays...');
     try {
+      // Try to initialize Nostr first
+      const { initializeNostr } = await import('../utils/nostr');
+      const initialized = await initializeNostr();
+      
+      if (!initialized) {
+        setDiagnosticInfo('Failed to connect to any relays. Check your network connection.');
+        return;
+      }
+      
       // Fetch a single event to test connectivity
       const testEvents = await fetchEvents({
         kinds: [1],
-        limit: 1
+        limit: 10,
+        since: Math.floor(Date.now() / 1000) - (24 * 60 * 60) // Last 24 hours
       });
       
       if (testEvents && testEvents.length > 0) {
         setDiagnosticInfo(`Connection successful! Fetched ${testEvents.length} test event(s).`);
         console.log('Test events:', testEvents);
+        
+        // Trigger a feed refresh after successful diagnostic
+        fetchRunPostsViaSubscription();
       } else {
-        setDiagnosticInfo('Connection seems to work but no events returned. Try again or check console for details.');
+        setDiagnosticInfo('Connection seems to work but no events returned. This could be due to relay availability issues. Try again or check browser console for details.');
+        console.warn('No events received in diagnostic test');
       }
     } catch (error) {
       setDiagnosticInfo(`Connection error: ${error.message}`);

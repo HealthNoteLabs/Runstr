@@ -5381,4 +5381,10 @@ input:checked + .toggle-slider:before {
 .header-player-expanded {
   position: relative;
   z-index: 1000;
+  width: 220px; /* Increase the width to accommodate the controls */
+}
+
+.header-player-expanded .absolute {
+  min-width: 220px;
+  width: auto;
 }

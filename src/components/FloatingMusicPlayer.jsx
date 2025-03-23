@@ -32,7 +32,7 @@ export function FloatingMusicPlayer() {
             <p className="text-sm font-medium truncate">{currentTrack.title}</p>
             <p className="text-xs text-gray-400 truncate">{currentTrack.artist || 'Unknown Artist'}</p>
           </div>
-          <div className="flex justify-center space-x-6">
+          <div className="flex justify-center space-x-8">
             <button onClick={playPrevious} className="text-gray-300">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />

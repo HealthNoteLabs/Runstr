@@ -14,7 +14,12 @@ const relays = [
   'wss://nos.lol',
   'wss://relay.nostr.band',
   'wss://relay.snort.social',
-  'wss://purplepag.es'
+  'wss://purplepag.es',
+  'wss://nostr.fmt.wiz.biz',
+  'wss://nostr.wine',
+  'wss://eden.nostr.land',
+  'wss://relay.current.fyi',
+  'wss://nostr-pub.wellorder.net'
 ];
 
 // Storage for keys
@@ -70,8 +75,24 @@ export const fetchEvents = async (filter) => {
       filter.limit = 50;
     }
     
-    // Simple fetch with timeout
-    const events = await pool.list(relays, [filter], { timeout: 10000 });
+    // Make sure we have at least one active relay connection
+    let connectedRelays = 0;
+    for (const relay of relays) {
+      try {
+        pool.ensureRelay(relay);
+        connectedRelays++;
+      } catch (error) {
+        console.warn(`Could not connect to relay: ${relay}`, error);
+      }
+    }
+    
+    if (connectedRelays === 0) {
+      console.error('No relays connected, trying to reinitialize...');
+      await initializeNostr();
+    }
+    
+    // Simple fetch with increased timeout
+    const events = await pool.list(relays, [filter], { timeout: 15000 });
     console.log(`Fetched ${events.length} events`);
     return events;
   } catch (error) {
@@ -93,14 +114,25 @@ export const subscribe = (filter) => {
     filter.limit = 30;
   }
   
+  // Make sure filter has kinds
+  if (!filter.kinds) {
+    filter.kinds = [1]; // Default to text notes
+  }
+  
+  // For better relay performance, add since if not present
+  if (!filter.since) {
+    // Default to last 24 hours if not specified
+    filter.since = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
+  }
+  
   // Create subscription
   const sub = pool.sub(relays, [filter]);
   
-  // Set a reasonable timeout to auto-close
+  // Set a longer reasonable timeout to auto-close
   const timeoutId = setTimeout(() => {
     console.log('Subscription timeout reached, closing...');
     sub.unsub();
-  }, 20000);
+  }, 30000);
   
   return {
     on: (event, callback) => {
