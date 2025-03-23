@@ -237,11 +237,33 @@ export const RunClub = () => {
       setLoading(true);
       setError(null);
 
-      await initializeNostr();
+      // Try to initialize Nostr with a retry mechanism
+      let initialized = false;
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (!initialized && retryCount < maxRetries) {
+        try {
+          initialized = await initializeNostr(retryCount > 0);
+          if (initialized) break;
+        } catch (err) {
+          console.error(`Initialization attempt ${retryCount + 1} failed:`, err);
+        }
+        retryCount++;
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1500 * retryCount));
+        }
+      }
+      
+      if (!initialized) {
+        console.error('Failed to initialize Nostr after multiple attempts');
+        throw new Error('Failed to connect to Nostr network. Please check your connection and try again.');
+      }
 
       const limit = 10;
       const since = page > 1 ? Date.now() - (page * 7 * 24 * 60 * 60 * 1000) : undefined;
-  
+    
+      console.log('Fetching run posts with tags:', ["running", "run", "runner", "runstr", "5k", "10k", "marathon", "jog"]);
       const runPosts = await ndk.fetchEvents({
         kinds: [1],
         limit,
@@ -250,6 +272,7 @@ export const RunClub = () => {
       });
 
       const postsArray = Array.from(runPosts).sort((a, b) => b.created_at - a.created_at);
+      console.log(`Fetched ${postsArray.length} run posts`);
       
       if (postsArray.length < limit) {
         setHasMore(false);
@@ -266,7 +289,7 @@ export const RunClub = () => {
       setInitialLoadComplete(true);
     } catch (err) {
       console.error('Error fetching run posts:', err);
-      setError('Failed to load posts. Please try again later.');
+      setError(err.message || 'Failed to load posts. Please try again later.');
     } finally {
       setLoading(false);
     }
@@ -282,8 +305,17 @@ export const RunClub = () => {
     let mounted = true;
     
     const init = async () => {
-      if ((page === 1 || initialLoadComplete) && mounted) {
-        await fetchRunPosts();
+      if (mounted) {
+        try {
+          // Always attempt to fetch posts on first mount
+          await fetchRunPosts();
+        } catch (err) {
+          console.error('Failed in feed initialization:', err);
+          if (mounted) {
+            setError(err.message || 'Failed to initialize feed. Please try refreshing.');
+            setLoading(false);
+          }
+        }
       }
     };
     
@@ -292,7 +324,7 @@ export const RunClub = () => {
     return () => {
       mounted = false;
     };
-  }, [fetchRunPosts, page, initialLoadComplete]);
+  }, [fetchRunPosts]); // Simplified dependency array to avoid over-fetching
 
   useEffect(() => {
     const handleScroll = () => {
@@ -731,7 +763,21 @@ export const RunClub = () => {
       {loading && page === 1 ? (
         <div className="loading-indicator">Loading posts...</div>
       ) : error ? (
-        <div className="error-message">{error}</div>
+        <div className="error-message">
+          <p>{error}</p>
+          <button 
+            className="retry-button" 
+            onClick={() => {
+              setError(null);
+              setLoading(true);
+              setPage(1);
+              setInitialLoadComplete(false);
+              fetchRunPosts();
+            }}
+          >
+            Retry
+          </button>
+        </div>
       ) : posts.length === 0 ? (
         <div className="no-posts-message">No running posts found</div>
       ) : (

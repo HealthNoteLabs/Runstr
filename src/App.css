@@ -5278,3 +5278,32 @@ input:checked + .toggle-slider:before {
   color: #666;
   line-height: 1.5;
 }
+
+.error-message {
+  text-align: center;
+  color: #e53935;
+  margin: 20px;
+  padding: 15px;
+  border-radius: 8px;
+  background-color: rgba(229, 57, 53, 0.1);
+  border: 1px solid rgba(229, 57, 53, 0.3);
+}
+
+.error-message p {
+  margin-bottom: 15px;
+}
+
+.retry-button {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.retry-button:hover {
+  background-color: #2980b9;
+}
