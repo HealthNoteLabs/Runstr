@@ -16,7 +16,6 @@ export default defineConfig({
             'react', 
             'react-dom', 
             'react-router-dom',
-            '@nostr-dev-kit/ndk',
             'nostr-tools'
           ],
           // Audio player in separate chunk
@@ -94,7 +93,6 @@ export default defineConfig({
       'react', 
       'react-dom', 
       'react-router-dom',
-      '@nostr-dev-kit/ndk',
       'nostr-tools',
       'react-h5-audio-player'
     ],
