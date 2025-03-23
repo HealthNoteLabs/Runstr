@@ -48,11 +48,11 @@ export let loggedInUser = null;
 // Initialize NDK instance with optimized settings for Android
 export const ndk = isBrowser
   ? new NDK({
-      explicitRelayUrls: PRIORITIZED_RELAYS.slice(0, 3), // Start with just 3 fastest relays
+      explicitRelayUrls: PRIORITIZED_RELAYS, // Use all prioritized relays
       enableOutboxModel: true,
       autoConnectRelays: false, // We'll handle connection manually for better control
-      autoFetchUserRelays: true, // Get user's preferred relays when available
-      connectionTimeout: 3500 // 3.5 seconds timeout - slightly longer for mobile networks
+      autoFetchUserRelays: false, // Don't use user relays, use our predefined ones only
+      connectionTimeout: 5000 // 5 seconds timeout for better connectivity
     })
   : null;
 
@@ -61,34 +61,28 @@ const connectToAdditionalRelays = async () => {
   if (!ndk) return false;
   
   // If we already have enough relays connected, don't add more
-  if (ndk.pool?.relays?.size >= 3) return true;
+  if (ndk.pool?.relays?.size >= 5) return true;
   
-  console.log(`Adding additional relays to improve connectivity...`);
+  console.log(`Adding backup relays to improve connectivity...`);
   
-  // Add remaining prioritized relays
-  const additionalRelays = [
-    ...PRIORITIZED_RELAYS.slice(3),
-    ...(ndk.pool?.relays?.size < 2 ? BACKUP_RELAYS : []) // Only use backup relays if we're really struggling
-  ];
-  
-  // Add relays to the pool
-  for (const relay of additionalRelays) {
+  // Add backup relays 
+  for (const relay of BACKUP_RELAYS) {
     if (!ndk.pool.getRelay(relay)) {
       ndk.pool.addRelay(relay);
     }
   }
   
-  // Wait a bit for connections to establish - longer for mobile
-  await new Promise(resolve => setTimeout(resolve, 1500));
+  // Wait a bit for connections to establish
+  await new Promise(resolve => setTimeout(resolve, 1000));
   
   return ndk.pool?.relays?.size > 0;
 };
 
-// Initialize NDK connection with improved strategy for mobile
+// Initialize NDK connection with prioritized relays
 export const initializeNostr = async (forceReconnect = false) => {
   if (!ndk) return false;
 
-  // Use cached connection if it's recent (within last 2 minutes) and not forced to reconnect
+  // Use cached connection if it's recent and not forced to reconnect
   const now = Date.now();
   if (
     !forceReconnect &&
@@ -100,83 +94,37 @@ export const initializeNostr = async (forceReconnect = false) => {
     return true;
   }
 
-  // If there's already a connection attempt in progress, wait for it
-  if (connectionState.connectionPromise) {
-    console.log('Connection already in progress, waiting...');
-    return connectionState.connectionPromise;
-  }
-
-  console.log('Initializing NDK connection for Android...');
+  console.log('Initializing NDK connection with preset relays...');
+  console.log('Using relays:', PRIORITIZED_RELAYS);
   connectionState.lastConnectAttempt = now;
 
-  // Create a promise for the connection attempt that can be shared
-  connectionState.connectionPromise = (async () => {
-    let retryCount = 0;
-    const maxRetries = 3; // Mobile needs more retries
-
-    while (retryCount < maxRetries) {
-      try {
-        console.log(`Connecting to relays (attempt ${retryCount + 1}/${maxRetries})...`);
-        
-        // Use a promise race to add timeout - longer for mobile
-        await Promise.race([
-          ndk.connect(),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Connection timeout')), 7000)
-          )
-        ]);
-
-        // Quick check if any relays connected
-        if (ndk.pool?.relays?.size > 0) {
-          connectionState.initialized = true;
-          connectionState.connectedRelays = ndk.pool.relays.size;
-          console.log(`Successfully connected to ${ndk.pool.relays.size} relays`);
-          
-          // Add more relays in the background if needed for redundancy
-          if (ndk.pool.relays.size < 3) {
-            connectToAdditionalRelays().catch(console.error);
-          }
-          
-          return true;
-        }
-
-        // If no relays connected, try connecting to additional relays
-        const addedMore = await connectToAdditionalRelays();
-        if (addedMore) {
-          connectionState.initialized = true;
-          connectionState.connectedRelays = ndk.pool.relays.size;
-          console.log(`Connected to ${ndk.pool.relays.size} relays after adding additional relays`);
-          return true;
-        }
-
-        retryCount++;
-        if (retryCount < maxRetries) {
-          const backoffTime = 1500 * Math.pow(1.5, retryCount); // Longer backoff for mobile
-          console.log(`No relays connected. Waiting ${backoffTime}ms before retry...`);
-          await new Promise((resolve) => setTimeout(resolve, backoffTime));
-        }
-      } catch (err) {
-        console.error('Error during connection attempt:', err);
-        retryCount++;
-        if (retryCount < maxRetries) {
-          const backoffTime = 1500 * Math.pow(1.5, retryCount);
-          await new Promise((resolve) => setTimeout(resolve, backoffTime));
-        }
-      }
-    }
-
-    console.error('Failed to connect after multiple attempts');
-    return false;
-  })();
-
-  // Once connection attempt resolves, clear the promise
   try {
-    const result = await connectionState.connectionPromise;
-    connectionState.connectionPromise = null;
-    return result;
+    // Simple connect approach - just connect to all preset relays
+    await ndk.connect();
+    
+    // Check if any relays connected
+    if (ndk.pool?.relays?.size > 0) {
+      connectionState.initialized = true;
+      connectionState.connectedRelays = ndk.pool.relays.size;
+      console.log(`Successfully connected to ${ndk.pool.relays.size} relays`);
+      return true;
+    }
+    
+    // If primary relays failed, try connecting to backup relays
+    console.log('Primary relays failed, trying backup relays...');
+    const addedMore = await connectToAdditionalRelays();
+    
+    if (addedMore) {
+      connectionState.initialized = true;
+      connectionState.connectedRelays = ndk.pool.relays.size;
+      console.log(`Connected to ${ndk.pool.relays.size} relays after adding backup relays`);
+      return true;
+    }
+    
+    console.error('Failed to connect to any relays');
+    return false;
   } catch (err) {
-    connectionState.connectionPromise = null;
-    console.error('Connection attempt failed:', err);
+    console.error('Error during relay connection:', err);
     return false;
   }
 };
