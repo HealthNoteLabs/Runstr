@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - Simple-updates
+      - feed  # Added feed branch to automatically trigger the workflow
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
@@ -36,7 +37,7 @@ jobs:
       # Generate release tag dynamically
       - name: Generate Release Tag
         id: release_tag
-        run: echo "RELEASE_TAG=simple-updates-${{ env.VERSION }}-${{ env.DATE }}" >> $GITHUB_ENV
+        run: echo "RELEASE_TAG=feed-${{ env.VERSION }}-${{ env.DATE }}" >> $GITHUB_ENV
 
       # Build the React app
       - name: Build React app
@@ -63,7 +64,7 @@ jobs:
 
       # Grant execute permissions for Gradle wrapper
       - name: Grant execute permission to Gradle wrapper
-        run: chmod +x android/gradlew
+        run: chmod +x ./android/gradlew
 
       # Build Debug APK
       - name: Build Debug APK
@@ -77,7 +78,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          release_name: 'Simple-updates ${{ env.RELEASE_TAG }}'
+          release_name: 'Feed Fix ${{ env.RELEASE_TAG }}'
           draft: false
           prerelease: true
 
