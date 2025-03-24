@@ -21,9 +21,41 @@ const activeSubscriptions = new Set();
  */
 export const initializeNostr = async () => {
   try {
-    // Connect to relays
-    await ndk.connect();
-    console.log('Connected to NDK relays');
+    // Connect to relays with timeout
+    const connectPromise = ndk.connect();
+    
+    // Add a timeout to the connect promise
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Connection timeout')), 8000);
+    });
+    
+    // Race the promises to handle timeouts
+    await Promise.race([connectPromise, timeoutPromise]);
+    
+    // Log relay status after connection
+    const relayStatus = {};
+    for (const url of ndk.explicitRelayUrls) {
+      try {
+        const relay = ndk.pool.getRelay(url);
+        relayStatus[url] = relay.status;
+      } catch (err) {
+        relayStatus[url] = `error: ${err.message}`;
+      }
+    }
+    
+    console.log('NDK relay status:', relayStatus);
+    
+    // Check if we have at least one connected relay
+    const connectedRelays = Object.values(relayStatus).filter(
+      status => status === 'connected' || status === 1 || status === '1'
+    );
+    
+    if (connectedRelays.length === 0) {
+      console.warn('No relays connected successfully');
+      return false;
+    }
+    
+    console.log(`Connected to ${connectedRelays.length} NDK relays`);
     return true;
   } catch (error) {
     console.error('Error initializing Nostr:', error);
@@ -46,9 +78,38 @@ export const fetchEvents = async (filter) => {
       filter.limit = 30;
     }
     
-    // Fetch events using NDK
-    const events = await ndk.fetchEvents(filter);
+    // Make sure we're connected to relays
+    const connected = await initializeNostr();
+    if (!connected) {
+      console.warn('Failed to connect to relays, trying again...');
+      await initializeNostr(); // One retry
+    }
+    
+    // Add optional until parameter to ensure we get recent posts
+    if (!filter.until && !filter.since) {
+      filter.until = Math.floor(Date.now() / 1000);
+    }
+    
+    // Fetch events using NDK with timeout
+    const fetchPromise = ndk.fetchEvents(filter);
+    const timeoutPromise = new Promise((resolve) => {
+      setTimeout(() => resolve(new Set()), 10000);
+    });
+    
+    const events = await Promise.race([fetchPromise, timeoutPromise]);
+    
+    // Log event count with event kinds breakdown for debugging
+    const eventsArray = Array.from(events);
+    const eventTypes = eventsArray.reduce((acc, event) => {
+      acc[event.kind] = (acc[event.kind] || 0) + 1;
+      return acc;
+    }, {});
+    
     console.log(`Fetched ${events.size} events for filter:`, filter);
+    if (events.size > 0) {
+      console.log('Event kinds breakdown:', eventTypes);
+    }
+    
     return events;
   } catch (error) {
     console.error('Error fetching events:', error);
@@ -63,23 +124,61 @@ export const fetchEvents = async (filter) => {
  * @returns {Promise<Array>} Array of running posts
  */
 export const fetchRunningPosts = async (limit = 10, since = undefined) => {
-  // Convert "since" from milliseconds to Unix timestamp if needed
-  const sinceTimestamp = since ? Math.floor(since / 1000) : undefined;
-  
-  // Use EXACT SAME filter structure and tags as the working implementation
-  const filter = {
-    kinds: [1], // Regular posts
-    limit,
-    "#t": ["running", "run", "runner", "runstr", "5k", "10k", "marathon", "jog"]
-  };
-  
-  // Add since parameter if provided (for pagination)
-  if (sinceTimestamp) {
-    filter.since = sinceTimestamp;
+  try {
+    // Convert "since" from milliseconds to Unix timestamp if needed
+    const sinceTimestamp = since ? Math.floor(since / 1000) : undefined;
+    const untilTimestamp = Math.floor(Date.now() / 1000); // Ensure recent posts
+    
+    console.log('Fetching running posts with hashtags...');
+    
+    // Use EXACT SAME filter structure and tags as the working implementation
+    const filter = {
+      kinds: [1], // Regular posts
+      limit,
+      "#t": ["running", "run", "runner", "runstr", "5k", "10k", "marathon", "jog"]
+    };
+    
+    // Add since parameter if provided (for pagination)
+    if (sinceTimestamp) {
+      filter.since = sinceTimestamp;
+    }
+    
+    // Add until parameter to ensure we get recent posts
+    filter.until = untilTimestamp;
+    
+    // Try to fetch events with hashtags
+    const events = await fetchEvents(filter);
+    console.log(`Fetched ${events.size} running posts with hashtags`);
+    
+    // If we got no results with hashtags and this is a first page request
+    if (events.size === 0 && !since) {
+      // As a fallback, try an alternate tag approach
+      console.log('No posts found with hashtags, trying alternate tag approach...');
+      
+      const alternateFilter = {
+        kinds: [1],
+        limit,
+        until: untilTimestamp,
+        "#t": ["running", "run"] // Try with fewer tags
+      };
+      
+      if (sinceTimestamp) {
+        alternateFilter.since = sinceTimestamp;
+      }
+      
+      const alternateEvents = await fetchEvents(alternateFilter);
+      console.log(`Fetched ${alternateEvents.size} posts with alternate tag approach`);
+      
+      if (alternateEvents.size > 0) {
+        return Array.from(alternateEvents);
+      }
+    }
+    
+    return Array.from(events);
+  } catch (error) {
+    console.error('Error fetching running posts with hashtags:', error);
+    return [];
   }
-  
-  const events = await fetchEvents(filter);
-  return Array.from(events);
 };
 
 /**
@@ -321,26 +420,74 @@ export const createAndPublishEvent = async (eventTemplate) => {
  * This is a fallback when hashtag search fails
  */
 export const searchRunningContent = async (limit = 50, hours = 168) => {
-  // Get recent notes within the time window
-  const since = Math.floor(Date.now() / 1000) - (hours * 60 * 60);
-  
-  const filter = {
-    kinds: [1],
-    limit: limit,
-    since
-  };
-  
-  const events = await fetchEvents(filter);
-  
+  try {
+    // Get recent notes within the time window
+    const since = Math.floor(Date.now() / 1000) - (hours * 60 * 60);
+    const until = Math.floor(Date.now() / 1000); // Ensure we get most recent
+    
+    // Try multiple approaches to find running-related content
+    
+    // First attempt: direct content search with broader timeframe
+    const filter = {
+      kinds: [1],
+      limit: Math.min(limit * 3, 100), // Fetch more to filter
+      since,
+      until
+    };
+    
+    console.log('Fallback content search - attempting to fetch generic kind 1 notes');
+    const events = await fetchEvents(filter);
+    console.log(`Fetched ${events.size} generic kind 1 notes for content filtering`);
+    
+    if (events.size === 0) {
+      // If we got zero events, try with different relays or parameters
+      console.log('No events found, trying with extended time window');
+      
+      // Try with longer timeframe
+      const extendedFilter = {
+        kinds: [1],
+        limit: Math.min(limit * 2, 100),
+        since: Math.floor(Date.now() / 1000) - (hours * 2 * 60 * 60) // Double the time window
+      };
+      
+      const extendedEvents = await fetchEvents(extendedFilter);
+      
+      if (extendedEvents.size === 0) {
+        return []; // Still no events, give up
+      }
+      
+      return filterRunningContent(extendedEvents, limit);
+    }
+    
+    return filterRunningContent(events, limit);
+  } catch (error) {
+    console.error('Error in searchRunningContent:', error);
+    return [];
+  }
+};
+
+/**
+ * Helper to filter events for running-related content
+ */
+const filterRunningContent = (events, limit) => {
   // Filter for running-related content - using SAME keywords as working implementation
   const runningKeywords = [
-    'running', 'run', 'runner', 'runstr', '5k', '10k', 'marathon', 'jog', 'jogging'
+    'running', 'run', 'runner', 'runstr', '5k', '10k', 'marathon', 'jog', 'jogging',
+    'track', 'race', 'miles', 'km', 'fitness', 'training'
   ];
   
-  return Array.from(events).filter(event => {
+  const filteredEvents = Array.from(events).filter(event => {
+    if (!event.content) return false;
     const lowerContent = event.content.toLowerCase();
     return runningKeywords.some(keyword => lowerContent.includes(keyword));
   });
+  
+  console.log(`Found ${filteredEvents.length} running-related posts through content filtering`);
+  
+  // Return only up to the limit, newest first
+  return filteredEvents
+    .sort((a, b) => b.created_at - a.created_at)
+    .slice(0, limit);
 };
 
 /**
