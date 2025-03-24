@@ -24,7 +24,9 @@ export const RunClub = () => {
     loadSupplementaryData,
     loadMorePosts,
     fetchRunPostsViaSubscription,
-    loadedSupplementaryData
+    loadedSupplementaryData,
+    useDVM,
+    toggleDataSource
   } = useRunFeed();
   
   const {
@@ -132,11 +134,28 @@ export const RunClub = () => {
 
   return (
     <div className="run-club-container">
-      <h2>RUNSTR FEED</h2>
+      <div className="feed-header">
+        <h2>RUNSTR FEED</h2>
+        <div className="data-source-toggle">
+          <button 
+            className={`toggle-button ${useDVM ? 'active' : ''}`}
+            onClick={toggleDataSource}
+          >
+            {useDVM ? 'Using DVM' : 'Using Direct Nostr'}
+          </button>
+          <div className="source-info">
+            {useDVM ? 
+              <span className="info-text">Data from RUNSTR DVM</span> : 
+              <span className="info-text">Direct Nostr connection</span>
+            }
+          </div>
+        </div>
+      </div>
+      
       {loading && posts.length === 0 ? (
         <div className="loading-indicator">
           <div className="loading-spinner"></div>
-          <p>Loading posts...</p>
+          <p>Loading posts{useDVM ? ' from DVM' : ''}...</p>
         </div>
       ) : error ? (
         <div className="error-message">
@@ -148,11 +167,19 @@ export const RunClub = () => {
             >
               Retry
             </button>
+            {!useDVM && (
+              <button 
+                className="diagnose-button" 
+                onClick={diagnoseConnection}
+              >
+                Diagnose Connection
+              </button>
+            )}
             <button 
-              className="diagnose-button" 
-              onClick={diagnoseConnection}
+              className="toggle-source-button" 
+              onClick={toggleDataSource}
             >
-              Diagnose Connection
+              Switch to {useDVM ? 'Direct Nostr' : 'DVM'}
             </button>
           </div>
           {diagnosticInfo && (
@@ -164,29 +191,42 @@ export const RunClub = () => {
       ) : posts.length === 0 ? (
         <div className="no-posts-message">
           <p>No running posts found</p>
-          <button 
-            className="retry-button" 
-            onClick={fetchRunPostsViaSubscription}
-          >
-            Refresh
-          </button>
+          <div className="action-buttons">
+            <button 
+              className="retry-button" 
+              onClick={fetchRunPostsViaSubscription}
+            >
+              Refresh
+            </button>
+            <button 
+              className="toggle-source-button" 
+              onClick={toggleDataSource}
+            >
+              Switch to {useDVM ? 'Direct Nostr' : 'DVM'}
+            </button>
+          </div>
         </div>
       ) : (
-        <PostList
-          posts={posts}
-          loading={loading}
-          page={1}
-          userLikes={userLikes}
-          userReposts={userReposts}
-          handleLike={handleLike}
-          handleRepost={handleRepost}
-          handleZap={(post) => handleZap(post, wallet)}
-          handleCommentClick={handleCommentClick}
-          handleComment={handleComment}
-          commentText={commentText}
-          setCommentText={setCommentText}
-          wallet={wallet}
-        />
+        <>
+          <div className="feed-stats">
+            <p>Showing {posts.length} posts from {useDVM ? 'RUNSTR DVM' : 'Nostr'}</p>
+          </div>
+          <PostList
+            posts={posts}
+            loading={loading}
+            page={1}
+            userLikes={userLikes}
+            userReposts={userReposts}
+            handleLike={handleLike}
+            handleRepost={handleRepost}
+            handleZap={(post) => handleZap(post, wallet)}
+            handleCommentClick={handleCommentClick}
+            handleComment={handleComment}
+            commentText={commentText}
+            setCommentText={setCommentText}
+            wallet={wallet}
+          />
+        </>
       )}
     </div>
   );
