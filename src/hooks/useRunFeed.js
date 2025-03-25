@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
-import { fetchRunningPosts, loadSupplementaryData } from '../utils/nostr';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { fetchRunningPosts, loadSupplementaryData, searchRunningContent, processPostsWithData, initializeNostr } from '../utils/nostr';
 
 export const useRunFeed = () => {
   const [posts, setPosts] = useState([]);
@@ -9,34 +9,13 @@ export const useRunFeed = () => {
   const [userReposts, setUserReposts] = useState(new Set());
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const initialLoadRef = useRef(false);
 
-<<<<<<< HEAD
-=======
-  // Main function to fetch run posts
->>>>>>> feed-stable
   const fetchRunPostsViaSubscription = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Calculate timestamp for the current page (1 week per page)
-      const since = Math.floor((Date.now() - (page * 7 * 24 * 60 * 60 * 1000)) / 1000);
-      
-      // Fetch posts from Nostr
-      const fetchedPosts = await fetchRunningPosts(since);
-      
-      // Load supplementary data
-      const postsWithData = await loadSupplementaryData(fetchedPosts);
-
-<<<<<<< HEAD
-      // Update posts state, avoiding duplicates
-      setPosts(prevPosts => {
-        const newPosts = [...prevPosts];
-        postsWithData.forEach(post => {
-          if (!newPosts.find(p => p.id === post.id)) {
-            newPosts.push(post);
-          }
-=======
       // Initialize Nostr first
       await initializeNostr();
 
@@ -132,13 +111,11 @@ export const useRunFeed = () => {
           const existingIds = new Set(prevPosts.map(p => p.id));
           const newPosts = processedPosts.filter(p => !existingIds.has(p.id));
           return [...prevPosts, ...newPosts];
->>>>>>> feed-stable
         });
-        return newPosts;
-      });
+      }
 
       // Update hasMore based on whether we got any new posts
-      setHasMore(fetchedPosts.length > 0);
+      setHasMore(runPostsArray.length > 0);
     } catch (err) {
       setError(err.message);
       console.error('Error fetching running posts:', err);
@@ -147,21 +124,11 @@ export const useRunFeed = () => {
     }
   }, [page]);
 
-<<<<<<< HEAD
-  // Load more posts
-=======
   // Load more posts when user scrolls to bottom
->>>>>>> feed-stable
   const loadMorePosts = useCallback(() => {
     setPage(prev => prev + 1);
   }, []);
 
-<<<<<<< HEAD
-  // Initial load
-  useEffect(() => {
-    fetchRunPostsViaSubscription();
-  }, [fetchRunPostsViaSubscription]);
-=======
   // Initial load and refresh on page change
   useEffect(() => {
     fetchRunPostsViaSubscription();
@@ -178,7 +145,6 @@ export const useRunFeed = () => {
       return () => clearInterval(refreshInterval);
     }
   }, [fetchRunPostsViaSubscription]);
->>>>>>> feed-stable
 
   return {
     posts,
@@ -186,16 +152,10 @@ export const useRunFeed = () => {
     error,
     userLikes,
     userReposts,
-<<<<<<< HEAD
-    page,
-    hasMore,
-    loadMorePosts
-=======
     loadMorePosts,
     refresh: () => {
       setPage(1);
       fetchRunPostsViaSubscription();
     }
->>>>>>> feed-stable
   };
 }; 

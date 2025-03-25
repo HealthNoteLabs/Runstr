@@ -1,6 +1,5 @@
 import { SimplePool } from 'nostr-tools';
 
-<<<<<<< HEAD
 // List of working relays
 export const RELAYS = [
   'wss://relay.damus.io',
@@ -14,116 +13,10 @@ export const initializeNostr = () => {
 };
 
 // Fetch running posts from relays
-export const fetchRunningPosts = async (since = Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000)) => {
+export const fetchRunningPosts = async (limit = 10, since = undefined) => {
   const pool = initializeNostr();
-  const events = [];
-=======
-// Create a new NDK instance with longer timeouts
-const ndk = new NDK({
-  explicitRelayUrls: [
-    'wss://relay.damus.io',
-    'wss://nos.lol',
-    'wss://relay.nostr.band',
-    'wss://relay.snort.social',
-    'wss://eden.nostr.land',
-    'wss://relay.current.fyi'
-  ],
-  // Add longer timeouts
-  connectionTimeout: 20000, // 20 seconds
-  requestTimeout: 30000,    // 30 seconds
-  // Add retry options
-  retryCount: 3,
-  retryDelay: 2000
-});
-
-// Storage for subscriptions
-const activeSubscriptions = new Set();
-
-/**
- * Initialize the Nostr client - connect to relays
- * @returns {Promise<boolean>} Success status
- */
-export const initializeNostr = async () => {
-  try {
-    // Connect to relays with longer timeout
-    const connectPromise = ndk.connect();
-    
-    // Add a timeout to the connect promise
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Connection timeout')), 20000);
-    });
-    
-    // Race the promises to handle timeouts
-    await Promise.race([connectPromise, timeoutPromise]);
-    
-    // Log relay status after connection
-    const relayStatus = {};
-    for (const url of ndk.explicitRelayUrls) {
-      try {
-        const relay = ndk.pool.getRelay(url);
-        relayStatus[url] = relay.status;
-        console.log(`Relay ${url} status:`, relay.status);
-      } catch (err) {
-        relayStatus[url] = `error: ${err.message}`;
-        console.error(`Error getting relay ${url} status:`, err);
-      }
-    }
-    
-    console.log('NDK relay status:', relayStatus);
-    
-    // Check if we have at least one connected relay
-    const connectedRelays = Object.values(relayStatus).filter(
-      status => status === 'connected' || status === 1 || status === '1'
-    );
-    
-    if (connectedRelays.length === 0) {
-      console.warn('No relays connected successfully');
-      return false;
-    }
-    
-    console.log(`Connected to ${connectedRelays.length} NDK relays`);
-    return true;
-  } catch (error) {
-    console.error('Error initializing Nostr:', error);
-    return false;
-  }
-};
-
-/**
- * Fetch events from Nostr
- * @param {Object} filter - Nostr filter
- * @returns {Promise<Set>} Set of events
- */
-export const fetchEvents = async (filter) => {
-  try {
-    // Log what we're fetching - helpful for debugging
-    console.log('Fetching events with filter:', filter);
-    
-    // Make sure we're connected to relays
-    const connected = await initializeNostr();
-    if (!connected) {
-      console.warn('Failed to connect to relays, trying again...');
-      await initializeNostr(); // One retry
-    }
-    
-    // Fetch events using NDK
-    const events = await ndk.fetchEvents(filter);
-    
-    // Log event count
-    console.log(`Fetched ${events.size} events`);
-    
-    return events;
-  } catch (error) {
-    console.error('Error fetching events:', error);
-    return new Set();
-  }
-};
->>>>>>> feed-stable
 
   try {
-<<<<<<< HEAD
-    // Create subscription filter
-=======
     // Convert "since" from milliseconds to Unix timestamp if needed
     const sinceTimestamp = since ? Math.floor(since / 1000) : undefined;
     const untilTimestamp = Math.floor(Date.now() / 1000); // Ensure recent posts
@@ -146,11 +39,11 @@ export const fetchEvents = async (filter) => {
     filter.until = untilTimestamp;
     
     // Try to fetch events with hashtags
-    const events = await fetchEvents(filter);
-    console.log(`Fetched ${events.size} running posts with hashtags`);
+    const fetchedEvents = await pool.list(RELAYS, [filter]);
+    console.log(`Fetched ${fetchedEvents.length} running posts with hashtags`);
     
     // If we got no results with hashtags and this is a first page request
-    if (events.size === 0 && !since) {
+    if (fetchedEvents.length === 0 && !since) {
       // As a fallback, try an alternate tag approach
       console.log('No posts found with hashtags, trying alternate tag approach...');
       
@@ -165,18 +58,20 @@ export const fetchEvents = async (filter) => {
         alternateFilter.since = sinceTimestamp;
       }
       
-      const alternateEvents = await fetchEvents(alternateFilter);
-      console.log(`Fetched ${alternateEvents.size} posts with alternate tag approach`);
+      const alternateEvents = await pool.list(RELAYS, [alternateFilter]);
+      console.log(`Fetched ${alternateEvents.length} posts with alternate tag approach`);
       
-      if (alternateEvents.size > 0) {
-        return Array.from(alternateEvents);
+      if (alternateEvents.length > 0) {
+        return alternateEvents;
       }
     }
     
-    return Array.from(events);
+    return fetchedEvents;
   } catch (error) {
     console.error('Error fetching running posts with hashtags:', error);
     return [];
+  } finally {
+    await pool.close(RELAYS);
   }
 };
 
@@ -194,51 +89,57 @@ export const loadSupplementaryData = async (posts) => {
     zapReceipts: new Set()
   };
   
-  // Extract all post IDs
-  const postIds = posts.map(post => post.id);
-  // Extract unique author public keys
-  const authors = [...new Set(posts.map(post => post.pubkey))];
+  const pool = initializeNostr();
   
-  // Run all queries in parallel like in the working implementation
-  const [profileEvents, comments, likes, reposts, zapReceipts] = await Promise.all([
-    // Profile information
-    fetchEvents({
-      kinds: [0],
-      authors
-    }),
+  try {
+    // Extract all post IDs
+    const postIds = posts.map(post => post.id);
+    // Extract unique author public keys
+    const authors = [...new Set(posts.map(post => post.pubkey))];
     
-    // Comments
-    fetchEvents({
-      kinds: [1],
-      '#e': postIds
-    }),
+    // Run all queries in parallel
+    const [profileEvents, comments, likes, reposts, zapReceipts] = await Promise.all([
+      // Profile information
+      pool.list(RELAYS, [{
+        kinds: [0],
+        authors
+      }]),
+      
+      // Comments
+      pool.list(RELAYS, [{
+        kinds: [1],
+        '#e': postIds
+      }]),
+      
+      // Likes
+      pool.list(RELAYS, [{
+        kinds: [7],
+        '#e': postIds
+      }]),
+      
+      // Reposts
+      pool.list(RELAYS, [{
+        kinds: [6],
+        '#e': postIds
+      }]),
+      
+      // Zap receipts
+      pool.list(RELAYS, [{
+        kinds: [9735],
+        '#e': postIds
+      }])
+    ]);
     
-    // Likes
-    fetchEvents({
-      kinds: [7],
-      '#e': postIds
-    }),
-    
-    // Reposts
-    fetchEvents({
-      kinds: [6],
-      '#e': postIds
-    }),
-    
-    // Zap receipts
-    fetchEvents({
-      kinds: [9735],
-      '#e': postIds
-    })
-  ]);
-  
-  return {
-    profileEvents,
-    comments,
-    likes,
-    reposts,
-    zapReceipts
-  };
+    return {
+      profileEvents: new Set(profileEvents),
+      comments: new Set(comments),
+      likes: new Set(likes),
+      reposts: new Set(reposts),
+      zapReceipts: new Set(zapReceipts)
+    };
+  } finally {
+    await pool.close(RELAYS);
+  }
 };
 
 /**
@@ -403,9 +304,10 @@ export const createAndPublishEvent = async (eventTemplate) => {
     // Sign the event using the browser extension
     const signedEvent = await window.nostr.signEvent(event);
     
-    // Create NDK Event and publish
-    const ndkEvent = new NDKEvent(ndk, signedEvent);
-    await ndkEvent.publish();
+    // Publish using nostr-tools
+    const pool = initializeNostr();
+    await pool.publish(RELAYS, signedEvent);
+    await pool.close(RELAYS);
     
     return signedEvent;
   } catch (error) {
@@ -418,16 +320,17 @@ export const createAndPublishEvent = async (eventTemplate) => {
  * Search notes by content for running-related terms
  * This is a fallback when hashtag search fails
  */
-export const searchRunningContent = async (limit = 50, hours = 168) => {
+export const searchRunningContent = async (hours = 168) => {
+  const pool = initializeNostr();
+  const events = [];
+
   try {
     // Get recent notes within the time window
     const since = Math.floor(Date.now() / 1000) - (hours * 60 * 60);
-    const until = Math.floor(Date.now() / 1000); // Ensure we get most recent
     
     // Try multiple approaches to find running-related content
     
     // First attempt: direct content search with broader timeframe
->>>>>>> feed-stable
     const filter = {
       kinds: [1],
       since,
@@ -469,12 +372,6 @@ export const searchRunningContent = async (limit = 50, hours = 168) => {
     // Clean up connections
     await pool.close(RELAYS);
   }
-};
-
-// Load supplementary data for posts (likes, reposts, etc.)
-export const loadSupplementaryData = async (posts) => {
-  // This will be implemented later when we add authentication
-  return posts;
 };
 
 // Handle app lifecycle events
