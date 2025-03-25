@@ -1338,27 +1338,34 @@ textarea {
   margin: 5px 0;
 }
 
+.unit-toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.unit-label {
+  font-size: 14px;
+  color: var(--text-light);
+  text-transform: uppercase;
+}
+
+/* Remove old unit toggle button styles */
 .unit-btn {
-  background: #242424;
-  color: #888;
-  border: 1px solid #444;
-  padding: 8px 16px;
-  cursor: pointer;
-  transition: all 0.3s;
+  display: none;
 }
 
 .unit-btn.active {
-  background: #646cff;
-  color: white;
-  border-color: #646cff;
+  display: none;
 }
 
 .unit-btn:first-child {
-  border-radius: 8px 0 0 8px;
+  display: none;
 }
 
 .unit-btn:last-child {
-  border-radius: 0 8px 8px 0;
+  display: none;
 }
 
 .login-container {

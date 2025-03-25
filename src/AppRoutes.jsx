@@ -11,6 +11,7 @@ const NWC = lazy(() => import('./pages/NWC').then(module => ({ default: module.N
 const Goals = lazy(() => import('./pages/Goals').then(module => ({ default: module.Goals })));
 const Team = lazy(() => import('./pages/Team').then(module => ({ default: module.Team })));
 const Events = lazy(() => import('./pages/Events').then(module => ({ default: module.Events })));
+const TestNostr = lazy(() => import('./pages/TestNostr').then(module => ({ default: module.TestNostr })));
 
 // Loading fallback component
 const LoadingComponent = () => (
@@ -31,6 +32,7 @@ export const AppRoutes = () => {
         <Route path="/music" element={<Music />} />
         <Route path="/nwc" element={<NWC />} />
         <Route path="/goals" element={<Goals />} />
+        <Route path="/test-nostr" element={<TestNostr />} />
         <Route path="/" element={<RunTracker />} />
       </Routes>
     </Suspense>

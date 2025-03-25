@@ -1,11 +1,10 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect } from 'react';
 import { useRunTracker } from '../contexts/RunTrackerContext';
-import { convertDistance, formatPaceWithUnit, formatTime, formatElevation, formatPace } from '../utils/formatters';
+import { convertDistance, formatPaceWithUnit, formatTime, formatElevation, formatDate } from '../utils/formatters';
 import { PermissionDialog } from './PermissionDialog';
 import { createAndPublishEvent } from '../utils/nostr';
 import { displayDistance } from '../utils/formatters';
 import SplitsTable from './SplitsTable';
-import runDataService from '../services/RunDataService';
 
 export const RunTracker = () => {
   const { 
@@ -18,7 +17,8 @@ export const RunTracker = () => {
     startRun,
     pauseRun,
     resumeRun,
-    stopRun
+    stopRun,
+    splits
   } = useRunTracker();
 
   const [distanceUnit, setDistanceUnit] = useState(
@@ -210,12 +210,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     pace,
     distanceUnit
   );
-  
-  // Replace the direct pace calculation with RunDataService calculation
-  // when using the pace for any calculations in component
-  const calculateConsistentPace = (distance, duration, unit) => {
-    return runDataService.calculatePace(distance, duration, unit);
-  };
 
   return (
     <div className="w-full h-full flex flex-col bg-[#111827] text-white relative">
@@ -349,9 +343,12 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                 </svg>
               </div>
               <div className="flex-1">
-                <h4 className="font-semibold">Morning Run</h4>
+                <h4 className="font-semibold">
+                  {new Date(recentRun.date).getHours() < 12 ? 'Morning Run' : 
+                   new Date(recentRun.date).getHours() < 17 ? 'Afternoon Run' : 'Evening Run'}
+                </h4>
                 <div className="flex items-center text-xs text-gray-400">
-                  <span>Yesterday • {displayDistance(recentRun.distance, distanceUnit)}</span>
+                  <span>{formatDate(recentRun.date)} • {displayDistance(recentRun.distance, distanceUnit)}</span>
                   <span className="ml-2 px-2 py-1 bg-gray-800 rounded-full">
                     {recentRun.distance > 0 
                       ? (recentRun.duration / 60 / (distanceUnit === 'km' ? recentRun.distance/1000 : recentRun.distance/1609.344)).toFixed(2) 
@@ -359,8 +356,8 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                   </span>
                 </div>
               </div>
-              <div className="text-right text-gray-400">
-                <span className="block text-lg font-semibold">{formatTime(recentRun.duration).split(':').slice(0, 2).join(':')}</span>
+              <div className="text-right">
+                <span className="block text-lg font-semibold">{formatTime(recentRun.duration)}</span>
                 <button 
                   onClick={handlePostToNostr}
                   className="text-xs mt-1 text-indigo-400 flex items-center"
@@ -372,6 +369,24 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                 </button>
               </div>
             </div>
+            {/* Add splits table for recent run */}
+            {recentRun.splits && recentRun.splits.length > 0 && (
+              <div className="mt-4">
+                <SplitsTable splits={recentRun.splits} distanceUnit={distanceUnit} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
+      {/* Display splits during active run */}
+      {isTracking && splits && splits.length > 0 && (
+        <div className="mx-4 mt-4 bg-gradient-to-br from-[#111827] to-[#1a222e] rounded-xl shadow-lg overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-800">
+            <h3 className="text-lg font-semibold">Current Splits</h3>
+          </div>
+          <div className="p-4">
+            <SplitsTable splits={splits} distanceUnit={distanceUnit} />
           </div>
         </div>
       )}

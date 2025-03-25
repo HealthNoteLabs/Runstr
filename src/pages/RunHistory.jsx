@@ -13,21 +13,14 @@ export const RunHistory = () => {
   const [showModal, setShowModal] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [distanceUnit, setDistanceUnit] = useState(() => localStorage.getItem('distanceUnit') || 'km');
-  const [showProfileModal, setShowProfileModal] = useState(false);
-  const [npub, setNpub] = useState(() => localStorage.getItem('currentNpub'));
-  const [publishEnabled, setPublishEnabled] = useState(false);
 
   // Get user profile and distance unit from custom hooks
   const { 
-    profile, 
-    updateUserProfile,
-    handleProfileChange, 
-    handleProfileSubmit 
+    profile
   } = useRunProfile();
 
   const {
     stats,
-    calculateStats,
     calculateCaloriesBurned
   } = useRunStats(runHistory, profile);
 
@@ -257,26 +250,16 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       <div className="stats-overview">
         <h2>STATS</h2>
         <div className="unit-toggle-container">
-          <button 
-            className={`unit-toggle ${distanceUnit === 'km' ? 'active' : ''}`}
-            onClick={toggleDistanceUnit}
-          >
-            KM
-          </button>
-          <button 
-            className={`unit-toggle ${distanceUnit === 'mi' ? 'active' : ''}`}
-            onClick={toggleDistanceUnit}
-          >
-            MI
-          </button>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={distanceUnit === 'mi'}
+              onChange={toggleDistanceUnit}
+            />
+            <span className="toggle-slider"></span>
+          </label>
+          <span className="unit-label">{distanceUnit.toUpperCase()}</span>
         </div>
-        <button 
-          className="profile-btn" 
-          onClick={() => setShowProfileModal(true)}
-          title="Update your profile for accurate calorie calculations"
-        >
-          Update Profile
-        </button>
         <div className="stats-grid">
           <div className="stat-card">
             <h3>Total Distance</h3>
@@ -479,86 +462,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <button onClick={() => setShowModal(false)} disabled={isPosting}>
                 Cancel
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showProfileModal && (
-        <div className="modal-overlay">
-          <div className="modal-content profile-modal">
-            <h3>User Profile</h3>
-            <div className="form-group">
-              <label htmlFor="weight">Weight (kg)</label>
-              <input
-                id="weight"
-                type="number"
-                value={profile.weight}
-                onChange={(e) => handleProfileChange('weight', Number(e.target.value))}
-              />
-            </div>
-            <div className="form-group height-inputs">
-              <label>Height</label>
-              <div className="height-fields">
-                <div className="height-field">
-                  <input
-                    id="heightFeet"
-                    type="number"
-                    min="0"
-                    max="8"
-                    value={profile.heightFeet}
-                    onChange={(e) => handleProfileChange('heightFeet', Number(e.target.value))}
-                  />
-                  <label htmlFor="heightFeet">ft</label>
-                </div>
-                <div className="height-field">
-                  <input
-                    id="heightInches"
-                    type="number"
-                    min="0"
-                    max="11"
-                    value={profile.heightInches}
-                    onChange={(e) => handleProfileChange('heightInches', Number(e.target.value))}
-                  />
-                  <label htmlFor="heightInches">in</label>
-                </div>
-              </div>
-            </div>
-            <div className="form-group">
-              <label htmlFor="gender">Gender</label>
-              <select
-                id="gender"
-                value={profile.gender}
-                onChange={(e) => handleProfileChange('gender', e.target.value)}
-              >
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label htmlFor="age">Age</label>
-              <input
-                id="age"
-                type="number"
-                value={profile.age}
-                onChange={(e) => handleProfileChange('age', Number(e.target.value))}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="fitnessLevel">Fitness Level</label>
-              <select
-                id="fitnessLevel"
-                value={profile.fitnessLevel}
-                onChange={(e) => handleProfileChange('fitnessLevel', e.target.value)}
-              >
-                <option value="beginner">Beginner</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="advanced">Advanced</option>
-              </select>
-            </div>
-            <div className="modal-buttons">
-              <button onClick={handleProfileSubmit}>Save</button>
-              <button onClick={() => setShowProfileModal(false)}>Cancel</button>
             </div>
           </div>
         </div>

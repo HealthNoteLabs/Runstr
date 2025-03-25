@@ -4,7 +4,14 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  css: {
+    modules: {
+      localsConvention: 'camelCase'
+    }
+  },
   build: {
+    outDir: 'dist',
+    sourcemap: true,
     rollupOptions: {
       output: {
         entryFileNames: 'assets/[name].[hash].js',
@@ -26,8 +33,6 @@ export default defineConfig({
         }
       }
     },
-    // Enable source maps for production
-    sourcemap: false,
     // Optimize bundle size
     minify: 'terser',
     // Enable chunk size reporting
@@ -43,6 +48,8 @@ export default defineConfig({
     }
   },
   server: {
+    port: 5173,
+    host: true,
     // Enable faster Hot Module Replacement
     hmr: {
       overlay: true,
@@ -104,7 +111,5 @@ export default defineConfig({
     },
   },
   // Improve the speed of the dev server
-  esbuild: {
-    jsxInject: `import React from 'react'`,
-  }
+  esbuild: {}
 })

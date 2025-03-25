@@ -1,41 +1,25 @@
-import { Suspense, lazy } from 'react';
-import { BrowserRouter as Router } from 'react-router-dom';
-import { NostrProvider } from './contexts/NostrProvider';
-import { AuthProvider } from './components/AuthProvider';
-import { AudioPlayerProvider } from './contexts/AudioPlayerProvider';
-import { RunTrackerProvider } from './contexts/RunTrackerContext';
-import { MenuBar } from './components/MenuBar';
-import './App.css';
+import { RunClub } from './components/RunClub';
 
-// Lazy load components
-const AppRoutes = lazy(() => import('./AppRoutes').then(module => ({ default: module.AppRoutes })));
-
-// Loading fallback
-const LoadingFallback = () => (
-  <div className="loading-spinner"></div>
-);
-
-const App = () => {
+function App() {
   return (
-    <Router>
-      <NostrProvider>
-        <AuthProvider>
-          <AudioPlayerProvider>
-            <RunTrackerProvider>
-              <div className="relative w-full h-full bg-[#111827] text-white">
-                <MenuBar />
-                <main className="pb-24 max-w-[375px] mx-auto">
-                  <Suspense fallback={<LoadingFallback />}>
-                    <AppRoutes />
-                  </Suspense>
-                </main>
+    <div className="min-h-screen bg-gray-100">
+      <nav className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16">
+            <div className="flex">
+              <div className="flex-shrink-0 flex items-center">
+                <h1 className="text-xl font-bold text-gray-900">Runstr</h1>
               </div>
-            </RunTrackerProvider>
-          </AudioPlayerProvider>
-        </AuthProvider>
-      </NostrProvider>
-    </Router>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <RunClub />
+      </main>
+    </div>
   );
-};
+}
 
 export default App;

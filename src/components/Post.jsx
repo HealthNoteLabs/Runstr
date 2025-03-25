@@ -1,4 +1,6 @@
-import { extractImagesFromContent, formatSplitTimesInContent } from '../utils/postFormatters';
+import React, { useState } from 'react';
+import PropTypes from 'prop-types';
+import { extractImagesFromContent, formatSplitTimesInContent } from '../utils/content';
 
 /**
  * Component for displaying a single post in the run feed - optimized for Android
@@ -9,200 +11,205 @@ export const Post = ({
   userReposts,
   handleLike,
   handleRepost,
-  handleZap,
   handleCommentClick,
   handleComment,
-  commentText,
-  setCommentText,
+  handleZap,
   wallet
 }) => {
-  // Android optimization: lazy load images
-  const lazyLoadImage = (event) => {
-    const img = event.target;
-    if (img.dataset.src) {
-      img.src = img.dataset.src;
-      img.removeAttribute('data-src');
+  const [commentText, setCommentText] = useState('');
+  const [showCommentInput, setShowCommentInput] = useState(false);
+
+  const handleSubmitComment = async () => {
+    if (commentText.trim()) {
+      await handleComment(post);
+      setCommentText('');
+      setShowCommentInput(false);
     }
   };
 
-  // Android optimization: handle avatar error
-  const handleAvatarError = (event) => {
-    event.target.src = '/default-avatar.png';
-  };
-
-  // Format date for Android
   const formatDate = (timestamp) => {
-    try {
-      const date = new Date(timestamp * 1000);
-      const now = new Date();
-      const diffMs = now - date;
-      const diffSeconds = Math.floor(diffMs / 1000);
-      
-      // Within a minute
-      if (diffSeconds < 60) {
-        return 'just now';
-      }
-      
-      // Within an hour
-      if (diffSeconds < 3600) {
-        const minutes = Math.floor(diffSeconds / 60);
-        return `${minutes}m ago`;
-      }
-      
-      // Within a day
-      if (diffSeconds < 86400) {
-        const hours = Math.floor(diffSeconds / 3600);
-        return `${hours}h ago`;
-      }
-      
-      // Within a week
-      if (diffSeconds < 604800) {
-        const days = Math.floor(diffSeconds / 86400);
-        return `${days}d ago`;
-      }
-      
-      // Older than a week - show simple date
-      return date.toLocaleDateString();
-    } catch (e) {
-      console.error('Error formatting date:', e);
-      return 'unknown date';
-    }
+    const now = Math.floor(Date.now() / 1000);
+    const diff = now - timestamp;
+
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+    return new Date(timestamp * 1000).toLocaleDateString();
   };
 
-  // Detect mobile
-  const isMobile = true;
+  const images = extractImagesFromContent(post.content);
+  const formattedContent = formatSplitTimesInContent(post.content);
 
   return (
-    <div className="post-card" data-post-id={post.id}>
-      <div className="post-header">
+    <div className="bg-white rounded-lg shadow p-4">
+      <div className="flex items-start space-x-3">
         <img
-          src={post.author.profile.picture ? '/placeholder-avatar.png' : '/default-avatar.png'}
-          data-src={post.author.profile.picture}
-          alt={post.author.profile.name || 'Anonymous'}
-          className="author-avatar"
-          onLoad={lazyLoadImage}
-          onError={handleAvatarError}
-          loading="lazy"
+          src={post.author.profile.picture || 'https://via.placeholder.com/40'}
+          alt={post.author.profile.name}
+          className="w-10 h-10 rounded-full"
+          onError={(e) => {
+            e.target.src = 'https://via.placeholder.com/40';
+          }}
         />
-        <div className="author-info">
-          <h4>{post.author.profile.name || 'Anonymous Runner'}</h4>
-          <span className="post-date">
-            {formatDate(post.created_at)}
-          </span>
-        </div>
-      </div>
-      
-      <div className="post-content">
-        {formatSplitTimesInContent(post.content)}
-        <div className="post-images">
-          {extractImagesFromContent(post.content).slice(0, 2).map(
-            (imageUrl, index) => (
-              <img
-                key={index}
-                src={'/placeholder-image.png'}
-                data-src={imageUrl}
-                alt="Run activity"
-                className="post-image"
-                onLoad={lazyLoadImage}
-                loading="lazy"
-                onClick={() => {
-                  // On Android, simply show in full screen instead of opening a new window
-                  const imageElement = document.createElement('div');
-                  imageElement.className = 'fullscreen-image-container';
-                  imageElement.innerHTML = `
-                    <div class="fullscreen-image-backdrop"></div>
-                    <img src="${imageUrl}" alt="Full size" class="fullscreen-image" />
-                  `;
-                  imageElement.addEventListener('click', () => {
-                    document.body.removeChild(imageElement);
-                  });
-                  document.body.appendChild(imageElement);
-                }}
-              />
-            )
+        <div className="flex-1">
+          <div className="flex items-center space-x-2">
+            <span className="font-semibold">{post.author.profile.name}</span>
+            <span className="text-gray-500 text-sm">{formatDate(post.created_at)}</span>
+          </div>
+          <p className="mt-2 text-gray-800 whitespace-pre-wrap">{formattedContent}</p>
+          {images.length > 0 && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {images.map((image, index) => (
+                <img
+                  key={index}
+                  src={image}
+                  alt={`Post image ${index + 1}`}
+                  className="rounded-lg w-full h-48 object-cover"
+                  loading="lazy"
+                />
+              ))}
+            </div>
           )}
-          {extractImagesFromContent(post.content).length > 2 && (
-            <div className="more-images-indicator">
-              +{extractImagesFromContent(post.content).length - 2} more
+          <div className="mt-4 flex items-center space-x-4">
+            <button
+              onClick={() => handleLike(post)}
+              className={`flex items-center space-x-1 ${
+                userLikes.has(post.id) ? 'text-blue-500' : 'text-gray-500'
+              }`}
+            >
+              <svg
+                className="w-5 h-5"
+                fill={userLikes.has(post.id) ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                />
+              </svg>
+              <span>{post.likes}</span>
+            </button>
+            <button
+              onClick={() => handleRepost(post)}
+              className={`flex items-center space-x-1 ${
+                userReposts.has(post.id) ? 'text-green-500' : 'text-gray-500'
+              }`}
+            >
+              <svg
+                className="w-5 h-5"
+                fill={userReposts.has(post.id) ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                />
+              </svg>
+              <span>{post.reposts}</span>
+            </button>
+            <button
+              onClick={() => {
+                handleCommentClick(post);
+                setShowCommentInput(!showCommentInput);
+              }}
+              className="flex items-center space-x-1 text-gray-500"
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                />
+              </svg>
+              <span>{post.comments?.length || 0}</span>
+            </button>
+            <button
+              onClick={() => handleZap(post)}
+              className="flex items-center space-x-1 text-gray-500"
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                />
+              </svg>
+              <span>{post.zaps}</span>
+            </button>
+          </div>
+          {showCommentInput && (
+            <div className="mt-4">
+              <textarea
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                placeholder="Write a comment..."
+                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                rows="2"
+              />
+              <div className="mt-2 flex justify-end space-x-2">
+                <button
+                  onClick={() => setShowCommentInput(false)}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSubmitComment}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                >
+                  Post
+                </button>
+              </div>
             </div>
           )}
         </div>
       </div>
-      
-      <div className="post-actions">
-        <button
-          className="zap-button"
-          onClick={() => handleZap(post, wallet)}
-        >
-          ⚡️ {post.zaps > 0 ? post.zaps : ''}
-        </button>
-        <button
-          className={`like-button ${userLikes.has(post.id) ? 'liked' : ''}`}
-          onClick={() => handleLike(post)}
-        >
-          {userLikes.has(post.id) ? '❤️' : '🤍'} {post.likes > 0 ? post.likes : ''}
-        </button>
-        <button
-          className={`repost-button ${userReposts.has(post.id) ? 'reposted' : ''}`}
-          onClick={() => handleRepost(post)}
-        >
-          {userReposts.has(post.id) ? '🔁' : '🔄'} {post.reposts > 0 ? post.reposts : ''}
-        </button>
-        <button
-          className="comment-button"
-          onClick={() => handleCommentClick(post.id)}
-        >
-          💬 {post.comments?.length || 0}
-        </button>
-      </div>
-      
-      {post.showComments && (
-        <div className="comments-section">
-          <div className="comments-list">
-            {post.comments?.map((comment) => (
-              <div key={comment.id} className="comment-item">
-                <img
-                  src={
-                    comment.author.profile.picture || '/default-avatar.png'
-                  }
-                  alt={comment.author.profile.name}
-                  className="comment-avatar"
-                  onError={handleAvatarError}
-                  loading="lazy"
-                />
-                <div className="comment-content">
-                  <strong>
-                    {comment.author.profile.name || 'Anonymous'}
-                  </strong>
-                  <p>{comment.content}</p>
-                </div>
-              </div>
-            ))}
-            {post.comments?.length === 0 && (
-              <div className="no-comments">No comments yet. Be the first to comment!</div>
-            )}
-          </div>
-          <div className="comment-input">
-            <input
-              type="text"
-              placeholder="Add a comment..."
-              value={commentText}
-              onChange={(e) => setCommentText(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === 'Enter' && !isMobile) {
-                  handleComment(post.id);
-                }
-              }}
-            />
-            <button 
-              onClick={() => handleComment(post.id)}
-              disabled={!commentText.trim()}
-            >
-              Post
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
+};
+
+Post.propTypes = {
+  post: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    content: PropTypes.string.isRequired,
+    created_at: PropTypes.number.isRequired,
+    author: PropTypes.shape({
+      pubkey: PropTypes.string.isRequired,
+      profile: PropTypes.shape({
+        name: PropTypes.string.isRequired,
+        picture: PropTypes.string
+      }).isRequired
+    }).isRequired,
+    likes: PropTypes.number.isRequired,
+    reposts: PropTypes.number.isRequired,
+    zaps: PropTypes.number.isRequired,
+    comments: PropTypes.array
+  }).isRequired,
+  userLikes: PropTypes.instanceOf(Set).isRequired,
+  userReposts: PropTypes.instanceOf(Set).isRequired,
+  handleLike: PropTypes.func.isRequired,
+  handleRepost: PropTypes.func.isRequired,
+  handleCommentClick: PropTypes.func.isRequired,
+  handleComment: PropTypes.func.isRequired,
+  handleZap: PropTypes.func.isRequired,
+  wallet: PropTypes.object
 }; 
