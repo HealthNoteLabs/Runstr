@@ -18,20 +18,16 @@ export const fetchRunningPosts = async (since = Math.floor((Date.now() - 7 * 24 
   const events = [];
 
   try {
-    // Subscribe to running events with hashtags
-    const subscription = [
-      'REQ',
-      'running-posts',
-      {
-        kinds: [1],
-        since,
-        limit: 50,
-        '#t': ['running', 'runstr', 'run']
-      }
-    ];
+    // Create subscription filter
+    const filter = {
+      kinds: [1],
+      since,
+      limit: 50,
+      '#t': ['running', 'runstr', 'run']
+    };
 
     // Subscribe to all relays
-    const sub = pool.sub(RELAYS, [subscription[2]]);
+    const sub = pool.sub(RELAYS, [filter]);
 
     // Collect events for 10 seconds
     await new Promise((resolve) => {
