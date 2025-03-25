@@ -1,6 +1,6 @@
 import NDK, { NDKEvent } from '@nostr-dev-kit/ndk';
 
-// Create a new NDK instance
+// Create a new NDK instance with longer timeouts
 const ndk = new NDK({
   explicitRelayUrls: [
     'wss://relay.damus.io',
@@ -9,7 +9,13 @@ const ndk = new NDK({
     'wss://relay.snort.social',
     'wss://eden.nostr.land',
     'wss://relay.current.fyi'
-  ]
+  ],
+  // Add longer timeouts
+  connectionTimeout: 20000, // 20 seconds
+  requestTimeout: 30000,    // 30 seconds
+  // Add retry options
+  retryCount: 3,
+  retryDelay: 2000
 });
 
 // Storage for subscriptions
@@ -21,12 +27,12 @@ const activeSubscriptions = new Set();
  */
 export const initializeNostr = async () => {
   try {
-    // Connect to relays with timeout
+    // Connect to relays with longer timeout
     const connectPromise = ndk.connect();
     
     // Add a timeout to the connect promise
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Connection timeout')), 8000);
+      setTimeout(() => reject(new Error('Connection timeout')), 20000);
     });
     
     // Race the promises to handle timeouts
@@ -38,8 +44,10 @@ export const initializeNostr = async () => {
       try {
         const relay = ndk.pool.getRelay(url);
         relayStatus[url] = relay.status;
+        console.log(`Relay ${url} status:`, relay.status);
       } catch (err) {
         relayStatus[url] = `error: ${err.message}`;
+        console.error(`Error getting relay ${url} status:`, err);
       }
     }
     
@@ -73,11 +81,6 @@ export const fetchEvents = async (filter) => {
     // Log what we're fetching - helpful for debugging
     console.log('Fetching events with filter:', filter);
     
-    // Set safe defaults
-    if (!filter.limit) {
-      filter.limit = 30;
-    }
-    
     // Make sure we're connected to relays
     const connected = await initializeNostr();
     if (!connected) {
@@ -85,30 +88,11 @@ export const fetchEvents = async (filter) => {
       await initializeNostr(); // One retry
     }
     
-    // Add optional until parameter to ensure we get recent posts
-    if (!filter.until && !filter.since) {
-      filter.until = Math.floor(Date.now() / 1000);
-    }
+    // Fetch events using NDK
+    const events = await ndk.fetchEvents(filter);
     
-    // Fetch events using NDK with timeout
-    const fetchPromise = ndk.fetchEvents(filter);
-    const timeoutPromise = new Promise((resolve) => {
-      setTimeout(() => resolve(new Set()), 10000);
-    });
-    
-    const events = await Promise.race([fetchPromise, timeoutPromise]);
-    
-    // Log event count with event kinds breakdown for debugging
-    const eventsArray = Array.from(events);
-    const eventTypes = eventsArray.reduce((acc, event) => {
-      acc[event.kind] = (acc[event.kind] || 0) + 1;
-      return acc;
-    }, {});
-    
-    console.log(`Fetched ${events.size} events for filter:`, filter);
-    if (events.size > 0) {
-      console.log('Event kinds breakdown:', eventTypes);
-    }
+    // Log event count
+    console.log(`Fetched ${events.size} events`);
     
     return events;
   } catch (error) {
@@ -135,7 +119,7 @@ export const fetchRunningPosts = async (limit = 10, since = undefined) => {
     const filter = {
       kinds: [1], // Regular posts
       limit,
-      "#t": ["running", "run", "runner", "runstr", "5k", "10k", "marathon", "jog"]
+      "#t": ["running", "run", "runstr"]  // Focus on core running tags
     };
     
     // Add since parameter if provided (for pagination)
