@@ -6,11 +6,13 @@ on:
       - main
       - master
       - develop
+      - refresh
   pull_request:
     branches:
       - main
       - master
       - develop
+      - refresh
 
 jobs:
   build-and-test:
