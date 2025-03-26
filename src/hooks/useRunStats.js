@@ -36,7 +36,7 @@ export const useRunStats = (runHistory, userProfile) => {
     if (runHistory.length > 0) {
       calculateStats(runHistory);
     }
-  }, [runHistory, userProfile, distanceUnit, calculateStats]);
+  }, [runHistory, userProfile, distanceUnit]);
 
   // Toggle between km and mi units
   const toggleDistanceUnit = () => {
