@@ -7,6 +7,9 @@ on:
       - feed  # Added feed branch to automatically trigger the workflow
   workflow_dispatch:  # Allows manual triggering
 
+permissions:
+  contents: write  # This is crucial for creating releases
+
 jobs:
   build:
     name: Build and Release Debug Apk
@@ -72,18 +75,24 @@ jobs:
 
       # Upload APK as an artifact first (so we have a backup)
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2  # Downgraded to v2 which is more stable
         with:
           name: app-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      # Rename the APK to include version and date
+      - name: Rename APK
+        run: |
+          mkdir -p ./releases
+          cp android/app/build/outputs/apk/debug/app-debug.apk ./releases/runstr-feed-${{ env.VERSION }}-${{ env.DATE }}.apk
 
       # Create a Release using updated syntax
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          files: android/app/build/outputs/apk/debug/app-debug.apk
+          files: ./releases/runstr-feed-${{ env.VERSION }}-${{ env.DATE }}.apk
           name: 'Feed Fix ${{ env.VERSION }}-${{ env.DATE }}'
           tag_name: ${{ env.RELEASE_TAG }}
           draft: false
