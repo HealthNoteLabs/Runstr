@@ -19,7 +19,7 @@ export const useRunFeed = () => {
   const timeoutRef = useRef(null);
   const initialLoadRef = useRef(false);
 
-  // Main function to fetch run posts - closely matches working implementation
+  // Main function to fetch run posts
   const fetchRunPostsViaSubscription = useCallback(async () => {
     try {
       setLoading(true);
@@ -35,9 +35,9 @@ export const useRunFeed = () => {
 
       // Set timestamp for paginated loading
       const since = page > 1 ? Date.now() - (page * 7 * 24 * 60 * 60 * 1000) : undefined;
-      const limit = 10; // Load 10 posts per page just like the working implementation
+      const limit = 10; // Load 10 posts per page
 
-      // Fetch posts with running hashtags - EXACT same approach as working version
+      // Fetch posts with running hashtags
       const runPostsArray = await fetchRunningPosts(limit, since);
       
       console.log(`Fetched ${runPostsArray.length} running posts`);
@@ -166,74 +166,58 @@ export const useRunFeed = () => {
     }
   }, [page]);
 
-  // Load more posts when user scrolls to bottom - like working implementation
+  // Load more posts when user scrolls to bottom
   const loadMorePosts = useCallback(() => {
     if (!loading && hasMore) {
       setPage(prevPage => prevPage + 1);
     }
   }, [loading, hasMore]);
 
-  // Load supplementary data for a single post (for comments, etc)
-  const loadPostSupplementaryData = useCallback(async (postId) => {
-    if (loadedSupplementaryData.has(postId)) {
-      return;
-    }
-
-    setLoadedSupplementaryData(prev => new Set([...prev, postId]));
-    
-    const postIndex = posts.findIndex(p => p.id === postId);
-    if (postIndex === -1) return;
-    
-    try {
-      // Find the post that needs supplementary data
-      const post = posts[postIndex];
-      
-      // Use our parallel loading function to get all data for this post
-      const supplementData = await loadSupplementaryData([post]);
-      
-      // Process this single post with the data
-      const processedPosts = await processPostsWithData([post], supplementData);
-      
-      if (processedPosts.length > 0) {
-        // Update just this post in the state
-        setPosts(currentPosts => {
-          const newPosts = [...currentPosts];
-          newPosts[postIndex] = processedPosts[0];
-          return newPosts;
-        });
-      }
-    } catch (error) {
-      console.error('Error loading supplementary data:', error);
-    }
-  }, [posts, loadedSupplementaryData]);
-
-  // Initial load effect
+  // Initial load
   useEffect(() => {
-    // Only fetch if this is the first page or we've already done the initial load
-    if (page === 1 || initialLoadRef.current) {
+    if (!initialLoadRef.current) {
       fetchRunPostsViaSubscription();
     }
+  }, [fetchRunPostsViaSubscription]);
+
+  // Load more when page changes
+  useEffect(() => {
+    if (page > 1) {
+      fetchRunPostsViaSubscription();
+    }
+  }, [page, fetchRunPostsViaSubscription]);
+
+  // Refresh feed periodically
+  useEffect(() => {
+    const refreshInterval = 5 * 60 * 1000; // 5 minutes
+    
+    const refreshFeed = () => {
+      if (!loading) {
+        setPage(1);
+        fetchRunPostsViaSubscription();
+      }
+    };
+    
+    const intervalId = setInterval(refreshFeed, refreshInterval);
     
     return () => {
+      clearInterval(intervalId);
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
     };
-  }, [fetchRunPostsViaSubscription, page]);
+  }, [loading, fetchRunPostsViaSubscription]);
 
   return {
     posts,
-    setPosts,
     loading,
     error,
     userLikes,
-    setUserLikes,
     userReposts,
-    setUserReposts,
-    loadSupplementaryData: loadPostSupplementaryData,
     loadMorePosts,
-    fetchRunPostsViaSubscription,
-    loadedSupplementaryData,
-    hasMore
+    refreshFeed: () => {
+      setPage(1);
+      fetchRunPostsViaSubscription();
+    }
   };
 }; 

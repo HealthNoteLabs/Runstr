@@ -5,6 +5,7 @@ on:
     branches:
       - Simple-updates
       - feed  # Added feed branch to automatically trigger the workflow
+      - easy-fixes  # Added easy-fixes branch to automatically trigger the workflow
   workflow_dispatch:  # Allows manual triggering
 
 jobs:

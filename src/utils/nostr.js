@@ -1,16 +1,18 @@
-import NDK, { NDKEvent } from '@nostr-dev-kit/ndk';
+import { SimplePool, finalizeEvent, verifyEvent } from 'nostr-tools';
 
-// Create a new NDK instance
-const ndk = new NDK({
-  explicitRelayUrls: [
-    'wss://relay.damus.io',
-    'wss://nos.lol',
-    'wss://relay.nostr.band',
-    'wss://relay.snort.social',
-    'wss://eden.nostr.land',
-    'wss://relay.current.fyi'
-  ]
+// Create a simple pool with reasonable timeouts
+const pool = new SimplePool({
+  eoseSubTimeout: 10_000,
+  getTimeout: 15_000,
+  connectTimeout: 8_000
 });
+
+// Focus on a smaller set of the most reliable relays
+const RELAYS = [
+  'wss://relay.damus.io',
+  'wss://nostr.bitcoiner.social',
+  'wss://nostr.mom'
+];
 
 // Storage for subscriptions
 const activeSubscriptions = new Set();
@@ -21,10 +23,22 @@ const activeSubscriptions = new Set();
  */
 export const initializeNostr = async () => {
   try {
-    // Connect to relays
-    await ndk.connect();
-    console.log('Connected to NDK relays');
-    return true;
+    // Test connection to relays
+    const connectedRelays = [];
+    
+    for (const relay of RELAYS) {
+      try {
+        const conn = pool.ensureRelay(relay);
+        if (conn) {
+          connectedRelays.push(relay);
+        }
+      } catch (error) {
+        console.warn(`Failed to connect to relay: ${relay}`, error);
+      }
+    }
+    
+    console.log(`Connected to ${connectedRelays.length}/${RELAYS.length} relays`);
+    return connectedRelays.length > 0;
   } catch (error) {
     console.error('Error initializing Nostr:', error);
     return false;
@@ -32,251 +46,144 @@ export const initializeNostr = async () => {
 };
 
 /**
- * Fetch events from Nostr
- * @param {Object} filter - Nostr filter
- * @returns {Promise<Set>} Set of events
- */
-export const fetchEvents = async (filter) => {
-  try {
-    // Log what we're fetching - helpful for debugging
-    console.log('Fetching events with filter:', filter);
-    
-    // Set safe defaults
-    if (!filter.limit) {
-      filter.limit = 30;
-    }
-    
-    // Fetch events using NDK
-    const events = await ndk.fetchEvents(filter);
-    console.log(`Fetched ${events.size} events for filter:`, filter);
-    return events;
-  } catch (error) {
-    console.error('Error fetching events:', error);
-    return new Set();
-  }
-};
-
-/**
- * Get running posts - matches the working implementation
- * @param {number} limit - max posts to fetch
- * @param {number} since - timestamp to fetch posts since
+ * Fetch running posts from Nostr
+ * @param {number} limit - Maximum number of posts to fetch
+ * @param {number} since - Unix timestamp to fetch posts since
  * @returns {Promise<Array>} Array of running posts
  */
-export const fetchRunningPosts = async (limit = 10, since = undefined) => {
-  // Convert "since" from milliseconds to Unix timestamp if needed
-  const sinceTimestamp = since ? Math.floor(since / 1000) : undefined;
-  
-  // Use EXACT SAME filter structure and tags as the working implementation
-  const filter = {
-    kinds: [1], // Regular posts
-    limit,
-    "#t": ["running", "run", "runner", "runstr", "5k", "10k", "marathon", "jog"]
-  };
-  
-  // Add since parameter if provided (for pagination)
-  if (sinceTimestamp) {
-    filter.since = sinceTimestamp;
+export const fetchRunningPosts = async (limit = 50, since = undefined) => {
+  try {
+    // Calculate timestamp for 1 week ago if not provided
+    const oneWeekAgo = since || Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000);
+    
+    // Create filter for running posts
+    const filter = {
+      kinds: [1],
+      since: oneWeekAgo,
+      limit,
+      '#t': ['running', 'runstr', 'run']
+    };
+    
+    console.log('Fetching running posts with filter:', filter);
+    
+    // Fetch events using nostr-tools
+    const events = await pool.list(RELAYS, [filter]);
+    
+    // Sort events by timestamp (newest first)
+    events.sort((a, b) => b.created_at - a.created_at);
+    
+    // Remove duplicates based on event ID
+    const uniqueEvents = Array.from(new Map(events.map(event => [event.id, event])).values());
+    
+    console.log(`Fetched ${uniqueEvents.length} unique running posts`);
+    return uniqueEvents;
+  } catch (error) {
+    console.error('Error fetching running posts:', error);
+    return [];
   }
-  
-  const events = await fetchEvents(filter);
-  return Array.from(events);
 };
 
 /**
- * Load all supplementary data for posts in parallel
+ * Search for running content in posts
+ * @param {number} limit - Maximum number of posts to fetch
+ * @param {number} hours - Hours to look back
+ * @returns {Promise<Array>} Array of posts mentioning running
+ */
+export const searchRunningContent = async (limit = 50, hours = 72) => {
+  try {
+    const since = Math.floor((Date.now() - hours * 60 * 60 * 1000) / 1000);
+    
+    const filter = {
+      kinds: [1],
+      since,
+      limit
+    };
+    
+    console.log('Searching for running content with filter:', filter);
+    
+    const events = await pool.list(RELAYS, [filter]);
+    
+    // Filter for posts mentioning running
+    const runningPosts = events.filter(event => {
+      const content = event.content.toLowerCase();
+      return content.includes('running') || 
+             content.includes('run') || 
+             content.includes('runner') ||
+             content.includes('ran');
+    });
+    
+    console.log(`Found ${runningPosts.length} posts mentioning running`);
+    return runningPosts;
+  } catch (error) {
+    console.error('Error searching running content:', error);
+    return [];
+  }
+};
+
+/**
+ * Load supplementary data for posts (likes, reposts, etc.)
  * @param {Array} posts - Array of posts to load data for
- * @returns {Promise<Object>} Object containing all supplementary data
+ * @returns {Promise<Object>} Object containing supplementary data
  */
 export const loadSupplementaryData = async (posts) => {
-  if (!posts || posts.length === 0) return {
-    profileEvents: new Set(),
-    comments: new Set(),
-    likes: new Set(),
-    reposts: new Set(),
-    zapReceipts: new Set()
-  };
-  
-  // Extract all post IDs
-  const postIds = posts.map(post => post.id);
-  // Extract unique author public keys
-  const authors = [...new Set(posts.map(post => post.pubkey))];
-  
-  // Run all queries in parallel like in the working implementation
-  const [profileEvents, comments, likes, reposts, zapReceipts] = await Promise.all([
-    // Profile information
-    fetchEvents({
-      kinds: [0],
-      authors
-    }),
+  try {
+    const postIds = posts.map(post => post.id);
     
-    // Comments
-    fetchEvents({
-      kinds: [1],
-      '#e': postIds
-    }),
+    // Fetch likes and reposts
+    const [likes, reposts] = await Promise.all([
+      pool.list(RELAYS, [{
+        kinds: [7],
+        '#e': postIds
+      }]),
+      pool.list(RELAYS, [{
+        kinds: [6],
+        '#e': postIds
+      }])
+    ]);
     
-    // Likes
-    fetchEvents({
-      kinds: [7],
-      '#e': postIds
-    }),
-    
-    // Reposts
-    fetchEvents({
-      kinds: [6],
-      '#e': postIds
-    }),
-    
-    // Zap receipts
-    fetchEvents({
-      kinds: [9735],
-      '#e': postIds
-    })
-  ]);
-  
-  return {
-    profileEvents,
-    comments,
-    likes,
-    reposts,
-    zapReceipts
-  };
+    return {
+      likes,
+      reposts
+    };
+  } catch (error) {
+    console.error('Error loading supplementary data:', error);
+    return {
+      likes: [],
+      reposts: []
+    };
+  }
 };
 
 /**
  * Process posts with supplementary data
  * @param {Array} posts - Array of posts to process
- * @param {Object} supplementaryData - Supplementary data for posts
- * @returns {Array} Processed posts with all metadata
+ * @param {Object} supplementaryData - Supplementary data for the posts
+ * @returns {Promise<Array>} Processed posts
  */
 export const processPostsWithData = async (posts, supplementaryData) => {
   try {
-    if (!posts || posts.length === 0) {
-      return [];
-    }
+    const { likes, reposts } = supplementaryData;
     
-    const { profileEvents, comments, likes, reposts, zapReceipts } = supplementaryData;
-    
-    // Create a profile map
-    const profileMap = new Map(
-      Array.from(profileEvents).map((profile) => {
-        try {
-          return [profile.pubkey, JSON.parse(profile.content)];
-        } catch (err) {
-          console.error('Error parsing profile:', err);
-          return [profile.pubkey, {}];
-        }
-      })
-    );
-    
-    // Count likes and reposts per post
-    const likesByPost = new Map();
-    const repostsByPost = new Map();
-    const zapsByPost = new Map();
-    
-    // Process likes
-    Array.from(likes).forEach(like => {
+    // Create maps for faster lookups
+    const likesMap = new Map(likes.map(like => {
       const postId = like.tags.find(tag => tag[0] === 'e')?.[1];
-      if (postId) {
-        if (!likesByPost.has(postId)) {
-          likesByPost.set(postId, 0);
-        }
-        likesByPost.set(postId, likesByPost.get(postId) + 1);
-      }
-    });
+      return [postId, like];
+    }));
     
-    // Process reposts
-    Array.from(reposts).forEach(repost => {
+    const repostsMap = new Map(reposts.map(repost => {
       const postId = repost.tags.find(tag => tag[0] === 'e')?.[1];
-      if (postId) {
-        if (!repostsByPost.has(postId)) {
-          repostsByPost.set(postId, 0);
-        }
-        repostsByPost.set(postId, repostsByPost.get(postId) + 1);
-      }
-    });
+      return [postId, repost];
+    }));
     
-    // Process zap receipts
-    Array.from(zapReceipts).forEach(zapReceipt => {
-      try {
-        const postId = zapReceipt.tags.find(tag => tag[0] === 'e')?.[1];
-        if (postId) {
-          // Get the zap amount from the bolt11 or amount tag
-          let zapAmount = 0;
-          
-          // First check for a direct amount tag
-          const amountTag = zapReceipt.tags.find(tag => tag[0] === 'amount');
-          if (amountTag && amountTag[1]) {
-            // Amount is in millisatoshis, convert to sats
-            zapAmount = parseInt(amountTag[1], 10) / 1000;
-          } else {
-            // If no amount tag, count as 1 zap
-            zapAmount = 1;
-          }
-          
-          // Add to post's total zaps
-          if (!zapsByPost.has(postId)) {
-            zapsByPost.set(postId, { count: 0, amount: 0 });
-          }
-          const postZaps = zapsByPost.get(postId);
-          postZaps.count += 1;
-          postZaps.amount += zapAmount;
-          zapsByPost.set(postId, postZaps);
-        }
-      } catch (err) {
-        console.error('Error processing zap receipt:', err);
-      }
-    });
-    
-    // Group comments by their parent post
-    const commentsByPost = new Map();
-    Array.from(comments).forEach((comment) => {
-      const parentId = comment.tags.find((tag) => tag[0] === 'e')?.[1];
-      if (parentId) {
-        if (!commentsByPost.has(parentId)) {
-          commentsByPost.set(parentId, []);
-        }
-        const profile = profileMap.get(comment.pubkey) || {};
-        commentsByPost.get(parentId).push({
-          id: comment.id,
-          content: comment.content,
-          created_at: comment.created_at,
-          author: {
-            pubkey: comment.pubkey,
-            profile: profile
-          }
-        });
-      }
-    });
-    
-    // Process posts with all the data
-    const processedPosts = posts.map(post => {
-      const profile = profileMap.get(post.pubkey) || {};
-      const postZaps = zapsByPost.get(post.id) || { count: 0, amount: 0 };
-      
-      return {
-        id: post.id,
-        content: post.content,
-        created_at: post.created_at,
-        author: {
-          pubkey: post.pubkey,
-          profile: profile,
-          lud16: profile.lud16,
-          lud06: profile.lud06
-        },
-        comments: commentsByPost.get(post.id) || [],
-        showComments: false,
-        likes: likesByPost.get(post.id) || 0,
-        reposts: repostsByPost.get(post.id) || 0,
-        zaps: postZaps.count,
-        zapAmount: postZaps.amount
-      };
-    });
-    
-    // Sort by created_at, newest first
-    return processedPosts.sort((a, b) => b.created_at - a.created_at);
+    // Process each post
+    return posts.map(post => ({
+      ...post,
+      likes: likesMap.get(post.id) || null,
+      reposts: repostsMap.get(post.id) || null,
+      created_at_iso: new Date(post.created_at * 1000).toISOString()
+    }));
   } catch (error) {
-    console.error('Error processing posts:', error);
+    console.error('Error processing posts with data:', error);
     return posts;
   }
 };
@@ -305,9 +212,14 @@ export const createAndPublishEvent = async (eventTemplate) => {
     // Sign the event using the browser extension
     const signedEvent = await window.nostr.signEvent(event);
     
-    // Create NDK Event and publish
-    const ndkEvent = new NDKEvent(ndk, signedEvent);
-    await ndkEvent.publish();
+    // Verify the signature
+    const valid = verifyEvent(signedEvent);
+    if (!valid) {
+      throw new Error('Event signature verification failed');
+    }
+    
+    // Publish the event to all relays
+    await pool.publish(RELAYS, signedEvent);
     
     return signedEvent;
   } catch (error) {
@@ -317,34 +229,7 @@ export const createAndPublishEvent = async (eventTemplate) => {
 };
 
 /**
- * Search notes by content for running-related terms
- * This is a fallback when hashtag search fails
- */
-export const searchRunningContent = async (limit = 50, hours = 168) => {
-  // Get recent notes within the time window
-  const since = Math.floor(Date.now() / 1000) - (hours * 60 * 60);
-  
-  const filter = {
-    kinds: [1],
-    limit: limit,
-    since
-  };
-  
-  const events = await fetchEvents(filter);
-  
-  // Filter for running-related content - using SAME keywords as working implementation
-  const runningKeywords = [
-    'running', 'run', 'runner', 'runstr', '5k', '10k', 'marathon', 'jog', 'jogging'
-  ];
-  
-  return Array.from(events).filter(event => {
-    const lowerContent = event.content.toLowerCase();
-    return runningKeywords.some(keyword => lowerContent.includes(keyword));
-  });
-};
-
-/**
- * Handle app going to background
+ * Handle app background state
  */
 export const handleAppBackground = () => {
   // Close all active subscriptions
@@ -352,6 +237,9 @@ export const handleAppBackground = () => {
     sub.close();
   }
   activeSubscriptions.clear();
+  
+  // Close all relay connections
+  pool.close(RELAYS);
 };
 
 /**
@@ -371,9 +259,9 @@ export const diagnoseConnection = async () => {
     await initializeNostr();
     
     // Check each relay status
-    for (const url of ndk.explicitRelayUrls) {
+    for (const url of RELAYS) {
       try {
-        const relay = ndk.pool.getRelay(url);
+        const relay = pool.getRelay(url);
         results.relayStatus[url] = relay.status;
       } catch (err) {
         results.relayStatus[url] = `error: ${err.message}`;
@@ -381,15 +269,15 @@ export const diagnoseConnection = async () => {
     }
     
     // Test general event retrieval (any posts)
-    const generalEvents = await fetchEvents({
+    const generalEvents = await pool.list(RELAYS, [{
       kinds: [1],
       limit: 20
-    });
+    }]);
     
-    results.generalEvents = generalEvents.size;
+    results.generalEvents = generalEvents.length;
     
-    // Test running posts using the EXACT same filter as working implementation
-    if (generalEvents.size > 0) {
+    // Test running posts
+    if (generalEvents.length > 0) {
       const runningEvents = await fetchRunningPosts(20);
       results.runningEvents = runningEvents.length;
     }
@@ -401,5 +289,3 @@ export const diagnoseConnection = async () => {
     return results;
   }
 };
-
-export { ndk };
