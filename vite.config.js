@@ -105,6 +105,6 @@ export default defineConfig({
   },
   // Improve the speed of the dev server
   esbuild: {
-    jsxInject: `import React from 'react'`,
+    // Removed jsxInject as it's causing React import conflicts
   }
 })
