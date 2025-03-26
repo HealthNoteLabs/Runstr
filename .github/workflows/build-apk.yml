@@ -70,25 +70,23 @@ jobs:
       - name: Build Debug APK
         run: cd android && ./gradlew assembleDebug
 
-      # Create a Release
+      # Upload APK as an artifact first (so we have a backup)
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      # Create a Release using updated syntax
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+          name: 'Feed Fix ${{ env.VERSION }}-${{ env.DATE }}'
           tag_name: ${{ env.RELEASE_TAG }}
-          release_name: 'Feed Fix ${{ env.RELEASE_TAG }}'
           draft: false
           prerelease: true
-
-      # Upload Debug APK to Release
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: android/app/build/outputs/apk/debug/app-debug.apk
-          asset_name: app-debug.apk
-          asset_content_type: application/vnd.android.package-archive
