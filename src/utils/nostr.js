@@ -1,11 +1,4 @@
-import { SimplePool, finalizeEvent, verifyEvent } from 'nostr-tools';
-
-// Create a simple pool with reasonable timeouts
-const pool = new SimplePool({
-  eoseSubTimeout: 10_000,
-  getTimeout: 15_000,
-  connectTimeout: 8_000
-});
+import { verifyEvent } from 'nostr-tools';
 
 // Focus on a smaller set of the most reliable relays
 const RELAYS = [
@@ -14,8 +7,8 @@ const RELAYS = [
   'wss://nostr.mom'
 ];
 
-// Storage for subscriptions
-const activeSubscriptions = new Set();
+// Storage for active relay connections
+const activeConnections = new Map();
 
 /**
  * Initialize the Nostr client - connect to relays
@@ -28,10 +21,20 @@ export const initializeNostr = async () => {
     
     for (const relay of RELAYS) {
       try {
-        const conn = pool.ensureRelay(relay);
-        if (conn) {
-          connectedRelays.push(relay);
-        }
+        const ws = new WebSocket(relay);
+        await new Promise((resolve, reject) => {
+          ws.onopen = () => {
+            activeConnections.set(relay, ws);
+            connectedRelays.push(relay);
+            console.log(`✅ Connected to ${relay}`);
+            resolve();
+          };
+          
+          ws.onerror = (error) => {
+            console.warn(`❌ Failed to connect to ${relay}:`, error);
+            reject(error);
+          };
+        });
       } catch (error) {
         console.warn(`Failed to connect to relay: ${relay}`, error);
       }
@@ -66,8 +69,43 @@ export const fetchRunningPosts = async (limit = 50, since = undefined) => {
     
     console.log('Fetching running posts with filter:', filter);
     
-    // Fetch events using nostr-tools
-    const events = await pool.list(RELAYS, [filter]);
+    // Create subscription message
+    const subscription = [
+      'REQ',
+      'running-posts-subscription',
+      filter
+    ];
+    
+    // Collect events from all relays
+    const events = [];
+    const promises = Array.from(activeConnections.entries()).map(([relay, ws]) => {
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          resolve();
+        }, 10000); // 10 second timeout
+        
+        const messageHandler = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            if (message[0] === 'EVENT' && message[2]) {
+              events.push(message[2]);
+            } else if (message[0] === 'EOSE' && message[1] === 'running-posts-subscription') {
+              clearTimeout(timeout);
+              ws.removeEventListener('message', messageHandler);
+              resolve();
+            }
+          } catch (err) {
+            console.log(`Error processing message from ${relay}:`, err);
+          }
+        };
+        
+        ws.addEventListener('message', messageHandler);
+        ws.send(JSON.stringify(subscription));
+      });
+    });
+    
+    // Wait for all subscriptions to complete
+    await Promise.all(promises);
     
     // Sort events by timestamp (newest first)
     events.sort((a, b) => b.created_at - a.created_at);
@@ -101,19 +139,53 @@ export const searchRunningContent = async (limit = 50, hours = 72) => {
     
     console.log('Searching for running content with filter:', filter);
     
-    const events = await pool.list(RELAYS, [filter]);
+    // Create subscription message
+    const subscription = [
+      'REQ',
+      'running-content-subscription',
+      filter
+    ];
     
-    // Filter for posts mentioning running
-    const runningPosts = events.filter(event => {
-      const content = event.content.toLowerCase();
-      return content.includes('running') || 
-             content.includes('run') || 
-             content.includes('runner') ||
-             content.includes('ran');
+    // Collect events from all relays
+    const events = [];
+    const promises = Array.from(activeConnections.entries()).map(([relay, ws]) => {
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          resolve();
+        }, 10000); // 10 second timeout
+        
+        const messageHandler = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            if (message[0] === 'EVENT' && message[2]) {
+              const eventData = message[2];
+              const content = eventData.content.toLowerCase();
+              if (content.includes('running') || 
+                  content.includes('run') || 
+                  content.includes('runner') ||
+                  content.includes('ran')) {
+                events.push(eventData);
+              }
+            } else if (message[0] === 'EOSE' && message[1] === 'running-content-subscription') {
+              clearTimeout(timeout);
+              ws.removeEventListener('message', messageHandler);
+              resolve();
+            }
+          } catch (err) {
+            console.log(`Error processing message from ${relay}:`, err);
+          }
+        };
+        
+        ws.addEventListener('message', messageHandler);
+        ws.send(JSON.stringify(subscription));
+      });
     });
     
-    console.log(`Found ${runningPosts.length} posts mentioning running`);
-    return runningPosts;
+    // Wait for all subscriptions to complete
+    await Promise.all(promises);
+    
+    console.log(`Found ${events.length} posts mentioning running`);
+    return events;
   } catch (error) {
     console.error('Error searching running content:', error);
     return [];
@@ -129,17 +201,72 @@ export const loadSupplementaryData = async (posts) => {
   try {
     const postIds = posts.map(post => post.id);
     
-    // Fetch likes and reposts
-    const [likes, reposts] = await Promise.all([
-      pool.list(RELAYS, [{
-        kinds: [7],
-        '#e': postIds
-      }]),
-      pool.list(RELAYS, [{
-        kinds: [6],
-        '#e': postIds
-      }])
-    ]);
+    // Create filters for likes and reposts
+    const likesFilter = {
+      kinds: [7],
+      '#e': postIds,
+      limit: 100
+    };
+    
+    const repostsFilter = {
+      kinds: [6],
+      '#e': postIds,
+      limit: 100
+    };
+    
+    // Create subscription messages
+    const likesSubscription = ['REQ', 'likes-subscription', likesFilter];
+    const repostsSubscription = ['REQ', 'reposts-subscription', repostsFilter];
+    
+    // Collect events from all relays
+    const likes = [];
+    const reposts = [];
+    
+    const promises = Array.from(activeConnections.entries()).map(([relay, ws]) => {
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          resolve();
+        }, 5000); // 5 second timeout
+        
+        let likesEose = false;
+        let repostsEose = false;
+        
+        const messageHandler = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            if (message[0] === 'EVENT' && message[2]) {
+              const eventData = message[2];
+              if (eventData.kind === 7) {
+                likes.push(eventData);
+              } else if (eventData.kind === 6) {
+                reposts.push(eventData);
+              }
+            } else if (message[0] === 'EOSE') {
+              if (message[1] === 'likes-subscription') {
+                likesEose = true;
+              } else if (message[1] === 'reposts-subscription') {
+                repostsEose = true;
+              }
+              
+              if (likesEose && repostsEose) {
+                clearTimeout(timeout);
+                ws.removeEventListener('message', messageHandler);
+                resolve();
+              }
+            }
+          } catch (err) {
+            console.log(`Error processing message from ${relay}:`, err);
+          }
+        };
+        
+        ws.addEventListener('message', messageHandler);
+        ws.send(JSON.stringify(likesSubscription));
+        ws.send(JSON.stringify(repostsSubscription));
+      });
+    });
+    
+    // Wait for all subscriptions to complete
+    await Promise.all(promises);
     
     return {
       likes,
@@ -219,7 +346,31 @@ export const createAndPublishEvent = async (eventTemplate) => {
     }
     
     // Publish the event to all relays
-    await pool.publish(RELAYS, signedEvent);
+    const promises = Array.from(activeConnections.entries()).map(([relay, ws]) => {
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error(`Timeout publishing to ${relay}`));
+        }, 5000);
+        
+        const messageHandler = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            if (message[0] === 'OK' && message[1] === signedEvent.id) {
+              clearTimeout(timeout);
+              ws.removeEventListener('message', messageHandler);
+              resolve();
+            }
+          } catch (err) {
+            console.log(`Error processing OK message from ${relay}:`, err);
+          }
+        };
+        
+        ws.addEventListener('message', messageHandler);
+        ws.send(JSON.stringify(['EVENT', signedEvent]));
+      });
+    });
+    
+    await Promise.all(promises);
     
     return signedEvent;
   } catch (error) {
@@ -232,14 +383,11 @@ export const createAndPublishEvent = async (eventTemplate) => {
  * Handle app background state
  */
 export const handleAppBackground = () => {
-  // Close all active subscriptions
-  for (const sub of activeSubscriptions) {
-    sub.close();
+  // Close all WebSocket connections
+  for (const [relay, ws] of activeConnections.entries()) {
+    ws.close();
+    activeConnections.delete(relay);
   }
-  activeSubscriptions.clear();
-  
-  // Close all relay connections
-  pool.close(RELAYS);
 };
 
 /**
@@ -248,44 +396,61 @@ export const handleAppBackground = () => {
 export const diagnoseConnection = async () => {
   const results = {
     relayStatus: {},
-    generalEvents: 0,
-    runningEvents: 0,
-    error: null,
-    success: false
+    events: [],
+    errors: []
   };
   
   try {
-    // Initialize
+    // Initialize connections
     await initializeNostr();
     
-    // Check each relay status
-    for (const url of RELAYS) {
-      try {
-        const relay = pool.getRelay(url);
-        results.relayStatus[url] = relay.status;
-      } catch (err) {
-        results.relayStatus[url] = `error: ${err.message}`;
-      }
+    // Test each relay status
+    for (const [relay, ws] of activeConnections.entries()) {
+      results.relayStatus[relay] = ws.readyState === WebSocket.OPEN ? 'connected' : 'disconnected';
     }
     
-    // Test general event retrieval (any posts)
-    const generalEvents = await pool.list(RELAYS, [{
+    // Test general event retrieval
+    const filter = {
       kinds: [1],
       limit: 20
-    }]);
+    };
     
-    results.generalEvents = generalEvents.length;
+    const subscription = ['REQ', 'diagnostic-subscription', filter];
     
-    // Test running posts
-    if (generalEvents.length > 0) {
-      const runningEvents = await fetchRunningPosts(20);
-      results.runningEvents = runningEvents.length;
-    }
+    // Collect events from all relays
+    const promises = Array.from(activeConnections.entries()).map(([relay, ws]) => {
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          resolve();
+        }, 5000);
+        
+        const messageHandler = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            if (message[0] === 'EVENT' && message[2]) {
+              results.events.push(message[2]);
+            } else if (message[0] === 'EOSE' && message[1] === 'diagnostic-subscription') {
+              clearTimeout(timeout);
+              ws.removeEventListener('message', messageHandler);
+              resolve();
+            }
+          } catch (err) {
+            console.log(`Error processing message from ${relay}:`, err);
+            results.errors.push(`Error processing message from ${relay}: ${err.message}`);
+          }
+        };
+        
+        ws.addEventListener('message', messageHandler);
+        ws.send(JSON.stringify(subscription));
+      });
+    });
     
-    results.success = results.generalEvents > 0;
+    await Promise.all(promises);
+    
     return results;
-  } catch (err) {
-    results.error = err.message;
+  } catch (error) {
+    console.error('Error during diagnosis:', error);
+    results.errors.push(error.message);
     return results;
   }
 };
