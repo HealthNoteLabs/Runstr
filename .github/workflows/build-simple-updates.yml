@@ -13,6 +13,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      # Setup Node.js
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+      
+      # Install dependencies
+      - name: Install dependencies
+        run: npm ci
+      
+      # Build the React app
+      - name: Build React app
+        run: npm run build
+        
+      # Sync with Capacitor
+      - name: Sync Capacitor with Android
+        run: npx cap sync android
+      
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
