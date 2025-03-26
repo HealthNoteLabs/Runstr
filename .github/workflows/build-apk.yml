@@ -24,6 +24,7 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 20
+          cache: 'npm'  # Enable npm caching for faster installs
 
       - name: Install dependencies
         run: npm ci
@@ -61,6 +62,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
+          cache: 'gradle'  # Enable Gradle caching
 
       # Setup Android SDK
       - name: Set up Android SDK
@@ -74,23 +76,25 @@ jobs:
       - name: Build Debug APK
         run: cd android && ./gradlew assembleDebug
 
-      # Upload APK as an artifact first (so we have a backup)
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v2  # Downgraded to v2 which is more stable
-        with:
-          name: app-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 30
-
       # Rename the APK to include version and date
       - name: Rename APK
         run: |
           mkdir -p ./releases
           cp android/app/build/outputs/apk/debug/app-debug.apk ./releases/runstr-feed-${{ env.VERSION }}-${{ env.DATE }}.apk
 
+      # Upload APK as artifact (using v4)
+      - name: Upload APK artifact
+        if: success()  # Only run if previous steps succeeded
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
       # Create a Release using updated syntax
       - name: Create Release
         id: create_release
+        if: success()  # Only run if previous steps succeeded
         uses: softprops/action-gh-release@v1
         with:
           files: ./releases/runstr-feed-${{ env.VERSION }}-${{ env.DATE }}.apk
