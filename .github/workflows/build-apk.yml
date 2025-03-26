@@ -1,4 +1,4 @@
-name: Build and Release Android APK
+name: Build and Release APK
 
 on:
   push:
@@ -12,108 +12,106 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build and Release APK
+  build-and-release:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
+      - name: Check out code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-      - name: Setup Node
+      - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 20
-          cache: 'npm'
+
+      - name: Generate version and tag
+        run: |
+          VERSION=$(jq -r .version package.json)
+          TIMESTAMP=$(date +"%Y%m%d%H%M%S")
+          TAG="release-$VERSION-$TIMESTAMP"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "Generated VERSION=$VERSION, TIMESTAMP=$TIMESTAMP, TAG=$TAG"
 
       - name: Install dependencies
         run: npm ci
 
-      # Extract version from package.json
-      - name: Get version and set variables
-        id: vars
-        run: |
-          VERSION=$(jq -r .version package.json)
-          DATE=$(date +'%Y%m%d-%H%M%S')
-          RELEASE_TAG="feed-${VERSION}-${DATE}"
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "DATE=${DATE}" >> $GITHUB_ENV
-          echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
-
-      # Build the React app
       - name: Build React app
         run: npm run build
 
-      # Install Capacitor CLI
       - name: Install Capacitor CLI
         run: npm install -g @capacitor/cli
 
-      # Sync with Android
-      - name: Sync Capacitor with Android
+      - name: Sync Capacitor
         run: npx cap sync android
 
-      # Setup Java
-      - name: Set up JDK 21
+      - name: Set up JDK
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: '21'
-          cache: 'gradle'
 
-      # Setup Android SDK
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # Fix permissions for gradlew
-      - name: Grant execute permission for gradlew
+      - name: Set Gradle permissions
         run: chmod +x ./android/gradlew
 
-      # Debug - List all relevant directories
-      - name: Debug - List directories
+      - name: Build debug APK
+        run: cd android && ./gradlew assembleDebug
+
+      - name: Debug - list files
         run: |
-          ls -la ./android
-          ls -la ./android/app
-          ls -la ./android/app/build 2>/dev/null || echo "Build directory doesn't exist yet"
+          echo "Checking for APK files..."
+          find android -name "*.apk" -type f
+          echo "Workspace content:"
+          ls -la
+          echo "Android directory:"
+          ls -la android
 
-      # Build Debug APK
-      - name: Build Debug APK
-        run: cd android && ./gradlew assembleDebug --stacktrace
-
-      # Debug - Find APK
-      - name: Find APK files
-        run: find android -name "*.apk" -type f
-
-      # Prepare APK with proper name
-      - name: Prepare APK file
+      - name: Copy APK to root
         run: |
           APK_SOURCE="android/app/build/outputs/apk/debug/app-debug.apk"
-          APK_DEST="runstr-feed-${{ env.VERSION }}-${{ env.DATE }}.apk"
+          APK_FILENAME="runstr-${{ env.VERSION }}-${{ env.TIMESTAMP }}.apk"
           
+          echo "Checking source APK at $APK_SOURCE"
           if [ -f "$APK_SOURCE" ]; then
-            cp "$APK_SOURCE" "$APK_DEST"
-            echo "APK_PATH=$APK_DEST" >> $GITHUB_ENV
-            echo "APK prepared successfully at $APK_DEST"
+            echo "Source APK exists, copying to $APK_FILENAME"
+            cp "$APK_SOURCE" "$APK_FILENAME"
+            echo "APK_FILENAME=$APK_FILENAME" >> $GITHUB_ENV
+            echo "APK file copied successfully"
+            ls -la "$APK_FILENAME"
           else
-            echo "ERROR: APK file not found at $APK_SOURCE"
-            find android -name "*.apk" -type f
+            echo "ERROR: Source APK not found at $APK_SOURCE"
             exit 1
           fi
 
-      # Create GitHub Release with the APK
       - name: Create GitHub Release
-        uses: ncipollo/release-action@v1
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          artifacts: "${{ env.APK_PATH }}"
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ env.RELEASE_TAG }}
-          name: "Runstr Feed ${{ env.VERSION }}"
-          body: |
-            ## Runstr Feed App
-            
-            **Version:** ${{ env.VERSION }}
-            **Build Date:** ${{ env.DATE }}
-            **Branch:** ${{ github.ref_name }}
-            
-            Download the APK file to install directly on your Android device.
+          tag_name: ${{ env.TAG }}
+          release_name: "Runstr ${{ env.VERSION }} (${{ env.TIMESTAMP }})"
           draft: false
           prerelease: false
+          body: |
+            Runstr Feed App
+            Version: ${{ env.VERSION }}
+            Build Date: ${{ env.TIMESTAMP }}
+            Branch: ${{ github.ref_name }}
+            
+            Download the APK file to install on your Android device.
+
+      - name: Upload APK to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./${{ env.APK_FILENAME }}
+          asset_name: ${{ env.APK_FILENAME }}
+          asset_content_type: application/vnd.android.package-archive
