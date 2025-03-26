@@ -1,123 +1,119 @@
-name: Build and Release Simple-updates Debug Apk
+name: Build and Release Android APK
 
 on:
   push:
     branches:
       - Simple-updates
       - feed
-      - refresh  # Added refresh branch to trigger the workflow
-  workflow_dispatch:  # Allows manual triggering
+      - refresh
+  workflow_dispatch:
 
 permissions:
-  contents: write  # This is crucial for creating releases
+  contents: write
 
 jobs:
   build:
-    name: Build and Release Debug Apk
+    name: Build and Release APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Setup Node
         uses: actions/setup-node@v3
         with:
           node-version: 20
-          cache: 'npm'  # Enable npm caching for faster installs
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
       # Extract version from package.json
-      - name: Get Version from package.json
-        id: package_version
-        run: echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
-
-      # Generate timestamp for uniqueness
-      - name: Generate Timestamp
-        id: timestamp
-        run: echo "DATE=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_ENV
-
-      # Generate release tag dynamically
-      - name: Generate Release Tag
-        id: release_tag
-        run: echo "RELEASE_TAG=feed-${{ env.VERSION }}-${{ env.DATE }}" >> $GITHUB_ENV
+      - name: Get version and set variables
+        id: vars
+        run: |
+          VERSION=$(jq -r .version package.json)
+          DATE=$(date +'%Y%m%d-%H%M%S')
+          RELEASE_TAG="feed-${VERSION}-${DATE}"
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "DATE=${DATE}" >> $GITHUB_ENV
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
 
       # Build the React app
       - name: Build React app
         run: npm run build
 
-      # Install Capacitor CLI if not installed globally
+      # Install Capacitor CLI
       - name: Install Capacitor CLI
         run: npm install -g @capacitor/cli
 
-      # Sync React build with Android platform
+      # Sync with Android
       - name: Sync Capacitor with Android
         run: npx cap sync android
 
-      # Setup Java for Android build
+      # Setup Java
       - name: Set up JDK 21
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: '21'
-          cache: 'gradle'  # Enable Gradle caching
+          cache: 'gradle'
 
       # Setup Android SDK
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # Grant execute permissions for Gradle wrapper
-      - name: Grant execute permission to Gradle wrapper
+      # Fix permissions for gradlew
+      - name: Grant execute permission for gradlew
         run: chmod +x ./android/gradlew
+
+      # Debug - List all relevant directories
+      - name: Debug - List directories
+        run: |
+          ls -la ./android
+          ls -la ./android/app
+          ls -la ./android/app/build 2>/dev/null || echo "Build directory doesn't exist yet"
 
       # Build Debug APK
       - name: Build Debug APK
-        run: cd android && ./gradlew assembleDebug
+        run: cd android && ./gradlew assembleDebug --stacktrace
 
-      # Debug listing APK files
-      - name: List APK files
+      # Debug - Find APK
+      - name: Find APK files
         run: find android -name "*.apk" -type f
 
-      # Rename the APK directly in its original location
-      - name: Rename APK
+      # Prepare APK with proper name
+      - name: Prepare APK file
         run: |
           APK_SOURCE="android/app/build/outputs/apk/debug/app-debug.apk"
-          APK_DEST="android/app/build/outputs/apk/debug/runstr-feed-${{ env.VERSION }}-${{ env.DATE }}.apk"
+          APK_DEST="runstr-feed-${{ env.VERSION }}-${{ env.DATE }}.apk"
           
           if [ -f "$APK_SOURCE" ]; then
             cp "$APK_SOURCE" "$APK_DEST"
-            echo "APK renamed successfully from $APK_SOURCE to $APK_DEST"
-            ls -la "$APK_DEST"
+            echo "APK_PATH=$APK_DEST" >> $GITHUB_ENV
+            echo "APK prepared successfully at $APK_DEST"
           else
             echo "ERROR: APK file not found at $APK_SOURCE"
+            find android -name "*.apk" -type f
             exit 1
           fi
-          
-          echo "APK_PATH=$APK_DEST" >> $GITHUB_ENV
 
-      # Upload APK as artifact (using v4)
-      - name: Upload APK artifact
-        if: success()  # Only run if previous steps succeeded
-        uses: actions/upload-artifact@v4
-        with:
-          name: runstr-feed-${{ env.VERSION }}-${{ env.DATE }}
-          path: ${{ env.APK_PATH }}
-          retention-days: 30
-
-      # Create a Release directly without using a separate step
+      # Create GitHub Release with the APK
       - name: Create GitHub Release
-        if: success()
         uses: ncipollo/release-action@v1
         with:
-          artifacts: ${{ env.APK_PATH }}
-          tag: ${{ env.RELEASE_TAG }}
-          name: 'Runstr Feed ${{ env.VERSION }}-${{ env.DATE }}'
-          body: |
-            Build from ${{ github.ref_name }} branch.
-            Version: ${{ env.VERSION }}
-            Built on: ${{ env.DATE }}
+          artifacts: "${{ env.APK_PATH }}"
           token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ env.RELEASE_TAG }}
+          name: "Runstr Feed ${{ env.VERSION }}"
+          body: |
+            ## Runstr Feed App
+            
+            **Version:** ${{ env.VERSION }}
+            **Build Date:** ${{ env.DATE }}
+            **Branch:** ${{ github.ref_name }}
+            
+            Download the APK file to install directly on your Android device.
           draft: false
           prerelease: false
