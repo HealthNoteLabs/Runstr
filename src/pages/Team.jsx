@@ -212,7 +212,7 @@ export const Team = () => {
     subscriptionsRef.current.push(subscription);
     
     return subscription;
-  }, [subscribedChannels, currentTeam, mutedUsers, hiddenMessages]);
+  }, [subscribedChannels, currentTeam, mutedUsers, hiddenMessages, fetchUserProfile]);
 
   // Hide a message
   const hideMessage = async (messageId) => {
@@ -292,53 +292,38 @@ export const Team = () => {
     }
   }, [profiles]);
 
-  // Initialize
+  // Load team data when component mounts or teamId changes
   useEffect(() => {
     const setup = async () => {
       try {
         setLoading(true);
-        
-        // Initialize Nostr
-        if (!await initializeNostr()) {
-          setError('Failed to initialize Nostr connection');
-          setLoading(false);
-          return;
-        }
-        
+        setError(null);
+
         // Load moderation data
         await loadModeration();
-        
-        // Load user's teams/channels
-        if (pubkey) {
+
+        if (teamId) {
+          // If we have a teamId, load that team
+          await openTeam(teamId);
+        } else {
+          // Otherwise load user's teams
           await loadMyChannels();
         }
-        
-        // If teamId is provided in URL, open that team
-        if (teamId) {
-          await openTeam(teamId);
-          setActiveTab('teamProfile');
-        }
-        
-        setLoading(false);
       } catch (err) {
-        console.error('Error setting up team component:', err);
-        setError('Failed to load teams. Please try again later.');
+        console.error('Error in setup:', err);
+        setError('Failed to load team data. Please try again.');
+      } finally {
         setLoading(false);
       }
     };
-    
+
     setup();
-    
+
     // Cleanup subscriptions
     return () => {
-      subscriptionsRef.current.forEach(subscription => {
-        if (subscription && typeof subscription.stop === 'function') {
-          subscription.stop();
-        }
-      });
-      subscriptionsRef.current = [];
+      subscriptionsRef.current.forEach(sub => sub.unsub());
     };
-  }, [teamId, pubkey, loadModeration]);
+  }, [teamId, loadModeration, loadMyChannels, openTeam]);
 
   // Load channels the user has participated in
   const loadMyChannels = async () => {
