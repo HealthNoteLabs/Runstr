@@ -1,3 +1,4 @@
+import PropTypes from 'prop-types';
 import { extractImagesFromContent, formatSplitTimesInContent } from '../utils/postFormatters';
 
 /**
@@ -224,4 +225,56 @@ export const Post = ({
       )}
     </div>
   );
+};
+
+Post.propTypes = {
+  post: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    content: PropTypes.string.isRequired,
+    created_at: PropTypes.number.isRequired,
+    author: PropTypes.shape({
+      pubkey: PropTypes.string.isRequired,
+      profile: PropTypes.shape({
+        name: PropTypes.string,
+        picture: PropTypes.string
+      })
+    }).isRequired,
+    likes: PropTypes.number,
+    reposts: PropTypes.number,
+    zaps: PropTypes.number,
+    comments: PropTypes.arrayOf(PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      content: PropTypes.string.isRequired,
+      created_at: PropTypes.number.isRequired,
+      author: PropTypes.shape({
+        pubkey: PropTypes.string.isRequired,
+        profile: PropTypes.shape({
+          name: PropTypes.string,
+          picture: PropTypes.string
+        })
+      }).isRequired
+    })),
+    showComments: PropTypes.bool
+  }).isRequired,
+  userLikes: PropTypes.instanceOf(Set).isRequired,
+  userReposts: PropTypes.instanceOf(Set).isRequired,
+  handleLike: PropTypes.func.isRequired,
+  handleRepost: PropTypes.func.isRequired,
+  handleZap: PropTypes.func.isRequired,
+  handleCommentClick: PropTypes.func.isRequired,
+  handleComment: PropTypes.func.isRequired,
+  commentText: PropTypes.string.isRequired,
+  setCommentText: PropTypes.func.isRequired,
+  wallet: PropTypes.object
+};
+
+Post.defaultProps = {
+  post: {
+    likes: 0,
+    reposts: 0,
+    zaps: 0,
+    comments: [],
+    showComments: false
+  },
+  wallet: null
 }; 
