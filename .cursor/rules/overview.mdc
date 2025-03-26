@@ -1,0 +1,100 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# RUNSTR Application Overview
+
+- Core Purpose
+RUNSTR is a running application built on the Nostr protocol, designed to provide a decentralized, social running experience. It's primarily focused on Android platforms and aims to be a "nostr-only" alternative to traditional running apps like Nike Run.
+
+- Technical Stack
+Frontend Framework
+React 18.3
+Vite as build tool
+TailwindCSS for styling
+Mobile Platform
+Capacitor 7.0.1 for Android
+Background Geolocation support
+Native Android capabilities
+Core Technologies
+Nostr Protocol for decentralized social networking
+Bitcoin integration via Alby SDK
+WebSocket support for real-time features
+
+
+- Key Features
+Authentication & Identity
+Nostr-based login system
+Bitcoin wallet integration via Alby
+Core Running Features
+Run tracking with background geolocation
+Global running feed
+Wavlake music integration
+Audio playback capabilities
+Social Features
+Global running feed
+Social sharing capabilities
+Community interaction
+Application Architecture
+Frontend Structure
+Component-based architecture
+React Router for navigation
+Context-based state management
+Custom hooks for shared logic
+Directory Organization
+Apply to test-nostr-r...
+Development Tools
+Testing
+Vitest for unit testing
+React Testing Library
+Jest DOM for DOM testing
+Code Quality
+ESLint for code linting
+Prettier for code formatting
+TypeScript support
+Build & Development
+Vite for development and building
+Capacitor for Android deployment
+Custom scripts for icon management
+Dependencies
+Core Dependencies
+@capacitor-community/background-geolocation: Location tracking
+@getalby/bitcoin-connect: Bitcoin wallet integration
+nostr-tools: Nostr protocol implementation
+react-h5-audio-player: Audio playback
+react-player: Media playback
+tseep: Sound effects
+Development Dependencies
+Testing frameworks (Vitest, Testing Library)
+Build tools (Vite, Terser)
+Code quality tools (ESLint, Prettier)
+Image processing (Jimp, Sharp)
+Future Roadmap
+Planned Features
+Statistics tracking
+Goal setting
+Running clubs
+Events system
+Gear marketplace
+Custom themes
+Standardized run data format
+Development Stages
+Stage 1: Core functionality and optimization
+Stage 2: Design overhaul
+Stage 3: Release and promotion
+Development Workflow
+Setup
+Node.js environment
+Android development environment
+Capacitor configuration
+Build Process
+React app development with Vite
+Android sync with Capacitor
+Custom icon generation
+Testing Strategy
+Unit testing with Vitest
+Component testing with React Testing Library
+Manual testing capabilities
+This breakdown provides a comprehensive overview of the RUNSTR application's architecture, capabilities, and technical implementation. The application is built with modern web technologies while leveraging the Nostr protocol for decentralization and social features, making it a unique offering in the running app space.

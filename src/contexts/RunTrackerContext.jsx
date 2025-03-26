@@ -91,7 +91,16 @@ export const RunTrackerProvider = ({ children }) => {
       // Handler for saving completed runs to localStorage
       const handleRunStopped = (finalResults) => {
         console.log('Run completed:', finalResults);
-        // The actual saving is now handled by the RunTracker service using RunDataService
+        // Reset tracking state
+        setTrackingState({
+          isTracking: false,
+          isPaused: false,
+          distance: 0,
+          duration: 0,
+          pace: 0,
+          splits: [],
+          elevation: { current: null, gain: 0, loss: 0, lastAltitude: null }
+        });
       };
 
       // Subscribe to events from the run tracker
@@ -101,7 +110,7 @@ export const RunTrackerProvider = ({ children }) => {
       runTracker.on('splitRecorded', handleSplitRecorded);
       runTracker.on('elevationChange', handleElevationChange);
       runTracker.on('statusChange', handleStatusChange);
-      runTracker.on('stopped', handleRunStopped);
+      runTracker.on('runCompleted', handleRunStopped);
 
       // Check for active run state in localStorage on mount
       const savedRunState = localStorage.getItem('activeRunState');
@@ -148,7 +157,7 @@ export const RunTrackerProvider = ({ children }) => {
         runTracker.off('splitRecorded', handleSplitRecorded);
         runTracker.off('elevationChange', handleElevationChange); 
         runTracker.off('statusChange', handleStatusChange);
-        runTracker.off('stopped', handleRunStopped);
+        runTracker.off('runCompleted', handleRunStopped);
       };
     } catch (error) {
       console.error('Error setting up run tracker event listeners:', error);

@@ -109,16 +109,13 @@ class RunDataService {
    * @param {number} distance - Distance in meters
    * @param {number} duration - Duration in seconds
    * @param {string} unit - Distance unit (km or mi)
-   * @returns {number} Pace in minutes per unit
+   * @returns {number} Pace in seconds per meter
    */
   calculatePace(distance, duration, unit = 'km') {
     if (distance <= 0 || duration <= 0) return 0;
     
-    // Convert distance to km or miles
-    const distanceInUnit = unit === 'km' ? distance / 1000 : distance / 1609.344;
-    
-    // Calculate minutes per unit (km or mile)
-    return duration / 60 / distanceInUnit;
+    // Return seconds per meter
+    return duration / distance;
   }
 
   /**
@@ -202,7 +199,7 @@ class RunDataService {
   }
 
   /**
-   * Remove a listener
+   * Remove a listener for run data changes
    * @param {Function} listener - Callback function to remove
    */
   removeListener(listener) {
@@ -210,21 +207,13 @@ class RunDataService {
   }
 
   /**
-   * Notify all listeners of changes
+   * Notify all listeners of run data changes
    * @param {Array} runs - Updated runs array
    */
   notifyListeners(runs) {
-    this.listeners.forEach(listener => {
-      try {
-        listener(runs);
-      } catch (error) {
-        console.error('Error in run data listener:', error);
-      }
-    });
+    this.listeners.forEach(listener => listener(runs));
   }
 }
 
-// Create singleton instance
-const runDataService = new RunDataService();
-
-export default runDataService; 
+// Export a singleton instance
+export default new RunDataService(); 

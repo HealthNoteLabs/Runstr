@@ -1,11 +1,10 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect } from 'react';
 import { useRunTracker } from '../contexts/RunTrackerContext';
-import { convertDistance, formatPaceWithUnit, formatTime, formatElevation, formatPace } from '../utils/formatters';
+import { convertDistance, formatPaceWithUnit, formatTime, formatElevation, formatDate } from '../utils/formatters';
 import { PermissionDialog } from './PermissionDialog';
 import { createAndPublishEvent } from '../utils/nostr';
 import { displayDistance } from '../utils/formatters';
 import SplitsTable from './SplitsTable';
-import runDataService from '../services/RunDataService';
 
 export const RunTracker = () => {
   const { 
@@ -15,6 +14,7 @@ export const RunTracker = () => {
     duration, 
     pace, 
     elevation,
+    splits,
     startRun,
     pauseRun,
     resumeRun,
@@ -210,12 +210,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     pace,
     distanceUnit
   );
-  
-  // Replace the direct pace calculation with RunDataService calculation
-  // when using the pace for any calculations in component
-  const calculateConsistentPace = (distance, duration, unit) => {
-    return runDataService.calculatePace(distance, duration, unit);
-  };
 
   return (
     <div className="w-full h-full flex flex-col bg-[#111827] text-white relative">
@@ -278,6 +272,31 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         </div>
       </div>
       
+      {/* Recent Runs Section */}
+      {recentRun && (
+        <div className="p-4">
+          <h2 className="text-xl font-bold mb-4">Recent Runs</h2>
+          <div className="bg-gradient-to-br from-[#111827] to-[#1a222e] p-4 rounded-xl shadow-lg">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <div className="text-sm text-gray-400">{recentRun.date}</div>
+                <div className="text-2xl font-bold">{displayDistance(recentRun.distance, distanceUnit)}</div>
+                <div className="text-sm text-gray-400">{formatTime(recentRun.duration)}</div>
+              </div>
+              <button
+                onClick={handlePostToNostr}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                Share
+              </button>
+            </div>
+            {recentRun.splits && recentRun.splits.length > 0 && (
+              <SplitsTable splits={recentRun.splits} distanceUnit={distanceUnit} />
+            )}
+          </div>
+        </div>
+      )}
+      
       {/* Unit Toggle */}
       <div className="flex justify-center my-4">
         <div className="flex rounded-full bg-[#1a222e] p-1">
@@ -295,6 +314,13 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           </button>
         </div>
       </div>
+      
+      {/* Splits Table - Only show during active run */}
+      {isTracking && (
+        <div className="mx-4 mb-4">
+          <SplitsTable splits={splits} distanceUnit={distanceUnit} />
+        </div>
+      )}
       
       {/* Start Run Button */}
       {!isTracking ? (
@@ -331,48 +357,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           >
             Stop
           </button>
-        </div>
-      )}
-      
-      {/* Recent Runs Section */}
-      {recentRun && !isTracking && (
-        <div className="mx-4 mt-4 bg-gradient-to-br from-[#111827] to-[#1a222e] rounded-xl shadow-lg overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-800">
-            <h3 className="text-lg font-semibold">Recent Runs</h3>
-            <span className="text-xs text-gray-400">See All</span>
-          </div>
-          <div className="p-4">
-            <div className="flex items-center">
-              <div className="w-10 h-10 bg-gray-700 rounded-lg flex items-center justify-center mr-4">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <h4 className="font-semibold">Morning Run</h4>
-                <div className="flex items-center text-xs text-gray-400">
-                  <span>Yesterday • {displayDistance(recentRun.distance, distanceUnit)}</span>
-                  <span className="ml-2 px-2 py-1 bg-gray-800 rounded-full">
-                    {recentRun.distance > 0 
-                      ? (recentRun.duration / 60 / (distanceUnit === 'km' ? recentRun.distance/1000 : recentRun.distance/1609.344)).toFixed(2) 
-                      : '0.00'} min/{distanceUnit}
-                  </span>
-                </div>
-              </div>
-              <div className="text-right text-gray-400">
-                <span className="block text-lg font-semibold">{formatTime(recentRun.duration).split(':').slice(0, 2).join(':')}</span>
-                <button 
-                  onClick={handlePostToNostr}
-                  className="text-xs mt-1 text-indigo-400 flex items-center"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                  </svg>
-                  Share
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
       )}
       

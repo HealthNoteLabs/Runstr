@@ -108,15 +108,16 @@ class RunTracker extends EventEmitter {
         newPosition.longitude
       );
       
-      // Add a minimum threshold to filter out GPS noise (e.g., 3 meters)
+      // Add a minimum threshold to filter out GPS noise (e.g., 1 meter)
       // Only count movement if it's above the threshold
-      const MOVEMENT_THRESHOLD = 1.5; // 1.5 meters (reduced from 3m)
+      const MOVEMENT_THRESHOLD = 1; // 1 meter minimum movement
+      
       if (distanceIncrement >= MOVEMENT_THRESHOLD) {
         this.distance += distanceIncrement;
         this.emit('distanceChange', this.distance); // Emit distance change
       } else {
         // GPS noise detected, not adding to distance
-        console.log(`Filtered out small movement: ${distanceIncrement.toFixed(2)}m`);
+        console.log(`Filtered out movement: ${distanceIncrement.toFixed(2)}m`);
       }
 
       // Check for altitude data and update elevation
@@ -326,11 +327,13 @@ class RunTracker extends EventEmitter {
     
     // Calculate speed and pace one last time
     if (this.distance > 0 && this.duration > 0) {
-      this.pace = runDataService.calculatePace(this.distance, this.duration, this.distanceUnit);
+      this.pace = this.calculatePace(this.distance, this.duration);
     }
     
     // Create the final run data object
     const finalResults = {
+      id: Date.now() + '-' + Math.random().toString(36).substr(2, 9),
+      date: new Date().toLocaleDateString(),
       distance: this.distance,
       duration: this.duration,
       pace: this.pace,
@@ -342,19 +345,24 @@ class RunTracker extends EventEmitter {
       unit: this.distanceUnit
     };
     
-    // Save to run history using RunDataService instead of directly to localStorage
-    runDataService.saveRun(finalResults);
+    // Save to run history using RunDataService
+    const savedRun = runDataService.saveRun(finalResults);
+    
+    if (!savedRun) {
+      console.error('Failed to save run data');
+      return null;
+    }
     
     // Clean up resources
-    this.stopTracking();
-    this.stopTimer();
-    this.stopPaceCalculator();
+    await this.cleanupWatchers();
+    clearInterval(this.timerInterval);
+    clearInterval(this.paceInterval);
     
     // Emit status change and completed event
     this.emit('statusChange', { isTracking: false, isPaused: false });
-    this.emit('runCompleted', finalResults);
+    this.emit('runCompleted', savedRun);
     
-    return finalResults;
+    return savedRun;
   }
 
   // Restore an active tracking session that was not paused
@@ -431,6 +439,32 @@ class RunTracker extends EventEmitter {
   // for clarity and to ensure it's not overridden
   off(event, callback) {
     return super.off(event, callback);
+  }
+
+  // Method for simulating a run in tests
+  simulateRun(distance, duration, pace, splits, elevation) {
+    this.isTracking = true;
+    this.isPaused = false;
+    this.startTime = Date.now() - duration * 1000;
+    this.pausedTime = 0;
+    this.distance = distance;
+    this.duration = duration;
+    this.pace = pace;
+    this.splits = splits || [];
+    this.elevation = {
+      current: elevation?.current || null,
+      gain: elevation?.gain || 0,
+      loss: elevation?.loss || 0,
+      lastAltitude: elevation?.lastAltitude || null
+    };
+
+    // Emit all the changes
+    this.emit('distanceChange', this.distance);
+    this.emit('durationChange', this.duration);
+    this.emit('paceChange', this.pace);
+    this.emit('splitRecorded', this.splits);
+    this.emit('elevationChange', this.elevation);
+    this.emit('statusChange', { isTracking: true, isPaused: false });
   }
 }
 

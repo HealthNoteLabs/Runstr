@@ -14,7 +14,7 @@ export function FloatingMusicPlayer() {
   const [expanded, setExpanded] = useState(false);
   const navigate = useNavigate();
   
-  if (!currentTrack) return <span className="text-sm">Good morning, Runner</span>;
+  if (!currentTrack) return <span className="text-sm">Run with Nostr</span>;
 
   return (
     <div className={`${expanded ? 'header-player-expanded' : 'header-player-collapsed'}`}>

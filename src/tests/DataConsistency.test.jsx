@@ -6,6 +6,9 @@ import { BrowserRouter, MemoryRouter, Routes, Route } from 'react-router-dom';
 import { RunTracker } from '../components/RunTracker';
 import { RunHistory } from '../pages/RunHistory';
 
+// Import RunTrackerProvider
+import { RunTrackerProvider } from '../contexts/RunTrackerContext';
+
 // Mock tracking functions and capacitor
 vi.mock('@capacitor/core', () => ({
   registerPlugin: () => ({
@@ -82,6 +85,12 @@ vi.mock('../services/RunTracker', () => {
         events[event].push(callback);
       }),
       
+      off: vi.fn((event, callback) => {
+        if (events[event]) {
+          events[event] = events[event].filter(cb => cb !== callback);
+        }
+      }),
+      
       emit: (event, data) => {
         if (events[event]) {
           events[event].forEach(callback => callback(data));
@@ -127,7 +136,7 @@ vi.mock('../services/RunTracker', () => {
         return Promise.resolve();
       }),
       
-      // Add cleanupWatchers method that was missing from our mock
+      // Add cleanupWatchers method
       cleanupWatchers: vi.fn().mockResolvedValue(),
       
       // Helper function to simulate run for testing
@@ -162,12 +171,14 @@ vi.mock('../utils/offline', () => ({
 // Helper to create a testing environment with both components available
 const renderWithRouter = (ui, { route = '/' } = {}) => {
   return render(
-    <MemoryRouter initialEntries={[route]}>
-      <Routes>
-        <Route path="/" element={ui} />
-        <Route path="/history" element={<RunHistory />} />
-      </Routes>
-    </MemoryRouter>
+    <RunTrackerProvider>
+      <MemoryRouter initialEntries={[route]}>
+        <Routes>
+          <Route path="/" element={ui} />
+          <Route path="/history" element={<RunHistory />} />
+        </Routes>
+      </MemoryRouter>
+    </RunTrackerProvider>
   );
 };
 

@@ -1,41 +1,58 @@
 import { Post } from './Post';
 
-export const PostList = ({
+const PostList = ({
   posts,
   loading,
-  page,
+  hasMore,
+  onLoadMore,
+  onRefresh,
+  isRefreshing,
   userLikes,
   userReposts,
-  handleLike,
-  handleRepost,
-  handleZap,
-  handleCommentClick,
-  handleComment,
+  onLike,
+  onRepost,
+  onComment,
   commentText,
   setCommentText,
+  handleCommentClick,
+  handleZap,
   wallet
 }) => {
   return (
-    <div className="posts-container">
+    <div className="posts-list">
       {posts.map((post) => (
         <Post
           key={post.id}
           post={post}
-          userLikes={userLikes}
-          userReposts={userReposts}
-          handleLike={handleLike}
-          handleRepost={handleRepost}
-          handleZap={handleZap}
-          handleCommentClick={handleCommentClick}
-          handleComment={handleComment}
+          isLiked={userLikes.has(post.id)}
+          isReposted={userReposts.has(post.id)}
+          onLike={() => onLike(post)}
+          onRepost={() => onRepost(post)}
+          onComment={() => onComment(post)}
           commentText={commentText}
           setCommentText={setCommentText}
+          handleCommentClick={handleCommentClick}
+          handleZap={() => handleZap(post)}
           wallet={wallet}
         />
       ))}
-      {loading && page > 1 && (
-        <div className="loading-more">Loading more posts...</div>
+      
+      {loading && hasMore && (
+        <div className="loading-indicator">
+          Loading more posts...
+        </div>
+      )}
+      
+      {!loading && hasMore && (
+        <button 
+          className="load-more-button"
+          onClick={onLoadMore}
+        >
+          Load More
+        </button>
       )}
     </div>
   );
-}; 
+};
+
+export default PostList; 

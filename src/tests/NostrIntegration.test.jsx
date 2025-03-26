@@ -5,6 +5,7 @@ import { render, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { RunHistory } from '../pages/RunHistory';
 import { RunTracker as RunTrackerComponent } from '../components/RunTracker';
+import { RunTrackerProvider } from '../contexts/RunTrackerContext';
 
 // Mock nostr utils
 vi.mock('../utils/nostr', () => ({
@@ -125,12 +126,14 @@ vi.mock('../utils/offline', () => ({
 // Helper to create a testing environment with both components available
 const renderWithRouter = (ui, { route = '/' } = {}) => {
   return render(
-    <MemoryRouter initialEntries={[route]}>
-      <Routes>
-        <Route path="/" element={ui} />
-        <Route path="/history" element={<RunHistory />} />
-      </Routes>
-    </MemoryRouter>
+    <RunTrackerProvider>
+      <MemoryRouter initialEntries={[route]}>
+        <Routes>
+          <Route path="/" element={ui} />
+          <Route path="/history" element={<RunHistory />} />
+        </Routes>
+      </MemoryRouter>
+    </RunTrackerProvider>
   );
 };
 

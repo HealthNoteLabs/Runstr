@@ -124,10 +124,16 @@ export const useLocation = (options = {}) => {
         updateElevation(position.coords.altitude);
       }
 
-      // Less strict filtering criteria - allow any movement >= 0.1m with reasonable accuracy
-      if (distance >= 0.1 && position.coords.accuracy < 30) {
+      // Stricter filtering criteria for stationary positions
+      const isStationary = distance < 0.5; // Consider movement less than 0.5m as stationary
+      const hasGoodAccuracy = position.coords.accuracy <= 15; // Require better GPS accuracy
+      const isReasonableSpeed = distance / timeDiff <= 20; // Max speed of 72 km/h
+
+      if ((isStationary && hasGoodAccuracy) || (!isStationary && isReasonableSpeed)) {
         lastPositionRef.current = filteredPosition;
         setPositions((prev) => [...prev, filteredPosition]);
+      } else {
+        console.log(`Filtered position: distance=${distance.toFixed(2)}m, accuracy=${position.coords.accuracy}m, speed=${(distance/timeDiff).toFixed(2)}m/s`);
       }
     },
     [updateGpsQuality, updateElevation]

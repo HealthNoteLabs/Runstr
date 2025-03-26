@@ -3,47 +3,46 @@ import { NostrContext } from '../contexts/NostrContext';
 import { useAuth } from '../hooks/useAuth';
 import { useRunFeed } from '../hooks/useRunFeed';
 import { usePostInteractions } from '../hooks/usePostInteractions';
-import { PostList } from '../components/PostList';
+import PostList from '../components/PostList';
 import { handleAppBackground } from '../utils/nostr';
 
-export const RunClub = () => {
+const RunClub = () => {
   const { defaultZapAmount } = useContext(NostrContext);
   const { wallet } = useAuth();
   const [diagnosticInfo, setDiagnosticInfo] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
   
   // Use the custom hooks
   const {
     posts,
-    setPosts,
     loading,
     error,
+    hasMore,
+    loadMore,
+    refreshPosts,
     userLikes,
-    setUserLikes,
     userReposts,
-    setUserReposts,
-    loadSupplementaryData,
-    loadMorePosts,
-    fetchRunPostsViaSubscription,
-    loadedSupplementaryData
+    handleLike,
+    handleRepost,
+    handleComment
   } = useRunFeed();
   
   const {
     commentText,
     setCommentText,
     handleCommentClick,
-    handleLike,
-    handleRepost,
     handleZap,
-    handleComment
+    loadedSupplementaryData
   } = usePostInteractions({
     posts,
-    setPosts,
-    setUserLikes,
-    setUserReposts,
-    loadSupplementaryData,
-    loadedSupplementaryData,
-    defaultZapAmount
+    userLikes,
+    userReposts,
+    defaultZapAmount,
+    loadedSupplementaryData
   });
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Handle app lifecycle events for Android
   useEffect(() => {
@@ -81,7 +80,7 @@ export const RunClub = () => {
         if (results.runningEvents > 0) {
           // We found running-specific posts too
           setDiagnosticInfo(`Success! Found ${results.runningEvents} running-related posts. Refreshing feed...`);
-          fetchRunPostsViaSubscription();
+          refreshPosts();
         } else {
           // Connected but no running posts
           setDiagnosticInfo('Connected to relays and found general posts, but no running posts found. Trying broader search...');
@@ -92,9 +91,9 @@ export const RunClub = () => {
           
           if (contentResults.length > 0) {
             setDiagnosticInfo(`Success! Found ${contentResults.length} posts mentioning running in their content. Refreshing feed...`);
-            // You'll need to process these events similarly to how fetchRunPostsViaSubscription does
+            // You'll need to process these events similarly to how refreshPosts does
             // For now, just refresh the feed
-            fetchRunPostsViaSubscription();
+            refreshPosts();
           } else {
             setDiagnosticInfo('No running-related posts found by tag or content. There may not be any recent running posts on the network.');
           }
@@ -113,81 +112,95 @@ export const RunClub = () => {
     }
   };
 
-  // Simple scroll handler
-  useEffect(() => {
-    const handleScroll = () => {
-      const scrollPosition = window.scrollY || document.documentElement.scrollTop;
-      const height = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-      const screenHeight = window.innerHeight || document.documentElement.clientHeight;
-      
-      // Load more when we're close to the bottom
-      if (scrollPosition + screenHeight > height - 300) {
-        loadMorePosts();
-      }
-    };
+  // Handle retry with backoff
+  const handleRetry = async () => {
+    if (retryCount >= maxRetries) {
+      setDiagnosticInfo('Maximum retry attempts reached. Please check your connection and try again later.');
+      return;
+    }
 
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [loadMorePosts]);
+    setRetryCount(prev => prev + 1);
+    setDiagnosticInfo(`Retrying connection (attempt ${retryCount + 1}/${maxRetries})...`);
+    
+    try {
+      await refreshPosts();
+      setRetryCount(0); // Reset retry count on success
+    } catch (err) {
+      console.error('Retry error:', err);
+      setDiagnosticInfo(`Retry failed: ${err.message}`);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await refreshPosts();
+    setIsRefreshing(false);
+  };
 
   return (
     <div className="run-club-container">
-      <h2>RUNSTR FEED</h2>
-      {loading && posts.length === 0 ? (
+      <h2>Run Club Feed</h2>
+      
+      {loading && !posts.length && (
         <div className="loading-indicator">
-          <div className="loading-spinner"></div>
-          <p>Loading posts...</p>
+          Connecting to relays...
         </div>
-      ) : error ? (
+      )}
+
+      {error && !posts.length && (
         <div className="error-message">
           <p>{error}</p>
           <div className="error-buttons">
             <button 
-              className="retry-button" 
-              onClick={fetchRunPostsViaSubscription}
+              className="retry-button"
+              onClick={handleRetry}
+              disabled={retryCount >= 3}
             >
-              Retry
+              {retryCount >= 3 ? 'Max retries reached' : 'Retry'}
             </button>
             <button 
-              className="diagnose-button" 
+              className="diagnose-button"
               onClick={diagnoseConnection}
             >
-              Diagnose Connection
+              Diagnose
             </button>
           </div>
           {diagnosticInfo && (
             <div className="diagnostic-info">
-              <p>{diagnosticInfo}</p>
+              <pre>{JSON.stringify(diagnosticInfo, null, 2)}</pre>
             </div>
           )}
         </div>
-      ) : posts.length === 0 ? (
+      )}
+
+      {!loading && !error && posts.length === 0 && (
         <div className="no-posts-message">
-          <p>No running posts found</p>
-          <button 
-            className="retry-button" 
-            onClick={fetchRunPostsViaSubscription}
-          >
-            Refresh
-          </button>
+          No running posts found. Pull down to refresh.
         </div>
-      ) : (
+      )}
+
+      {posts.length > 0 && (
         <PostList
           posts={posts}
           loading={loading}
-          page={1}
+          hasMore={hasMore}
+          onLoadMore={loadMore}
+          onRefresh={handleRefresh}
+          isRefreshing={isRefreshing}
           userLikes={userLikes}
           userReposts={userReposts}
-          handleLike={handleLike}
-          handleRepost={handleRepost}
-          handleZap={(post) => handleZap(post, wallet)}
-          handleCommentClick={handleCommentClick}
-          handleComment={handleComment}
+          onLike={handleLike}
+          onRepost={handleRepost}
+          onComment={handleComment}
           commentText={commentText}
           setCommentText={setCommentText}
+          handleCommentClick={handleCommentClick}
+          handleZap={(post) => handleZap(post, wallet)}
           wallet={wallet}
         />
       )}
     </div>
   );
 };
+
+export default RunClub;

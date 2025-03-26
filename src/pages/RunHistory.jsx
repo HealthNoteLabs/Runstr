@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createAndPublishEvent } from '../utils/nostr';
 import { useRunStats } from '../hooks/useRunStats';
-import { useRunProfile } from '../hooks/useRunProfile';
 import { formatTime, displayDistance, formatElevation, formatDate } from '../utils/formatters';
 import runDataService from '../services/RunDataService';
 
@@ -13,23 +12,11 @@ export const RunHistory = () => {
   const [showModal, setShowModal] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [distanceUnit, setDistanceUnit] = useState(() => localStorage.getItem('distanceUnit') || 'km');
-  const [showProfileModal, setShowProfileModal] = useState(false);
-  const [npub, setNpub] = useState(() => localStorage.getItem('currentNpub'));
-  const [publishEnabled, setPublishEnabled] = useState(false);
-
-  // Get user profile and distance unit from custom hooks
-  const { 
-    profile, 
-    updateUserProfile,
-    handleProfileChange, 
-    handleProfileSubmit 
-  } = useRunProfile();
 
   const {
     stats,
-    calculateStats,
     calculateCaloriesBurned
-  } = useRunStats(runHistory, profile);
+  } = useRunStats(runHistory);
 
   // Load run history on component mount and listen for updates
   useEffect(() => {
@@ -98,11 +85,19 @@ export const RunHistory = () => {
       
       // First pass: identify unique runs and fix missing IDs, future dates, and unrealistic values
       const fixedRuns = parsedRuns.reduce((acc, run) => {
+        // Skip null or undefined runs
+        if (!run) return acc;
+
+        // Fix missing ID
+        if (!run.id) {
+          run.id = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+          runDataService.updateRun(run.id, { id: run.id });
+        }
+
         // Fix future dates - replace with current date
         let runDate = new Date(run.date);
         if (isNaN(runDate.getTime()) || runDate > now) {
           run.date = now.toLocaleDateString();
-          // Update the run using the service
           runDataService.updateRun(run.id, { date: run.date });
         }
         
@@ -110,11 +105,9 @@ export const RunHistory = () => {
         const MAX_REALISTIC_DISTANCE = 100 * 1000; // 100 km in meters
         if (isNaN(run.distance) || run.distance <= 0) {
           run.distance = 5000; // Default to 5 km for invalid distances
-          // Update the run using the service
           runDataService.updateRun(run.id, { distance: run.distance });
         } else if (run.distance > MAX_REALISTIC_DISTANCE) {
           run.distance = Math.min(run.distance, MAX_REALISTIC_DISTANCE);
-          // Update the run using the service
           runDataService.updateRun(run.id, { distance: run.distance });
         }
         
@@ -122,19 +115,10 @@ export const RunHistory = () => {
         const MAX_DURATION = 24 * 60 * 60; // 24 hours in seconds
         if (isNaN(run.duration) || run.duration <= 0) {
           run.duration = 30 * 60; // Default to 30 minutes for invalid durations
-          // Update the run using the service
           runDataService.updateRun(run.id, { duration: run.duration });
         } else if (run.duration > MAX_DURATION) {
           run.duration = Math.min(run.duration, MAX_DURATION);
-          // Update the run using the service
           runDataService.updateRun(run.id, { duration: run.duration });
-        }
-        
-        // Skip the rest of the checks if this run doesn't have an ID
-        if (!run.id) {
-          run.id = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-          // Update the run using the service
-          runDataService.updateRun(run.id, { id: run.id });
         }
         
         // Create a signature for each run based on key properties
@@ -156,13 +140,15 @@ export const RunHistory = () => {
         return acc;
       }, []);
 
-      // Sort runs by date (newest first)
+      // Sort runs by date (oldest first)
       fixedRuns.sort((a, b) => {
         const dateA = new Date(a.date);
         const dateB = new Date(b.date);
-        return dateB - dateA;
+        return dateA - dateB;
       });
 
+      // Update localStorage with the fixed runs
+      localStorage.setItem('runHistory', JSON.stringify(fixedRuns));
       setRunHistory(fixedRuns);
     } catch (error) {
       console.error('Error loading run history:', error);
@@ -172,9 +158,20 @@ export const RunHistory = () => {
 
   const handleDeleteRun = (runId) => {
     if (window.confirm('Are you sure you want to delete this run?')) {
-      const updatedRuns = runHistory.filter((run) => run.id !== runId);
-      localStorage.setItem('runHistory', JSON.stringify(updatedRuns));
-      setRunHistory(updatedRuns);
+      // Use RunDataService to delete the run
+      const success = runDataService.deleteRun(runId);
+      if (success) {
+        const updatedRuns = runHistory.filter((run) => run.id !== runId);
+        setRunHistory(updatedRuns);
+      } else {
+        console.error('Failed to delete run');
+        // Use a toast notification instead of alert for Android
+        if (window.Android && window.Android.showToast) {
+          window.Android.showToast('Failed to delete run');
+        } else {
+          alert('Failed to delete run');
+        }
+      }
     }
   };
 
@@ -256,27 +253,22 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     <div className="run-history">
       <div className="stats-overview">
         <h2>STATS</h2>
-        <div className="unit-toggle-container">
-          <button 
-            className={`unit-toggle ${distanceUnit === 'km' ? 'active' : ''}`}
-            onClick={toggleDistanceUnit}
-          >
-            KM
-          </button>
-          <button 
-            className={`unit-toggle ${distanceUnit === 'mi' ? 'active' : ''}`}
-            onClick={toggleDistanceUnit}
-          >
-            MI
-          </button>
+        <div className="flex justify-center my-4">
+          <div className="flex rounded-full bg-[#1a222e] p-1">
+            <button 
+              className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+              onClick={() => distanceUnit !== 'mi' && toggleDistanceUnit()}
+            >
+              Miles
+            </button>
+            <button 
+              className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+              onClick={() => distanceUnit !== 'km' && toggleDistanceUnit()}
+            >
+              Kilometers
+            </button>
+          </div>
         </div>
-        <button 
-          className="profile-btn" 
-          onClick={() => setShowProfileModal(true)}
-          title="Update your profile for accurate calorie calculations"
-        >
-          Update Profile
-        </button>
         <div className="stats-grid">
           <div className="stat-card">
             <h3>Total Distance</h3>
@@ -479,86 +471,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <button onClick={() => setShowModal(false)} disabled={isPosting}>
                 Cancel
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showProfileModal && (
-        <div className="modal-overlay">
-          <div className="modal-content profile-modal">
-            <h3>User Profile</h3>
-            <div className="form-group">
-              <label htmlFor="weight">Weight (kg)</label>
-              <input
-                id="weight"
-                type="number"
-                value={profile.weight}
-                onChange={(e) => handleProfileChange('weight', Number(e.target.value))}
-              />
-            </div>
-            <div className="form-group height-inputs">
-              <label>Height</label>
-              <div className="height-fields">
-                <div className="height-field">
-                  <input
-                    id="heightFeet"
-                    type="number"
-                    min="0"
-                    max="8"
-                    value={profile.heightFeet}
-                    onChange={(e) => handleProfileChange('heightFeet', Number(e.target.value))}
-                  />
-                  <label htmlFor="heightFeet">ft</label>
-                </div>
-                <div className="height-field">
-                  <input
-                    id="heightInches"
-                    type="number"
-                    min="0"
-                    max="11"
-                    value={profile.heightInches}
-                    onChange={(e) => handleProfileChange('heightInches', Number(e.target.value))}
-                  />
-                  <label htmlFor="heightInches">in</label>
-                </div>
-              </div>
-            </div>
-            <div className="form-group">
-              <label htmlFor="gender">Gender</label>
-              <select
-                id="gender"
-                value={profile.gender}
-                onChange={(e) => handleProfileChange('gender', e.target.value)}
-              >
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label htmlFor="age">Age</label>
-              <input
-                id="age"
-                type="number"
-                value={profile.age}
-                onChange={(e) => handleProfileChange('age', Number(e.target.value))}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="fitnessLevel">Fitness Level</label>
-              <select
-                id="fitnessLevel"
-                value={profile.fitnessLevel}
-                onChange={(e) => handleProfileChange('fitnessLevel', e.target.value)}
-              >
-                <option value="beginner">Beginner</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="advanced">Advanced</option>
-              </select>
-            </div>
-            <div className="modal-buttons">
-              <button onClick={handleProfileSubmit}>Save</button>
-              <button onClick={() => setShowProfileModal(false)}>Cancel</button>
             </div>
           </div>
         </div>

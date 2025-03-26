@@ -69,6 +69,15 @@ export const fetchRunningPosts = async (limit = 50, since = undefined) => {
     
     console.log('Fetching running posts with filter:', filter);
     
+    // Check if we have any active connections
+    if (activeConnections.size === 0) {
+      console.log('No active connections, attempting to reconnect...');
+      const connected = await initializeNostr();
+      if (!connected) {
+        throw new Error('Failed to connect to any relays');
+      }
+    }
+    
     // Create subscription message
     const subscription = [
       'REQ',
@@ -79,28 +88,40 @@ export const fetchRunningPosts = async (limit = 50, since = undefined) => {
     // Collect events from all relays
     const events = [];
     const promises = Array.from(activeConnections.entries()).map(([relay, ws]) => {
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
-          resolve();
-        }, 10000); // 10 second timeout
+          console.log(`Timeout waiting for response from ${relay}`);
+          ws.removeEventListener('message', messageHandler);
+          resolve(); // Resolve instead of reject to continue with other relays
+        }, 15000); // Increased timeout to 15 seconds
         
         const messageHandler = (event) => {
           try {
             const message = JSON.parse(event.data);
             if (message[0] === 'EVENT' && message[2]) {
               events.push(message[2]);
+              console.log(`Received event from ${relay}`);
             } else if (message[0] === 'EOSE' && message[1] === 'running-posts-subscription') {
+              console.log(`Received EOSE from ${relay}`);
               clearTimeout(timeout);
               ws.removeEventListener('message', messageHandler);
               resolve();
             }
           } catch (err) {
-            console.log(`Error processing message from ${relay}:`, err);
+            console.error(`Error processing message from ${relay}:`, err);
+            resolve(); // Continue with other relays
           }
         };
         
         ws.addEventListener('message', messageHandler);
-        ws.send(JSON.stringify(subscription));
+        
+        // Check if connection is still open
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(subscription));
+        } else {
+          console.log(`Connection to ${relay} is not open, skipping...`);
+          resolve();
+        }
       });
     });
     
@@ -117,7 +138,7 @@ export const fetchRunningPosts = async (limit = 50, since = undefined) => {
     return uniqueEvents;
   } catch (error) {
     console.error('Error fetching running posts:', error);
-    return [];
+    throw error; // Propagate error to be handled by the UI
   }
 };
 

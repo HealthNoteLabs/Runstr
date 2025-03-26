@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { render, act, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { RunTrackerProvider } from '../contexts/RunTrackerContext';
 
 // Import components
 import { RunTracker } from '../components/RunTracker';
@@ -92,12 +93,14 @@ vi.mock('../services/RunTracker', () => {
 // Helper to render with routing
 const renderWithRouter = (ui, { route = '/' } = {}) => {
   return render(
-    <MemoryRouter initialEntries={[route]}>
-      <Routes>
-        <Route path="/" element={ui} />
-        <Route path="/history" element={<RunHistory />} />
-      </Routes>
-    </MemoryRouter>
+    <RunTrackerProvider>
+      <MemoryRouter initialEntries={[route]}>
+        <Routes>
+          <Route path="/" element={ui} />
+          <Route path="/history" element={<RunHistory />} />
+        </Routes>
+      </MemoryRouter>
+    </RunTrackerProvider>
   );
 };
 
