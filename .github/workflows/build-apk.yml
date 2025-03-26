@@ -76,31 +76,48 @@ jobs:
       - name: Build Debug APK
         run: cd android && ./gradlew assembleDebug
 
-      # Rename the APK to include version and date
+      # Debug listing APK files
+      - name: List APK files
+        run: find android -name "*.apk" -type f
+
+      # Rename the APK directly in its original location
       - name: Rename APK
         run: |
-          mkdir -p ./releases
-          cp android/app/build/outputs/apk/debug/app-debug.apk ./releases/runstr-feed-${{ env.VERSION }}-${{ env.DATE }}.apk
+          APK_SOURCE="android/app/build/outputs/apk/debug/app-debug.apk"
+          APK_DEST="android/app/build/outputs/apk/debug/runstr-feed-${{ env.VERSION }}-${{ env.DATE }}.apk"
+          
+          if [ -f "$APK_SOURCE" ]; then
+            cp "$APK_SOURCE" "$APK_DEST"
+            echo "APK renamed successfully from $APK_SOURCE to $APK_DEST"
+            ls -la "$APK_DEST"
+          else
+            echo "ERROR: APK file not found at $APK_SOURCE"
+            exit 1
+          fi
+          
+          echo "APK_PATH=$APK_DEST" >> $GITHUB_ENV
 
       # Upload APK as artifact (using v4)
       - name: Upload APK artifact
         if: success()  # Only run if previous steps succeeded
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: runstr-feed-${{ env.VERSION }}-${{ env.DATE }}
+          path: ${{ env.APK_PATH }}
           retention-days: 30
 
-      # Create a Release using updated syntax
-      - name: Create Release
-        id: create_release
-        if: success()  # Only run if previous steps succeeded
-        uses: softprops/action-gh-release@v1
+      # Create a Release directly without using a separate step
+      - name: Create GitHub Release
+        if: success()
+        uses: ncipollo/release-action@v1
         with:
-          files: ./releases/runstr-feed-${{ env.VERSION }}-${{ env.DATE }}.apk
-          name: 'Feed Fix ${{ env.VERSION }}-${{ env.DATE }}'
-          tag_name: ${{ env.RELEASE_TAG }}
+          artifacts: ${{ env.APK_PATH }}
+          tag: ${{ env.RELEASE_TAG }}
+          name: 'Runstr Feed ${{ env.VERSION }}-${{ env.DATE }}'
+          body: |
+            Build from ${{ github.ref_name }} branch.
+            Version: ${{ env.VERSION }}
+            Built on: ${{ env.DATE }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
-          prerelease: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: false
