@@ -1,0 +1,62 @@
+name: Build APK for Simple-updates
+
+on:
+  push:
+    branches:
+      - Simple-updates
+      - refresh
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Setup Node.js
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+      
+      # Install dependencies
+      - name: Install dependencies
+        run: npm ci
+      
+      # Build the React app
+      - name: Build React app
+        run: npm run build
+        
+      # Sync with Capacitor
+      - name: Sync Capacitor with Android
+        run: npx cap sync android
+      
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          
+      - name: Grant execute permission for gradlew
+        run: chmod +x android/gradlew
+        
+      - name: Build APK
+        run: cd android && ./gradlew assembleDebug
+        
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Simple-updates Build ${{ github.run_number }}
+          tag_name: simple-updates-${{ github.run_number }}
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
