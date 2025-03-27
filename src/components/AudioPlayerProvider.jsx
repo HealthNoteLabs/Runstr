@@ -1,153 +1,113 @@
-import { useReducer, useRef, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { AudioContext } from '../contexts/audioContext';
-import { audioReducer } from '../contexts/audioReducer';
-import { initialState } from '../contexts/audioContext';
-import { wavlakeApi } from '../services/wavlakeApi';
 
-const createAudioInstance = () => {
-  if (typeof window !== 'undefined') {
-    return new Audio();
-  }
-  return null;
+// Create context
+const AudioPlayerContext = createContext();
+
+// Custom hook for using the audio player context
+export const useAudioPlayer = () => {
+  return useContext(AudioPlayerContext);
 };
 
-export function AudioPlayerProvider({ children }) {
-  const [state, dispatch] = useReducer(audioReducer, initialState);
-  const audioRef = useRef(null);
+export const AudioPlayerProvider = ({ children }) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTrack, setCurrentTrack] = useState(null);
+  const [audioElement, setAudioElement] = useState(null);
 
+  // Initialize audio element on component mount
   useEffect(() => {
-    audioRef.current = createAudioInstance();
+    const audio = new Audio();
+    setAudioElement(audio);
 
+    // Set up event listeners
+    audio.addEventListener('ended', () => {
+      setIsPlaying(false);
+    });
+    
+    audio.addEventListener('pause', () => {
+      setIsPlaying(false);
+    });
+    
+    audio.addEventListener('play', () => {
+      setIsPlaying(true);
+    });
+
+    // Cleanup event listeners
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
+      audio.removeEventListener('ended', () => setIsPlaying(false));
+      audio.removeEventListener('pause', () => setIsPlaying(false));
+      audio.removeEventListener('play', () => setIsPlaying(true));
+      audio.pause();
     };
   }, []);
 
-  const playTrack = useCallback(
-    async (track) => {
-      if (!audioRef.current) return;
+  // Play a track
+  const playTrack = (track) => {
+    if (!audioElement) return;
 
-      try {
-        dispatch({ type: 'SET_LOADING', payload: true });
-        const streamData = await wavlakeApi.getStreamUrl(track.id);
-
-        audioRef.current.src = streamData.url;
-        audioRef.current.volume = state.volume;
-
-        dispatch({ type: 'SET_TRACK', payload: track });
-        audioRef.current
-          .play()
-          .then(() => dispatch({ type: 'PLAY' }))
-          .catch((error) =>
-            dispatch({ type: 'SET_ERROR', payload: error.message })
-          );
-      } catch (error) {
-        dispatch({ type: 'SET_ERROR', payload: error.message });
-      } finally {
-        dispatch({ type: 'SET_LOADING', payload: false });
+    // If it's the same track, toggle play/pause
+    if (currentTrack && currentTrack.id === track.id) {
+      if (isPlaying) {
+        audioElement.pause();
+      } else {
+        audioElement.play();
       }
-    },
-    [state.volume]
-  );
-
-  const togglePlay = useCallback(() => {
-    if (!audioRef.current || !state.currentTrack) return;
-
-    if (state.isPlaying) {
-      audioRef.current.pause();
-      dispatch({ type: 'PAUSE' });
-    } else {
-      audioRef.current
-        .play()
-        .then(() => dispatch({ type: 'PLAY' }))
-        .catch((error) =>
-          dispatch({ type: 'SET_ERROR', payload: error.message })
-        );
+      return;
     }
-  }, [state.isPlaying, state.currentTrack]);
 
-  const setVolume = useCallback((volume) => {
-    if (!audioRef.current) return;
-    audioRef.current.volume = volume;
-    dispatch({ type: 'SET_VOLUME', payload: volume });
-  }, []);
-
-  const seek = useCallback((time) => {
-    if (!audioRef.current) return;
-    audioRef.current.currentTime = time;
-    dispatch({ type: 'SET_PROGRESS', payload: time });
-  }, []);
-
-  useEffect(() => {
-    if (!audioRef.current) return;
-
-    const handleTimeUpdate = () => {
-      dispatch({
-        type: 'SET_PROGRESS',
-        payload: audioRef.current.currentTime
+    // Load and play new track
+    audioElement.src = track.audio_url;
+    audioElement.play()
+      .then(() => {
+        setCurrentTrack(track);
+        setIsPlaying(true);
+      })
+      .catch(error => {
+        console.error('Error playing audio:', error);
       });
+  };
 
-      // Report progress to Wavlake API
-      if (state.currentTrack) {
-        wavlakeApi
-          .reportProgress(
-            state.currentTrack.id,
-            audioRef.current.currentTime,
-            audioRef.current.duration
-          )
-          .catch(console.error);
-      }
-    };
+  // Pause the current track
+  const pauseTrack = () => {
+    if (audioElement && isPlaying) {
+      audioElement.pause();
+    }
+  };
 
-    const handleLoadedMetadata = () => {
-      dispatch({
-        type: 'SET_DURATION',
-        payload: audioRef.current.duration
-      });
-    };
+  // Resume the current track
+  const resumeTrack = () => {
+    if (audioElement && !isPlaying && currentTrack) {
+      audioElement.play()
+        .catch(error => {
+          console.error('Error resuming audio:', error);
+        });
+    }
+  };
 
-    const handleEnded = () => {
-      dispatch({ type: 'PAUSE' });
-      if (state.queue.length > 0) {
-        const nextTrack = state.queue[0];
-        dispatch({ type: 'REMOVE_FROM_QUEUE', payload: nextTrack.id });
-        playTrack(nextTrack);
-      }
-    };
-
-    audioRef.current.addEventListener('timeupdate', handleTimeUpdate);
-    audioRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
-    audioRef.current.addEventListener('ended', handleEnded);
-
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.removeEventListener('timeupdate', handleTimeUpdate);
-        audioRef.current.removeEventListener(
-          'loadedmetadata',
-          handleLoadedMetadata
-        );
-        audioRef.current.removeEventListener('ended', handleEnded);
-      }
-    };
-  }, [state.currentTrack, state.queue, playTrack]);
+  // Stop the current track
+  const stopTrack = () => {
+    if (audioElement) {
+      audioElement.pause();
+      audioElement.currentTime = 0;
+      setIsPlaying(false);
+    }
+  };
 
   const value = {
-    ...state,
+    currentTrack,
+    isPlaying,
     playTrack,
-    togglePlay,
-    setVolume,
-    seek,
-    dispatch
+    pauseTrack,
+    resumeTrack,
+    stopTrack
   };
 
   return (
-    <AudioContext.Provider value={value}>{children}</AudioContext.Provider>
+    <AudioPlayerContext.Provider value={value}>
+      {children}
+    </AudioPlayerContext.Provider>
   );
-}
+};
 
 AudioPlayerProvider.propTypes = {
   children: PropTypes.node.isRequired

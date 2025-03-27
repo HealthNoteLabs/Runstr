@@ -15,7 +15,7 @@ import { Goals } from './pages/Goals';
 // Import the RunDataManager to initialize it
 import './services/RunDataManager';
 
-export function App() {
+function App() {
   // Initialize any required state or listeners
   useEffect(() => {
     // Set default distance unit if not set
@@ -64,3 +64,5 @@ export function App() {
     </NostrProvider>
   );
 }
+
+export default App;
