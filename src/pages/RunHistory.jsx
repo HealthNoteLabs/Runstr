@@ -2,27 +2,31 @@ import { useState, useEffect } from 'react';
 import { createAndPublishEvent } from '../utils/nostr';
 import { useRunStats } from '../hooks/useRunStats';
 import { useRunProfile } from '../hooks/useRunProfile';
-import { formatTime, displayDistance, formatElevation, formatDate } from '../utils/formatters';
-import runDataService from '../services/RunDataService';
+import { useRunData } from '../hooks/useRunData';
+import { formatDate } from '../utils/formatters';
 
 export const RunHistory = () => {
+  // Use our new hook to access run data and functions
+  const { 
+    getAllRuns, 
+    deleteRun, 
+    formatDistance, 
+    formatTime, 
+    formatPace, 
+    formatElevation,
+    distanceUnit,
+    toggleDistanceUnit
+  } = useRunData();
+  
   // State for run history
   const [runHistory, setRunHistory] = useState([]);
   const [selectedRun, setSelectedRun] = useState(null);
   const [additionalContent, setAdditionalContent] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
-  const [distanceUnit, setDistanceUnit] = useState(() => localStorage.getItem('distanceUnit') || 'km');
-  const [npub, setNpub] = useState(() => localStorage.getItem('currentNpub'));
-  const [publishEnabled, setPublishEnabled] = useState(false);
 
-  // Get user profile and distance unit from custom hooks
-  const { 
-    profile, 
-    updateUserProfile,
-    handleProfileChange, 
-    handleProfileSubmit 
-  } = useRunProfile();
+  // Get user profile from custom hook
+  const { profile } = useRunProfile();
 
   const {
     stats,
@@ -30,6 +34,16 @@ export const RunHistory = () => {
     calculateCaloriesBurned
   } = useRunStats(runHistory, profile);
 
+  // Load run history from our new data manager
+  const loadRunHistory = () => {
+    const runs = getAllRuns();
+    setRunHistory(runs);
+    // Update stats if needed
+    if (runs && runs.length > 0) {
+      calculateStats(runs);
+    }
+  };
+  
   // Load run history on component mount and listen for updates
   useEffect(() => {
     loadRunHistory();
@@ -41,148 +55,39 @@ export const RunHistory = () => {
     };
     
     document.addEventListener('runHistoryUpdated', handleRunHistoryUpdate);
-    document.addEventListener('runCompleted', handleRunHistoryUpdate);
     
     return () => {
       document.removeEventListener('runHistoryUpdated', handleRunHistoryUpdate);
-      document.removeEventListener('runCompleted', handleRunHistoryUpdate);
     };
   }, []);
 
-  // Listen for changes to the distance unit in localStorage
-  useEffect(() => {
-    const handleStorageChange = () => {
-      const newUnit = localStorage.getItem('distanceUnit') || 'km';
-      if (newUnit !== distanceUnit) {
-        setDistanceUnit(newUnit);
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Using a shorter interval for Android optimization
-    const checkInterval = setInterval(() => {
-      // Check for unit changes
-      const currentUnit = localStorage.getItem('distanceUnit') || 'km';
-      if (currentUnit !== distanceUnit) {
-        setDistanceUnit(currentUnit);
-      }
-      
-      // Check for run history changes
-      const storedRuns = localStorage.getItem('runHistory');
-      if (storedRuns) {
-        const parsedRuns = JSON.parse(storedRuns);
-        if (parsedRuns.length !== runHistory.length) {
-          loadRunHistory();
-        }
-      }
-    }, 1500); // Increased from 1000ms to 1500ms to reduce battery usage
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      clearInterval(checkInterval);
-    };
-  }, [distanceUnit, runHistory.length, setDistanceUnit]);
-
-  // Load and process run history from localStorage
-  const loadRunHistory = () => {
-    try {
-      // Use RunDataService to get runs instead of directly from localStorage
-      const parsedRuns = runDataService.getAllRuns();
-      
-      // Create a map to store unique runs by their date and metrics
-      const uniqueRunsMap = new Map();
-      const seenIds = new Set();
-      const now = new Date();
-      
-      // First pass: identify unique runs and fix missing IDs, future dates, and unrealistic values
-      const fixedRuns = parsedRuns.reduce((acc, run) => {
-        // Fix future dates - replace with current date
-        let runDate = new Date(run.date);
-        if (isNaN(runDate.getTime()) || runDate > now) {
-          run.date = now.toLocaleDateString();
-          // Update the run using the service
-          runDataService.updateRun(run.id, { date: run.date });
-        }
-        
-        // Fix unrealistic distance values (>100 km is extremely unlikely for normal runs)
-        const MAX_REALISTIC_DISTANCE = 100 * 1000; // 100 km in meters
-        if (isNaN(run.distance) || run.distance <= 0) {
-          run.distance = 5000; // Default to 5 km for invalid distances
-          // Update the run using the service
-          runDataService.updateRun(run.id, { distance: run.distance });
-        } else if (run.distance > MAX_REALISTIC_DISTANCE) {
-          run.distance = Math.min(run.distance, MAX_REALISTIC_DISTANCE);
-          // Update the run using the service
-          runDataService.updateRun(run.id, { distance: run.distance });
-        }
-        
-        // Fix unrealistic durations (>24 hours is extremely unlikely)
-        const MAX_DURATION = 24 * 60 * 60; // 24 hours in seconds
-        if (isNaN(run.duration) || run.duration <= 0) {
-          run.duration = 30 * 60; // Default to 30 minutes for invalid durations
-          // Update the run using the service
-          runDataService.updateRun(run.id, { duration: run.duration });
-        } else if (run.duration > MAX_DURATION) {
-          run.duration = Math.min(run.duration, MAX_DURATION);
-          // Update the run using the service
-          runDataService.updateRun(run.id, { duration: run.duration });
-        }
-        
-        // Skip the rest of the checks if this run doesn't have an ID
-        if (!run.id) {
-          run.id = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-          // Update the run using the service
-          runDataService.updateRun(run.id, { id: run.id });
-        }
-        
-        // Create a signature for each run based on key properties
-        const runSignature = `${run.date}-${run.distance}-${run.duration}`;
-        
-        // If this is a duplicate entry (same date, distance, duration)
-        // and we've already seen it, skip it
-        if (uniqueRunsMap.has(runSignature)) {
-          return acc;
-        }
-
-        // Otherwise, this is a unique run, add it to the map and output
-        if (!seenIds.has(run.id)) {
-          uniqueRunsMap.set(runSignature, run);
-          seenIds.add(run.id);
-          acc.push(run);
-        }
-        
-        return acc;
-      }, []);
-
-      // Sort runs by date (newest first)
-      fixedRuns.sort((a, b) => {
-        const dateA = new Date(a.date);
-        const dateB = new Date(b.date);
-        return dateB - dateA;
-      });
-
-      setRunHistory(fixedRuns);
-    } catch (error) {
-      console.error('Error loading run history:', error);
-      setRunHistory([]);
-    }
+  // Function to handle clicking on a run to view details
+  const handleRunClick = (run) => {
+    setSelectedRun(run);
   };
-
+  
+  // Function to handle deleting a run
   const handleDeleteRun = (runId) => {
+    // Ask for confirmation
     if (window.confirm('Are you sure you want to delete this run?')) {
-      const updatedRuns = runHistory.filter((run) => run.id !== runId);
-      localStorage.setItem('runHistory', JSON.stringify(updatedRuns));
-      setRunHistory(updatedRuns);
+      // Use our data manager to delete the run
+      deleteRun(runId);
+      
+      // Clear the selected run if it was deleted
+      if (selectedRun && selectedRun.id === runId) {
+        setSelectedRun(null);
+      }
     }
   };
-
-  const handlePostToNostr = (run) => {
+  
+  // Function to handle sharing a run to Nostr
+  const handleShareRun = (run) => {
     setSelectedRun(run);
     setAdditionalContent('');
     setShowModal(true);
   };
-
+  
+  // Function to handle posting to Nostr
   const handlePostSubmit = async () => {
     if (!selectedRun) return;
     
@@ -196,10 +101,10 @@ export const RunHistory = () => {
 Just completed a run with Runstr! 🏃‍♂️💨
 
 ⏱️ Duration: ${formatTime(run.duration)}
-📏 Distance: ${displayDistance(run.distance, distanceUnit)}
-⚡ Pace: ${(run.duration / 60 / (distanceUnit === 'km' ? run.distance/1000 : run.distance/1609.344)).toFixed(2)} min/${distanceUnit}
+📏 Distance: ${formatDistance(run.distance)}
+⚡ Pace: ${formatPace(run.pace)}
 🔥 Calories: ${caloriesBurned} kcal
-${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gain, distanceUnit)}\n📉 Elevation Loss: ${formatElevation(run.elevation.loss, distanceUnit)}` : ''}
+${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gain)}\n📉 Elevation Loss: ${formatElevation(run.elevation.loss)}` : ''}
 ${additionalContent ? `\n${additionalContent}` : ''}
 #Runstr #Running
 `.trim();
@@ -244,13 +149,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     }
   };
 
-  // Toggle distance unit function
-  const toggleDistanceUnit = () => {
-    const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
-    setDistanceUnit(newUnit);
-    localStorage.setItem('distanceUnit', newUnit);
-  };
-
   return (
     <div className="run-history">
       <div className="stats-overview">
@@ -269,190 +167,151 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             MI
           </button>
         </div>
+        
         <div className="stats-grid">
           <div className="stat-card">
-            <h3>Total Distance</h3>
-            <p>{displayDistance(stats.totalDistance, distanceUnit)}</p>
+            <div className="stat-title">Total Distance</div>
+            <div className="stat-value">{formatDistance(stats.totalDistance || 0)}</div>
           </div>
+          
           <div className="stat-card">
-            <h3>Total Runs</h3>
-            <p>{stats.totalRuns}</p>
+            <div className="stat-title">Total Runs</div>
+            <div className="stat-value">{stats.totalRuns || 0}</div>
           </div>
+          
           <div className="stat-card">
-            <h3>Current Streak</h3>
-            <p>{stats.currentStreak} days</p>
+            <div className="stat-title">Average Pace</div>
+            <div className="stat-value">{formatPace(stats.averagePace || 0)}</div>
           </div>
+          
           <div className="stat-card">
-            <h3>Average Pace</h3>
-            <p>
-              {stats.averagePace === 0 
-                ? '-' 
-                : `${Math.floor(stats.averagePace)}:${Math.round(stats.averagePace % 1 * 60).toString().padStart(2, '0')}`}{' '}
-              min/{distanceUnit}
-            </p>
-          </div>
-          <div className="stat-card">
-            <h3>Fastest Pace</h3>
-            <p>
-              {stats.fastestPace === 0
-                ? '-'
-                : `${Math.floor(stats.fastestPace)}:${Math.round(stats.fastestPace % 1 * 60).toString().padStart(2, '0')}`}{' '}
-              min/{distanceUnit}
-            </p>
-          </div>
-          <div className="stat-card">
-            <h3>Longest Run</h3>
-            <p>{displayDistance(stats.longestRun, distanceUnit)}</p>
-          </div>
-        </div>
-
-        <div className="calorie-stats">
-          <h3>Calorie Tracking</h3>
-          <div className="stats-grid">
-            <div className="stat-card">
-              <h4>Total Calories Burned</h4>
-              <p>{stats.totalCaloriesBurned.toLocaleString()} kcal</p>
-            </div>
-            <div className="stat-card">
-              <h4>Avg. Calories per {distanceUnit.toUpperCase()}</h4>
-              <p>{Math.round(stats.averageCaloriesPerKm)} kcal</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="recent-stats">
-          <h3>Recent Activity</h3>
-          <div className="stats-grid">
-            <div className="stat-card">
-              <h4>This Week</h4>
-              <p>{displayDistance(stats.thisWeekDistance, distanceUnit)}</p>
-            </div>
-            <div className="stat-card">
-              <h4>This Month</h4>
-              <p>{displayDistance(stats.thisMonthDistance, distanceUnit)}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="personal-bests">
-          <h3>Personal Bests</h3>
-          <div className="stats-grid">
-            <div className="stat-card">
-              <h4>5K</h4>
-              <p>
-                {stats.personalBests['5k'] === 0
-                  ? '-'
-                  : `${Math.floor(stats.personalBests['5k'])}:${Math.round(stats.personalBests['5k'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
-                min/{distanceUnit}
-              </p>
-            </div>
-            <div className="stat-card">
-              <h4>10K</h4>
-              <p>
-                {stats.personalBests['10k'] === 0
-                  ? '-'
-                  : `${Math.floor(stats.personalBests['10k'])}:${Math.round(stats.personalBests['10k'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
-                min/{distanceUnit}
-              </p>
-            </div>
-            <div className="stat-card">
-              <h4>Half Marathon</h4>
-              <p>
-                {stats.personalBests['halfMarathon'] === 0
-                  ? '-'
-                  : `${Math.floor(stats.personalBests['halfMarathon'])}:${Math.round(stats.personalBests['halfMarathon'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
-                min/{distanceUnit}
-              </p>
-            </div>
-            <div className="stat-card">
-              <h4>Marathon</h4>
-              <p>
-                {stats.personalBests['marathon'] === 0
-                  ? '-'
-                  : `${Math.floor(stats.personalBests['marathon'])}:${Math.round(stats.personalBests['marathon'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
-                min/{distanceUnit}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="elevation-stats-overview">
-          <h3>Elevation Data</h3>
-          <div className="stats-grid">
-            <div className="stat-card">
-              <h4>Total Elevation Gain</h4>
-              <p>
-                {formatElevation(
-                  runHistory.reduce((sum, run) => sum + (run.elevation?.gain || 0), 0),
-                  distanceUnit
-                )}
-              </p>
-            </div>
-            <div className="stat-card">
-              <h4>Total Elevation Loss</h4>
-              <p>
-                {formatElevation(
-                  runHistory.reduce((sum, run) => sum + (run.elevation?.loss || 0), 0),
-                  distanceUnit
-                )}
-              </p>
-            </div>
+            <div className="stat-title">Longest Run</div>
+            <div className="stat-value">{formatDistance(stats.longestRun || 0)}</div>
           </div>
         </div>
       </div>
-
-      <h2>Run History</h2>
-      {runHistory.length === 0 ? (
-        <p>No runs recorded yet</p>
-      ) : (
-        <ul className="history-list">
-          {runHistory.map((run) => {
-            const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration);
-            
-            // Calculate pace with the consistent service method
-            const pace = runDataService.calculatePace(run.distance, run.duration, distanceUnit).toFixed(2);
-            
-            return (
-              <li key={run.id} className="history-item">
+      
+      <div className="run-list-container">
+        <h2>RUN HISTORY</h2>
+        {runHistory.length === 0 ? (
+          <div className="empty-state">
+            No runs recorded yet. Start tracking your runs!
+          </div>
+        ) : (
+          <div className="run-list">
+            {runHistory.map((run) => (
+              <div 
+                key={run.id}
+                className={`run-item ${selectedRun && selectedRun.id === run.id ? 'selected' : ''}`}
+                onClick={() => handleRunClick(run)}
+              >
                 <div className="run-date">{formatDate(run.date)}</div>
-                <div className="run-details">
-                  <span>Duration: {formatTime(run.duration)}</span>
-                  <span>Distance: {displayDistance(run.distance, distanceUnit)}</span>
-                  <span>
-                    Pace: {pace} min/{distanceUnit}
-                  </span>
-                  <span>Calories: {caloriesBurned} kcal</span>
-                  {run.elevation && (
-                    <>
-                      <span>
-                        Elevation Gain: {formatElevation(run.elevation.gain, distanceUnit)}
-                      </span>
-                      <span>
-                        Elevation Loss: {formatElevation(run.elevation.loss, distanceUnit)}
-                      </span>
-                    </>
-                  )}
+                <div className="run-info">
+                  <div className="run-distance">{formatDistance(run.distance)}</div>
+                  <div className="run-time">{formatTime(run.duration)}</div>
                 </div>
                 <div className="run-actions">
-                  <button
-                    onClick={() => handlePostToNostr(run)}
-                    className="share-btn"
+                  <button 
+                    className="share-button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleShareRun(run);
+                    }}
                   >
-                    Share to Nostr
+                    Share
                   </button>
-                  <button
-                    onClick={() => handleDeleteRun(run.id)}
-                    className="delete-btn"
+                  <button 
+                    className="delete-button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteRun(run.id);
+                    }}
                   >
                     Delete
                   </button>
                 </div>
-              </li>
-            );
-          })}
-        </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      
+      {/* Run detail view */}
+      {selectedRun && (
+        <div className="run-detail">
+          <h2>RUN DETAILS</h2>
+          <div className="detail-grid">
+            <div className="detail-item">
+              <div className="detail-label">Date</div>
+              <div className="detail-value">{formatDate(selectedRun.date)}</div>
+            </div>
+            
+            <div className="detail-item">
+              <div className="detail-label">Distance</div>
+              <div className="detail-value">{formatDistance(selectedRun.distance)}</div>
+            </div>
+            
+            <div className="detail-item">
+              <div className="detail-label">Duration</div>
+              <div className="detail-value">{formatTime(selectedRun.duration)}</div>
+            </div>
+            
+            <div className="detail-item">
+              <div className="detail-label">Pace</div>
+              <div className="detail-value">{formatPace(selectedRun.pace)}</div>
+            </div>
+            
+            {selectedRun.elevation && (
+              <>
+                <div className="detail-item">
+                  <div className="detail-label">Elevation Gain</div>
+                  <div className="detail-value">{formatElevation(selectedRun.elevation.gain)}</div>
+                </div>
+                
+                <div className="detail-item">
+                  <div className="detail-label">Elevation Loss</div>
+                  <div className="detail-value">{formatElevation(selectedRun.elevation.loss)}</div>
+                </div>
+              </>
+            )}
+            
+            <div className="detail-item">
+              <div className="detail-label">Calories</div>
+              <div className="detail-value">{calculateCaloriesBurned(selectedRun.distance, selectedRun.duration)} kcal</div>
+            </div>
+          </div>
+          
+          {selectedRun.splits && selectedRun.splits.length > 0 && (
+            <div className="splits-section">
+              <h3>Splits</h3>
+              <div className="splits-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Split</th>
+                      <th>Distance</th>
+                      <th>Time</th>
+                      <th>Pace</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedRun.splits.map((split, index) => (
+                      <tr key={index}>
+                        <td>{index + 1}</td>
+                        <td>{split.km} {distanceUnit}</td>
+                        <td>{formatTime(split.time)}</td>
+                        <td>{formatPace(split.pace)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
       )}
-
+      
+      {/* Nostr posting modal */}
       {showModal && (
         <div className="modal-overlay">
           <div className="modal-content">

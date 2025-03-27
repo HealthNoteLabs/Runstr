@@ -15,6 +15,9 @@ const ndk = new NDK({
 // Storage for subscriptions
 const activeSubscriptions = new Set();
 
+// Flag to track Android environment
+const isAndroid = true; // Set this to true since we're Android-only now
+
 /**
  * Initialize the Nostr client - connect to relays
  * @returns {Promise<boolean>} Success status
@@ -28,6 +31,37 @@ export const initializeNostr = async () => {
   } catch (error) {
     console.error('Error initializing Nostr:', error);
     return false;
+  }
+};
+
+/**
+ * Get a public key for the user - Android compatible
+ * @returns {Promise<string|null>} Public key or null
+ */
+export const getPublicKey = async () => {
+  // In Android environment, we need to use a different approach
+  if (isAndroid) {
+    // For testing, return a public key if available from local storage
+    try {
+      const storedKey = localStorage.getItem('nostr_pubkey');
+      if (storedKey) return storedKey;
+      
+      return null; // No key available yet
+    } catch (error) {
+      console.error('Error getting public key:', error);
+      return null;
+    }
+  } else {
+    // Browser extension approach
+    try {
+      if (window.nostr) {
+        return await window.nostr.getPublicKey();
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting public key from extension:', error);
+      return null;
+    }
   }
 };
 
@@ -284,12 +318,12 @@ export const processPostsWithData = async (posts, supplementaryData) => {
  */
 export const createAndPublishEvent = async (eventTemplate) => {
   try {
-    if (!window.nostr) {
-      throw new Error('Nostr extension not available');
-    }
+    // Get the public key using our Android-compatible method
+    const pubkey = await getPublicKey();
     
-    // Get the public key from nostr extension
-    const pubkey = await window.nostr.getPublicKey();
+    if (!pubkey) {
+      throw new Error('User not logged in or public key not available');
+    }
     
     // Create the event with user's pubkey
     const event = {
@@ -298,14 +332,26 @@ export const createAndPublishEvent = async (eventTemplate) => {
       created_at: Math.floor(Date.now() / 1000)
     };
     
-    // Sign the event using the browser extension
-    const signedEvent = await window.nostr.signEvent(event);
+    // For Android, we need a different signing approach
+    // This is a simplified example, you'll need to implement
+    // actual signing in your Android app
     
-    // Create NDK Event and publish
-    const ndkEvent = new NDKEvent(ndk, signedEvent);
+    // Option 1: Use a local signing library in the app
+    // const signedEvent = await signEventLocally(event, privateKey);
+    
+    // Option 2: For testing, create an unsigned event
+    console.log('Creating event (note: unsigned in Android environment):', event);
+    const ndkEvent = new NDKEvent(ndk);
+    ndkEvent.content = event.content;
+    ndkEvent.kind = event.kind;
+    ndkEvent.pubkey = event.pubkey;
+    ndkEvent.created_at = event.created_at;
+    ndkEvent.tags = event.tags || [];
+    
+    // Publish the event
     await ndkEvent.publish();
     
-    return signedEvent;
+    return ndkEvent;
   } catch (error) {
     console.error('Error publishing event:', error);
     throw error;

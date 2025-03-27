@@ -4,7 +4,8 @@ import {
   fetchRunningPosts, 
   loadSupplementaryData, 
   processPostsWithData,
-  searchRunningContent
+  searchRunningContent,
+  getPublicKey
 } from '../utils/nostr';
 
 export const useRunFeed = () => {
@@ -66,9 +67,13 @@ export const useRunFeed = () => {
           const newUserLikes = new Set();
           const newUserReposts = new Set();
           
+          // Get the user's public key for Android
+          const userPubkey = await getPublicKey();
+          
           supplementaryData.likes?.forEach(like => {
             try {
-              if (window.nostr && like.pubkey === window.nostr.getPublicKey()) {
+              // Use the Android-compatible public key
+              if (userPubkey && like.pubkey === userPubkey) {
                 const postId = like.tags.find(tag => tag[0] === 'e')?.[1];
                 if (postId) newUserLikes.add(postId);
               }
@@ -79,7 +84,8 @@ export const useRunFeed = () => {
           
           supplementaryData.reposts?.forEach(repost => {
             try {
-              if (window.nostr && repost.pubkey === window.nostr.getPublicKey()) {
+              // Use the Android-compatible public key
+              if (userPubkey && repost.pubkey === userPubkey) {
                 const postId = repost.tags.find(tag => tag[0] === 'e')?.[1];
                 if (postId) newUserReposts.add(postId);
               }

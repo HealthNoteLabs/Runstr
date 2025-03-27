@@ -158,12 +158,13 @@ export const RunClub = () => {
           {diagnosticInfo && (
             <div className="diagnostic-info">
               <p>{diagnosticInfo}</p>
+              <p>Note: If you're seeing connection issues, this may be related to running in an Android environment.</p>
             </div>
           )}
         </div>
       ) : posts.length === 0 ? (
         <div className="no-posts-message">
-          <p>No running posts found. Follow some runners or post your own runs!</p>
+          <p>No running posts found. This may be due to connection issues in the Android app.</p>
           <button 
             className="retry-button" 
             onClick={fetchRunPostsViaSubscription}
