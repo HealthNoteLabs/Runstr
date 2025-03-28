@@ -1,15 +1,19 @@
 import NDK, { NDKEvent } from '@nostr-dev-kit/ndk';
 
-// Create a new NDK instance
+// Optimized relay list based on testing results
+export const RELAYS = [
+  'wss://relay.damus.io',    // Most reliable for running content
+  'wss://nos.lol',           // Good secondary option
+  'wss://relay.nostr.band',  // Has unique running content
+  'wss://nostr.wine',        // Additional reliable relay
+  'wss://eden.nostr.land',   // Additional reliable relay
+  'wss://e.nos.lol',         // Additional reliable relay
+  'wss://relay.snort.social' // Backup relay
+];
+
+// Create a new NDK instance with optimized relay configuration
 const ndk = new NDK({
-  explicitRelayUrls: [
-    'wss://relay.damus.io',
-    'wss://nos.lol',
-    'wss://relay.nostr.band',
-    'wss://relay.snort.social',
-    'wss://eden.nostr.land',
-    'wss://relay.current.fyi'
-  ]
+  explicitRelayUrls: RELAYS
 });
 
 // Storage for subscriptions
@@ -63,23 +67,82 @@ export const fetchEvents = async (filter) => {
  * @returns {Promise<Array>} Array of running posts
  */
 export const fetchRunningPosts = async (limit = 10, since = undefined) => {
-  // Convert "since" from milliseconds to Unix timestamp if needed
-  const sinceTimestamp = since ? Math.floor(since / 1000) : undefined;
-  
-  // Use EXACT SAME filter structure and tags as the working implementation
-  const filter = {
-    kinds: [1], // Regular posts
-    limit,
-    "#t": ["running", "run", "runner", "runstr", "5k", "10k", "marathon", "jog"]
-  };
-  
-  // Add since parameter if provided (for pagination)
-  if (sinceTimestamp) {
-    filter.since = sinceTimestamp;
+  try {
+    // If no custom "since" provided, use 30 days (not 90 days)
+    const defaultSince = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+    const sinceTimestamp = since ? Math.floor(since / 1000) : defaultSince;
+    
+    console.log(`Fetching running posts from ${new Date(sinceTimestamp * 1000).toLocaleString()}`);
+    
+    // Standardized hashtag list across the app
+    const hashtagFilter = {
+      kinds: [1], // Regular posts
+      limit: limit || 10,
+      "#t": ["running", "run", "runner", "runstr", "5k", "10k", "marathon", "jog"],
+      since: sinceTimestamp
+    };
+    
+    // Add enhanced debugging
+    console.log('Using hashtag filter:', hashtagFilter);
+    
+    // Ensure NDK is connected
+    if (!ndk.pool?.relays?.size) {
+      console.log('NDK not connected, connecting...');
+      await initializeNostr();
+    }
+    
+    // Fetch events with hashtags
+    const events = await ndk.fetchEvents(hashtagFilter);
+    const eventArray = Array.from(events);
+    console.log(`Fetched ${eventArray.length} running posts with hashtags out of limit ${limit}`);
+    
+    // If hashtag search found results, return them
+    if (eventArray.length > 0) {
+      return eventArray;
+    }
+    
+    // No results found with hashtags, try content-based filtering as fallback
+    console.log("No hashtag results, trying content-based filtering...");
+    const contentFilter = {
+      kinds: [1],
+      limit: (limit || 10) * 3, // Get more to filter client-side
+      since: sinceTimestamp
+    };
+    
+    console.log('Using content filter:', contentFilter);
+    const contentEvents = await ndk.fetchEvents(contentFilter);
+    const allEvents = Array.from(contentEvents);
+    
+    // Filter for running content client-side
+    const runningKeywords = ["running", "run", "runner", "runstr", "5k", "10k", "marathon", "jog"];
+    const runningEvents = allEvents.filter(event => {
+      const content = event.content.toLowerCase();
+      return runningKeywords.some(keyword => content.includes(keyword));
+    }).slice(0, limit);
+    
+    console.log(`Found ${runningEvents.length} posts via content filtering`);
+    return runningEvents;
+  } catch (error) {
+    console.error('Error fetching running posts:', error);
+    
+    // Try a more general filter as fallback if all else fails
+    console.log('Attempting fallback with simplified filter...');
+    try {
+      const simpleFilter = {
+        kinds: [1],
+        limit: limit || 10
+      };
+      
+      const events = await ndk.fetchEvents(simpleFilter);
+      const eventArray = Array.from(events);
+      console.log(`Emergency fallback retrieved ${eventArray.length} general posts`);
+      
+      return eventArray;
+    } catch (err) {
+      console.error('Fallback also failed:', err);
+      return [];
+    }
   }
-  
-  const events = await fetchEvents(filter);
-  return Array.from(events);
 };
 
 /**
@@ -358,47 +421,65 @@ export const handleAppBackground = () => {
  * Diagnostic function that tests connection to relays
  */
 export const diagnoseConnection = async () => {
-  const results = {
-    relayStatus: {},
-    generalEvents: 0,
-    runningEvents: 0,
-    error: null,
-    success: false
-  };
-  
   try {
-    // Initialize
-    await initializeNostr();
+    console.log('Starting connection diagnostics...');
     
-    // Check each relay status
-    for (const url of ndk.explicitRelayUrls) {
-      try {
-        const relay = ndk.pool.getRelay(url);
-        results.relayStatus[url] = relay.status;
-      } catch (err) {
-        results.relayStatus[url] = `error: ${err.message}`;
-      }
+    // Check if NDK is initialized
+    if (!ndk || !ndk.pool || !ndk.pool.relays) {
+      console.log('NDK not initialized, initializing...');
+      await initializeNostr();
     }
     
-    // Test general event retrieval (any posts)
-    const generalEvents = await fetchEvents({
+    // Check connected relays
+    const connectedRelays = Array.from(ndk.pool.relays || [])
+      .filter(r => r.status === 1)
+      .map(r => r.url);
+    
+    console.log(`Connected to ${connectedRelays.length} relays: ${connectedRelays.join(', ')}`);
+    
+    if (connectedRelays.length === 0) {
+      return { 
+        error: 'Not connected to any relays. Check your internet connection.',
+        connectedRelays: []
+      };
+    }
+    
+    // Test if we can fetch any events at all (simple test)
+    const simpleFilter = {
       kinds: [1],
-      limit: 20
-    });
+      limit: 5
+    };
     
-    results.generalEvents = generalEvents.size;
+    console.log('Testing relay connectivity with simple filter...');
+    const generalEvents = await ndk.fetchEvents(simpleFilter);
+    const generalArray = Array.from(generalEvents);
+    console.log(`Retrieved ${generalArray.length} general events`);
     
-    // Test running posts using the EXACT same filter as working implementation
-    if (generalEvents.size > 0) {
-      const runningEvents = await fetchRunningPosts(20);
-      results.runningEvents = runningEvents.length;
-    }
+    // Test if we can fetch running-related events
+    const runningFilter = {
+      kinds: [1],
+      "#t": ["running", "run", "runner", "runstr"],
+      limit: 5
+    };
     
-    results.success = results.generalEvents > 0;
-    return results;
-  } catch (err) {
-    results.error = err.message;
-    return results;
+    console.log('Testing relay connectivity with running filter...');
+    const runningEvents = await ndk.fetchEvents(runningFilter);
+    const runningArray = Array.from(runningEvents);
+    console.log(`Retrieved ${runningArray.length} running events`);
+    
+    return {
+      connectedRelays,
+      generalEvents: generalArray.length,
+      runningEvents: runningArray.length
+    };
+  } catch (error) {
+    console.error('Diagnostic error:', error);
+    return { 
+      error: error.message,
+      connectedRelays: Array.from(ndk.pool?.relays || [])
+        .filter(r => r.status === 1)
+        .map(r => r.url)
+    };
   }
 };
 

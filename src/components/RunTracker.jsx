@@ -38,49 +38,35 @@ export const RunTracker = () => {
   // Load the most recent run
   useEffect(() => {
     const loadRecentRun = () => {
-      try {
-        // Use runDataService instead of direct localStorage access for consistency
-        const runs = runDataService.getAllRuns();
-        if (runs.length > 0) {
-          // Sort runs by date (most recent first)
-          const sortedRuns = [...runs].sort((a, b) => new Date(b.date) - new Date(a.date));
-          
-          // Log the most recent run to see what properties it has
-          console.log('Most recent run loaded:', sortedRuns[0]);
-          
-          setRecentRun(sortedRuns[0]);
+      const storedRuns = localStorage.getItem('runHistory');
+      if (storedRuns) {
+        try {
+          const parsedRuns = JSON.parse(storedRuns);
+          if (parsedRuns.length > 0) {
+            // Sort runs by date (most recent first)
+            const sortedRuns = [...parsedRuns].sort((a, b) => new Date(b.date) - new Date(a.date));
+            setRecentRun(sortedRuns[0]);
+          }
+        } catch (error) {
+          console.error('Error loading recent run:', error);
         }
-      } catch (error) {
-        console.error('Error loading recent run:', error);
       }
     };
     
-    // Initial load
     loadRecentRun();
     
     // Listen for run completed events
-    const handleRunCompleted = (event) => {
-      console.log("Run completed event received with data:", event.detail);
+    const handleRunCompleted = () => {
+      console.log("Run completed event received");
       
-      // Use the run data directly from the event if available
-      if (event.detail) {
-        // Create a properly formatted run object combining event data with defaults
-        const completedRun = {
-          id: Date.now() + '-' + Math.random().toString(36).substr(2, 9),
-          date: new Date().toLocaleDateString(),
-          timestamp: Date.now(),
-          ...event.detail
-        };
-        
-        console.log('Setting recent run directly from event:', completedRun);
-        setRecentRun(completedRun);
-      } else {
-        // Fallback to loading from storage if no event data
+      // First attempt to load immediately
+      loadRecentRun();
+      
+      // Retry loading after a short delay to ensure localStorage is fully updated
+      // This helps in case the event fired before localStorage was fully updated
+      setTimeout(() => {
         loadRecentRun();
-        
-        // Retry after a delay for reliability
-        setTimeout(loadRecentRun, 150);
-      }
+      }, 150); // Slightly longer than the delay in the RunTracker service
     };
     
     document.addEventListener('runCompleted', handleRunCompleted);
@@ -411,16 +397,9 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <div className="flex-1">
                 <h4 className="font-semibold">{recentRun.title || `${getTimeOfDay(recentRun.timestamp)} Run`}</h4>
                 <div className="flex items-center text-xs text-gray-400">
-                  <span>
-                    {formatRunDate(recentRun.date)} • 
-                    {recentRun && typeof recentRun.distance === 'number' 
-                      ? displayDistance(recentRun.distance, distanceUnit)
-                      : '0.00 ' + distanceUnit}
-                  </span>
+                  <span>{formatRunDate(recentRun.date)} • {displayDistance(recentRun.distance, distanceUnit)}</span>
                   <span className="ml-2 px-2 py-1 bg-gray-800 rounded-full">
-                    {(recentRun && typeof recentRun.distance === 'number' && 
-                      typeof recentRun.duration === 'number' && 
-                      recentRun.distance > 0 && recentRun.duration > 0)
+                    {recentRun.distance > 0 
                       ? (recentRun.duration / 60 / (distanceUnit === 'km' ? recentRun.distance/1000 : recentRun.distance/1609.344)).toFixed(2) 
                       : '0.00'} min/{distanceUnit}
                   </span>
@@ -428,9 +407,20 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               </div>
               <div className="text-right text-gray-400">
                 <span className="block text-lg font-semibold">
-                  {recentRun && typeof recentRun.duration === 'number' 
-                    ? formatTime(recentRun.duration).split(':').slice(0, 2).join(':') 
-                    : '00:00'}
+                  {(() => {
+                    // Special handling to ensure duration is correct
+                    try {
+                      // Check localStorage directly for duration
+                      const localRuns = JSON.parse(localStorage.getItem('runHistory') || '[]');
+                      if (localRuns.length > 0 && typeof localRuns[0].duration === 'number') {
+                        return formatTime(localRuns[0].duration).split(':').slice(0, 2).join(':');
+                      }
+                    } catch (e) {
+                      console.log("Error getting direct duration:", e);
+                    }
+                    // Fallback to using recentRun
+                    return formatTime(recentRun.duration).split(':').slice(0, 2).join(':');
+                  })()}
                 </span>
                 <button 
                   onClick={handlePostToNostr}
