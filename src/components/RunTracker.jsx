@@ -38,27 +38,34 @@ export const RunTracker = () => {
   // Load the most recent run
   useEffect(() => {
     const loadRecentRun = () => {
-      const storedRuns = localStorage.getItem('runHistory');
-      if (storedRuns) {
-        try {
-          const parsedRuns = JSON.parse(storedRuns);
-          if (parsedRuns.length > 0) {
-            // Sort runs by date (most recent first)
-            const sortedRuns = [...parsedRuns].sort((a, b) => new Date(b.date) - new Date(a.date));
-            setRecentRun(sortedRuns[0]);
-          }
-        } catch (error) {
-          console.error('Error loading recent run:', error);
+      try {
+        // Use runDataService instead of direct localStorage access for consistency
+        const runs = runDataService.getAllRuns();
+        if (runs.length > 0) {
+          // Sort runs by date (most recent first)
+          const sortedRuns = [...runs].sort((a, b) => new Date(b.date) - new Date(a.date));
+          setRecentRun(sortedRuns[0]);
         }
+      } catch (error) {
+        console.error('Error loading recent run:', error);
       }
     };
     
+    // Initial load
     loadRecentRun();
     
     // Listen for run completed events
     const handleRunCompleted = () => {
       console.log("Run completed event received");
+      
+      // First attempt to load immediately
       loadRecentRun();
+      
+      // Retry loading after a short delay to ensure localStorage is fully updated
+      // This helps in case the event fired before localStorage was fully updated
+      setTimeout(() => {
+        loadRecentRun();
+      }, 150); // Slightly longer than the delay in the RunTracker service
     };
     
     document.addEventListener('runCompleted', handleRunCompleted);

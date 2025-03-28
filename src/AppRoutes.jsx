@@ -11,6 +11,7 @@ const NWC = lazy(() => import('./pages/NWC').then(module => ({ default: module.N
 const Goals = lazy(() => import('./pages/Goals').then(module => ({ default: module.Goals })));
 const Team = lazy(() => import('./pages/Team').then(module => ({ default: module.Team })));
 const Events = lazy(() => import('./pages/Events').then(module => ({ default: module.Events })));
+const Profile = lazy(() => import('./pages/Profile').then(module => ({ default: module.Profile })));
 
 // Loading fallback component
 const LoadingComponent = () => (
@@ -22,6 +23,7 @@ export const AppRoutes = () => {
     <Suspense fallback={<LoadingComponent />}>
       <Routes>
         <Route path="/history" element={<RunHistory />} />
+        <Route path="/profile" element={<Profile />} />
         <Route path="/club" element={<RunClub />} />
         <Route path="/club/join/:teamId" element={<RunClub />} />
         <Route path="/team" element={<Team />} />

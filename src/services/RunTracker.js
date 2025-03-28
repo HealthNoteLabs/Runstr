@@ -350,9 +350,14 @@ class RunTracker extends EventEmitter {
     this.stopTimer();
     this.stopPaceCalculator();
     
-    // Emit status change and completed event
+    // Emit status change immediately
     this.emit('statusChange', { isTracking: false, isPaused: false });
-    this.emit('runCompleted', finalResults);
+    
+    // Add a small delay before emitting the runCompleted event to ensure 
+    // localStorage has been fully updated before components try to read from it
+    setTimeout(() => {
+      this.emit('runCompleted', finalResults);
+    }, 100); // 100ms delay should be sufficient for localStorage to update
     
     return finalResults;
   }

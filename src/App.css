@@ -5388,3 +5388,98 @@ input:checked + .toggle-slider:before {
   min-width: 220px;
   width: auto;
 }
+
+/* Profile Page Styles */
+.profile-page {
+  padding: 20px;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.profile-page h2 {
+  color: #646cff;
+  margin-bottom: 16px;
+}
+
+.form-container {
+  background-color: #1a222e;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.form-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 24px;
+}
+
+.save-button, .cancel-button {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.save-button {
+  background-color: #646cff;
+  color: white;
+  border: none;
+}
+
+.save-button:hover {
+  background-color: #535bf2;
+}
+
+.cancel-button {
+  background-color: transparent;
+  border: 1px solid #646cff;
+  color: #646cff;
+}
+
+.cancel-button:hover {
+  background-color: rgba(100, 108, 255, 0.1);
+}
+
+/* Height fields styling */
+.height-fields {
+  display: flex;
+  gap: 12px;
+}
+
+.height-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.height-field input {
+  width: 70px;
+}
+
+.height-field label {
+  margin-bottom: 0;
+}
+
+/* Ensure form inputs look good on the profile page */
+.profile-page .form-group {
+  margin-bottom: 16px;
+}
+
+.profile-page .form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: #e2e8f0;
+  font-size: 14px;
+}
+
+.profile-page .form-group input,
+.profile-page .form-group select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #2d3748;
+  border-radius: 4px;
+  background-color: #1a1a1a;
+  color: #e2e8f0;
+  font-size: 16px;
+}
