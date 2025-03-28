@@ -21,6 +21,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
         
+      - name: Debug Vite config
+        run: cat vite.config.js
+        
+      - name: Build web assets
+        run: npm run build --verbose
+        
+      - name: Check build output
+        run: |
+          ls -la
+          echo "Checking dist directory:"
+          ls -la dist || echo "dist directory does not exist"
+        
       - name: Run Capacitor sync
         run: npx cap sync android
       
