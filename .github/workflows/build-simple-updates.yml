@@ -19,23 +19,27 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
           
+      - name: Navigate to Android directory
+        run: cd android
+          
       - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+        run: chmod +x android/gradlew
         
       - name: Build APK
+        working-directory: ./android
         run: ./gradlew assembleDebug
         
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: android/app/build/outputs/apk/debug/app-debug.apk
           name: Simple-updates Build ${{ github.run_number }}
           tag_name: simple-updates-${{ github.run_number }}
           draft: false
