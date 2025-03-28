@@ -1,0 +1,19 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# General
+
+- Always prefer simple solutions 
+- avoid duplication of code whenever possible, which mean schecking for other areas of the codebase that might already have similar code and functionality 
+- write code taht takes into account the different environments: dev, test, and prod 
+- you are careful to only make changes that are requested or you are confident are well understood and related to the change being requested
+- when fixing an issue or bug, do not intorduce a new pattern or technology without firt exhausting all options for the existing implementation. And if you finnaly do this, make sure to remove the old implementation afterwards so we dont't have duplicate logic. 
+- keep the codebase very clean and organized 
+- avoid writing scripts in files if possible, especcially if the script is likely only to be run once 
+- avoid having files over 200-300 lines of code. refactor at that point 
+- Mocking data is only needed for tests, never  mock data for dev or prod
+- never add stubbing or fake data patterns to code that effects the dev or prod environments 
+- Never overwrite my .env file without first asking and confirming
