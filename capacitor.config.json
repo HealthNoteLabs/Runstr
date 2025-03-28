@@ -1,0 +1,19 @@
+{
+  "appId": "com.example.app",
+  "appName": "Runstr",
+  "webDir": "dist",
+  "plugins": {
+    "BackgroundGeolocation": {
+      "locationProvider": 1,
+      "desiredAccuracy": 10,
+      "stationaryRadius": 50,
+      "distanceFilter": 30,
+      "debug": true,
+      "stopOnTerminate": false,
+      "startForeground": true
+    }
+  },
+  "android": {
+    "useLegacyBridge": true
+  }
+}
