@@ -10,6 +10,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       
@@ -49,6 +51,11 @@ jobs:
         working-directory: ./android
         run: ./gradlew assembleDebug
         
+      - name: Check APK exists
+        run: |
+          echo "Checking if APK exists:"
+          ls -la android/app/build/outputs/apk/debug/ || echo "Debug APK directory does not exist"
+        
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
@@ -64,5 +71,6 @@ jobs:
           tag_name: simple-updates-${{ github.run_number }}
           draft: false
           prerelease: true
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
