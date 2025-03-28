@@ -69,14 +69,15 @@ jobs:
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
+          name: app-debug.apk
           path: app-debug.apk
           
       - name: Create GitHub Release
-        uses: ncipollo/release-action@v1
+        uses: softprops/action-gh-release@v2
         with:
-          artifacts: "app-debug.apk"
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tag: simple-updates-${{ github.run_number }}
+          files: app-debug.apk
+          tag_name: simple-updates-${{ github.run_number }}
           name: Simple-updates Build ${{ github.run_number }}
           prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
