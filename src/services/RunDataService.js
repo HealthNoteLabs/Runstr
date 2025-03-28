@@ -30,6 +30,8 @@ class RunDataService {
    */
   saveRun(runData) {
     try {
+      console.log('RunDataService - Saving run data:', runData);
+      
       const runs = this.getAllRuns();
       
       // Generate a unique ID if not provided
@@ -39,6 +41,8 @@ class RunDataService {
         timestamp: runData.timestamp || Date.now(),
         ...runData
       };
+      
+      console.log('RunDataService - Processed run data to save:', newRun);
       
       // Add to beginning of array for most recent first
       const updatedRuns = [newRun, ...runs];

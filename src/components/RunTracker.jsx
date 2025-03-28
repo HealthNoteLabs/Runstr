@@ -44,6 +44,10 @@ export const RunTracker = () => {
         if (runs.length > 0) {
           // Sort runs by date (most recent first)
           const sortedRuns = [...runs].sort((a, b) => new Date(b.date) - new Date(a.date));
+          
+          // Log the most recent run to see what properties it has
+          console.log('Most recent run loaded:', sortedRuns[0]);
+          
           setRecentRun(sortedRuns[0]);
         }
       } catch (error) {
@@ -55,17 +59,28 @@ export const RunTracker = () => {
     loadRecentRun();
     
     // Listen for run completed events
-    const handleRunCompleted = () => {
-      console.log("Run completed event received");
+    const handleRunCompleted = (event) => {
+      console.log("Run completed event received with data:", event.detail);
       
-      // First attempt to load immediately
-      loadRecentRun();
-      
-      // Retry loading after a short delay to ensure localStorage is fully updated
-      // This helps in case the event fired before localStorage was fully updated
-      setTimeout(() => {
+      // Use the run data directly from the event if available
+      if (event.detail) {
+        // Create a properly formatted run object combining event data with defaults
+        const completedRun = {
+          id: Date.now() + '-' + Math.random().toString(36).substr(2, 9),
+          date: new Date().toLocaleDateString(),
+          timestamp: Date.now(),
+          ...event.detail
+        };
+        
+        console.log('Setting recent run directly from event:', completedRun);
+        setRecentRun(completedRun);
+      } else {
+        // Fallback to loading from storage if no event data
         loadRecentRun();
-      }, 150); // Slightly longer than the delay in the RunTracker service
+        
+        // Retry after a delay for reliability
+        setTimeout(loadRecentRun, 150);
+      }
     };
     
     document.addEventListener('runCompleted', handleRunCompleted);
@@ -396,16 +411,27 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <div className="flex-1">
                 <h4 className="font-semibold">{recentRun.title || `${getTimeOfDay(recentRun.timestamp)} Run`}</h4>
                 <div className="flex items-center text-xs text-gray-400">
-                  <span>{formatRunDate(recentRun.date)} • {displayDistance(recentRun.distance, distanceUnit)}</span>
+                  <span>
+                    {formatRunDate(recentRun.date)} • 
+                    {recentRun && typeof recentRun.distance === 'number' 
+                      ? displayDistance(recentRun.distance, distanceUnit)
+                      : '0.00 ' + distanceUnit}
+                  </span>
                   <span className="ml-2 px-2 py-1 bg-gray-800 rounded-full">
-                    {recentRun.distance > 0 
+                    {(recentRun && typeof recentRun.distance === 'number' && 
+                      typeof recentRun.duration === 'number' && 
+                      recentRun.distance > 0 && recentRun.duration > 0)
                       ? (recentRun.duration / 60 / (distanceUnit === 'km' ? recentRun.distance/1000 : recentRun.distance/1609.344)).toFixed(2) 
                       : '0.00'} min/{distanceUnit}
                   </span>
                 </div>
               </div>
               <div className="text-right text-gray-400">
-                <span className="block text-lg font-semibold">{formatTime(recentRun.duration).split(':').slice(0, 2).join(':')}</span>
+                <span className="block text-lg font-semibold">
+                  {recentRun && typeof recentRun.duration === 'number' 
+                    ? formatTime(recentRun.duration).split(':').slice(0, 2).join(':') 
+                    : '00:00'}
+                </span>
                 <button 
                   onClick={handlePostToNostr}
                   className="text-xs mt-1 text-indigo-400 flex items-center"
