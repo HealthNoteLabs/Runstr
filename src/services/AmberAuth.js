@@ -3,7 +3,7 @@
  * Service for Amber authentication and signing
  */
 
-import { Platform, Linking } from 'react-native';
+import { Platform, Linking } from '../utils/react-native-shim';
 
 // Check if Amber is installed (will only work in native context)
 const isAmberInstalled = async () => {
@@ -47,7 +47,7 @@ const requestAuthentication = async () => {
     const amberUri = `nostrsigner:sign?event=${encodedEvent}`;
     
     // Open Amber using the URI
-    const result = await Linking.openURL(amberUri);
+    await Linking.openURL(amberUri);
     
     // The actual response will be handled by deep linking
     // We'll need to set up a listener in the app to handle the response

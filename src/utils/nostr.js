@@ -1,5 +1,5 @@
 import NDK, { NDKEvent } from '@nostr-dev-kit/ndk';
-import { Platform } from 'react-native';
+import { Platform } from '../utils/react-native-shim';
 import AmberAuth from '../services/AmberAuth';
 
 // Optimized relay list based on testing results

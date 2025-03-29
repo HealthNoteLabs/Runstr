@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { NostrContext } from './NostrContext';
-import { Platform } from 'react-native';
+import { Platform } from '../utils/react-native-shim';
 import AmberAuth from '../services/AmberAuth';
 
 export function NostrProvider({ children }) {
