@@ -1,4 +1,5 @@
-import { extractImagesFromContent, formatSplitTimesInContent } from '../utils/postFormatters';
+import { formatSplitTimesInContent } from '../utils/postFormatters';
+import PropTypes from 'prop-types';
 
 /**
  * Component for displaying a single post in the run feed - optimized for Android
@@ -16,18 +17,15 @@ export const Post = ({
   setCommentText,
   wallet
 }) => {
-  // Android optimization: lazy load images
-  const lazyLoadImage = (event) => {
-    const img = event.target;
-    if (img.dataset.src) {
-      img.src = img.dataset.src;
-      img.removeAttribute('data-src');
-    }
-  };
-
   // Android optimization: handle avatar error
   const handleAvatarError = (event) => {
-    event.target.src = '/default-avatar.png';
+    event.target.src = '/default-avatar.svg';
+  };
+
+  // Handle image load to ensure smooth transitions
+  const handleImageLoad = (event) => {
+    // Add a loaded class to improve image fade-in
+    event.target.classList.add('image-loaded');
   };
 
   // Format date for Android
@@ -71,18 +69,21 @@ export const Post = ({
 
   // Detect mobile
   const isMobile = true;
+  
+  // Use the pre-extracted images array from the post object
+  const images = post.images || [];
 
   return (
     <div className="post-card" data-post-id={post.id}>
       <div className="post-header">
         <img
-          src={post.author.profile.picture ? '/placeholder-avatar.png' : '/default-avatar.png'}
-          data-src={post.author.profile.picture}
+          src={post.author.profile.picture || '/default-avatar.svg'}
           alt={post.author.profile.name || 'Anonymous'}
           className="author-avatar"
-          onLoad={lazyLoadImage}
           onError={handleAvatarError}
           loading="lazy"
+          width="48"
+          height="48"
         />
         <div className="author-info">
           <h4>{post.author.profile.name || 'Anonymous Runner'}</h4>
@@ -94,39 +95,58 @@ export const Post = ({
       
       <div className="post-content">
         {formatSplitTimesInContent(post.content)}
-        <div className="post-images">
-          {extractImagesFromContent(post.content).slice(0, 2).map(
-            (imageUrl, index) => (
-              <img
-                key={index}
-                src={'/placeholder-image.png'}
-                data-src={imageUrl}
-                alt="Run activity"
-                className="post-image"
-                onLoad={lazyLoadImage}
-                loading="lazy"
-                onClick={() => {
-                  // On Android, simply show in full screen instead of opening a new window
-                  const imageElement = document.createElement('div');
-                  imageElement.className = 'fullscreen-image-container';
-                  imageElement.innerHTML = `
-                    <div class="fullscreen-image-backdrop"></div>
-                    <img src="${imageUrl}" alt="Full size" class="fullscreen-image" />
-                  `;
-                  imageElement.addEventListener('click', () => {
-                    document.body.removeChild(imageElement);
-                  });
-                  document.body.appendChild(imageElement);
-                }}
-              />
-            )
-          )}
-          {extractImagesFromContent(post.content).length > 2 && (
-            <div className="more-images-indicator">
-              +{extractImagesFromContent(post.content).length - 2} more
-            </div>
-          )}
-        </div>
+        {images.length > 0 && (
+          <div className="post-images">
+            {images.slice(0, 2).map(
+              (imageUrl, index) => (
+                <div 
+                  key={index}
+                  className="image-container"
+                  style={{ 
+                    aspectRatio: '16/9',
+                    position: 'relative'
+                  }}
+                >
+                  <img
+                    src={imageUrl}
+                    alt="Run activity"
+                    className="post-image"
+                    loading="lazy"
+                    width="100%"
+                    height="100%"
+                    onLoad={handleImageLoad}
+                    style={{ 
+                      objectFit: 'cover',
+                      position: 'absolute',
+                      width: '100%',
+                      height: '100%',
+                      top: 0,
+                      left: 0
+                    }}
+                    onClick={() => {
+                      // On Android, simply show in full screen instead of opening a new window
+                      const imageElement = document.createElement('div');
+                      imageElement.className = 'fullscreen-image-container';
+                      imageElement.innerHTML = `
+                        <div class="fullscreen-image-backdrop"></div>
+                        <img src="${imageUrl}" alt="Full size" class="fullscreen-image" />
+                      `;
+                      imageElement.addEventListener('click', () => {
+                        document.body.removeChild(imageElement);
+                      });
+                      document.body.appendChild(imageElement);
+                    }}
+                  />
+                </div>
+              )
+            )}
+            {images.length > 2 && (
+              <div className="more-images-indicator">
+                +{images.length - 2} more
+              </div>
+            )}
+          </div>
+        )}
       </div>
       
       <div className="post-actions">
@@ -162,13 +182,13 @@ export const Post = ({
             {post.comments?.map((comment) => (
               <div key={comment.id} className="comment-item">
                 <img
-                  src={
-                    comment.author.profile.picture || '/default-avatar.png'
-                  }
+                  src={comment.author.profile.picture || '/default-avatar.svg'}
                   alt={comment.author.profile.name}
                   className="comment-avatar"
                   onError={handleAvatarError}
                   loading="lazy"
+                  width="32"
+                  height="32"
                 />
                 <div className="comment-content">
                   <strong>
@@ -205,4 +225,34 @@ export const Post = ({
       )}
     </div>
   );
+};
+
+// Add prop types for linter validation
+Post.propTypes = {
+  post: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    content: PropTypes.string.isRequired,
+    created_at: PropTypes.number.isRequired,
+    author: PropTypes.shape({
+      pubkey: PropTypes.string.isRequired,
+      profile: PropTypes.object,
+    }).isRequired,
+    comments: PropTypes.array,
+    showComments: PropTypes.bool,
+    likes: PropTypes.number,
+    reposts: PropTypes.number,
+    zaps: PropTypes.number,
+    zapAmount: PropTypes.number,
+    images: PropTypes.array,
+  }).isRequired,
+  userLikes: PropTypes.instanceOf(Set).isRequired,
+  userReposts: PropTypes.instanceOf(Set).isRequired,
+  handleLike: PropTypes.func.isRequired,
+  handleRepost: PropTypes.func.isRequired,
+  handleZap: PropTypes.func.isRequired,
+  handleCommentClick: PropTypes.func.isRequired,
+  handleComment: PropTypes.func.isRequired,
+  commentText: PropTypes.string.isRequired,
+  setCommentText: PropTypes.func.isRequired,
+  wallet: PropTypes.object,
 }; 

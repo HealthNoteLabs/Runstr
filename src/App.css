@@ -2114,6 +2114,15 @@ textarea {
   margin-top: 10px;
   max-width: 100%; /* Ensure images container doesn't overflow */
   overflow: hidden; /* Hide any overflow */
+  min-height: 50px; /* Prevent layout shift */
+}
+
+.image-container {
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: rgba(0, 0, 0, 0.1);
+  min-height: 150px;
+  width: 100%;
 }
 
 .post-image {
@@ -2122,8 +2131,16 @@ textarea {
   object-fit: cover;
   border-radius: 8px;
   cursor: pointer;
-  transition: transform 0.2s;
+  transition: transform 0.2s, opacity 0.3s ease-in;
   max-width: 100%; /* Ensure images don't overflow */
+  background-color: rgba(0, 0, 0, 0.1); /* Subtle background while loading */
+  will-change: transform; /* Optimize for transitions */
+  min-height: 100px; /* Prevent layout shift */
+  opacity: 0.7; /* Start slightly faded */
+}
+
+.post-image.image-loaded {
+  opacity: 1; /* Fully opaque when loaded */
 }
 
 .post-image:hover {

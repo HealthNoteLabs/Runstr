@@ -1,14 +1,20 @@
 import NDK, { NDKEvent } from '@nostr-dev-kit/ndk';
+import { Platform } from 'react-native';
+import AmberAuth from '../services/AmberAuth';
 
 // Optimized relay list based on testing results
 export const RELAYS = [
   'wss://relay.damus.io',    // Most reliable for running content
-  'wss://nos.lol',           // Good secondary option
-  'wss://relay.nostr.band',  // Has unique running content
+  'wss://nos.lol',           // Good secondary option  // Has unique running content
   'wss://nostr.wine',        // Additional reliable relay
   'wss://eden.nostr.land',   // Additional reliable relay
   'wss://e.nos.lol',         // Additional reliable relay
-  'wss://relay.snort.social' // Backup relay
+  'wss://relay.snort.social', // Backup relay
+  'wss://feeds.nostr.band/running',
+  'wss://feeds.nostr.band/popular',
+  'wss://feeds.nostr.band/memes',
+  'wss://purplerelay.com',
+  'wss://nostr.bitcoiner.social',
 ];
 
 // Create a new NDK instance with optimized relay configuration
@@ -220,17 +226,49 @@ export const processPostsWithData = async (posts, supplementaryData) => {
     
     const { profileEvents, comments, likes, reposts, zapReceipts } = supplementaryData;
     
-    // Create a profile map
-    const profileMap = new Map(
-      Array.from(profileEvents).map((profile) => {
+    // Create a profile map with enhanced error handling
+    const profileMap = new Map();
+    
+    // Process profile events with robust error handling
+    if (profileEvents && profileEvents.size > 0) {
+      Array.from(profileEvents).forEach((profile) => {
+        if (!profile || !profile.pubkey) return;
+        
+        let parsedProfile = {};
+        
+        // Safely parse profile content
         try {
-          return [profile.pubkey, JSON.parse(profile.content)];
+          // Make sure content is a string before parsing
+          if (typeof profile.content === 'string') {
+            parsedProfile = JSON.parse(profile.content);
+            
+            // Validate and ensure all required fields exist
+            if (typeof parsedProfile !== 'object') {
+              parsedProfile = {};
+            }
+          }
         } catch (err) {
-          console.error('Error parsing profile:', err);
-          return [profile.pubkey, {}];
+          console.error(`Error parsing profile for ${profile.pubkey}:`, err);
+          // Continue with empty profile object if parsing fails
         }
-      })
-    );
+        
+        // Ensure profile has all expected fields with proper fallbacks
+        const normalizedProfile = {
+          name: parsedProfile.name || parsedProfile.display_name || 'Anonymous Runner',
+          display_name: parsedProfile.display_name || parsedProfile.name || 'Anonymous Runner',
+          picture: typeof parsedProfile.picture === 'string' ? parsedProfile.picture : undefined,
+          about: typeof parsedProfile.about === 'string' ? parsedProfile.about : '',
+          lud06: typeof parsedProfile.lud06 === 'string' ? parsedProfile.lud06 : undefined,
+          lud16: typeof parsedProfile.lud16 === 'string' ? parsedProfile.lud16 : undefined,
+          nip05: typeof parsedProfile.nip05 === 'string' ? parsedProfile.nip05 : undefined,
+          website: typeof parsedProfile.website === 'string' ? parsedProfile.website : undefined,
+          banner: typeof parsedProfile.banner === 'string' ? parsedProfile.banner : undefined,
+        };
+        
+        // Add to profile map
+        profileMap.set(profile.pubkey, normalizedProfile);
+      });
+    }
     
     // Count likes and reposts per post
     const likesByPost = new Map();
@@ -271,7 +309,10 @@ export const processPostsWithData = async (posts, supplementaryData) => {
           const amountTag = zapReceipt.tags.find(tag => tag[0] === 'amount');
           if (amountTag && amountTag[1]) {
             // Amount is in millisatoshis, convert to sats
-            zapAmount = parseInt(amountTag[1], 10) / 1000;
+            const parsedAmount = parseInt(amountTag[1], 10);
+            if (!isNaN(parsedAmount)) {
+              zapAmount = parsedAmount / 1000;
+            }
           } else {
             // If no amount tag, count as 1 zap
             zapAmount = 1;
@@ -294,50 +335,90 @@ export const processPostsWithData = async (posts, supplementaryData) => {
     // Group comments by their parent post
     const commentsByPost = new Map();
     Array.from(comments).forEach((comment) => {
+      if (!comment || !comment.tags) return;
+      
       const parentId = comment.tags.find((tag) => tag[0] === 'e')?.[1];
       if (parentId) {
         if (!commentsByPost.has(parentId)) {
           commentsByPost.set(parentId, []);
         }
-        const profile = profileMap.get(comment.pubkey) || {};
+        
+        // Get profile with fallback
+        const authorPubkey = comment.pubkey || '';
+        const profile = profileMap.get(authorPubkey) || {
+          name: 'Anonymous',
+          picture: undefined
+        };
+        
         commentsByPost.get(parentId).push({
-          id: comment.id,
-          content: comment.content,
-          created_at: comment.created_at,
+          id: comment.id || `comment-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          content: comment.content || '',
+          created_at: comment.created_at || Math.floor(Date.now() / 1000),
           author: {
-            pubkey: comment.pubkey,
+            pubkey: authorPubkey,
             profile: profile
           }
         });
       }
     });
     
+    // Helper function to extract image URLs from content
+    const extractImagesFromContent = (content) => {
+      if (!content) return [];
+      const urlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif))/gi;
+      return content.match(urlRegex) || [];
+    };
+    
     // Process posts with all the data
     const processedPosts = posts.map(post => {
-      const profile = profileMap.get(post.pubkey) || {};
+      if (!post || !post.pubkey) {
+        console.warn('Received invalid post data', post);
+        return null;
+      }
+      
+      // Get author's profile with robust fallback
+      const authorPubkey = post.pubkey || '';
+      const profile = profileMap.get(authorPubkey) || {
+        name: 'Anonymous Runner',
+        picture: undefined,
+        lud16: undefined,
+        lud06: undefined
+      };
+      
+      // Extract images once during processing
+      const images = extractImagesFromContent(post.content || '');
+      
+      // Get post interactions with safe defaults
       const postZaps = zapsByPost.get(post.id) || { count: 0, amount: 0 };
+      const postLikes = likesByPost.get(post.id) || 0;
+      const postReposts = repostsByPost.get(post.id) || 0;
+      const postComments = commentsByPost.get(post.id) || [];
       
       return {
-        id: post.id,
-        content: post.content,
-        created_at: post.created_at,
+        id: post.id || `post-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+        content: post.content || '',
+        created_at: post.created_at || Math.floor(Date.now() / 1000),
         author: {
-          pubkey: post.pubkey,
+          pubkey: authorPubkey,
           profile: profile,
           lud16: profile.lud16,
           lud06: profile.lud06
         },
-        comments: commentsByPost.get(post.id) || [],
+        comments: postComments,
         showComments: false,
-        likes: likesByPost.get(post.id) || 0,
-        reposts: repostsByPost.get(post.id) || 0,
+        likes: postLikes,
+        reposts: postReposts,
         zaps: postZaps.count,
-        zapAmount: postZaps.amount
+        zapAmount: postZaps.amount,
+        images: images  // Add extracted images to the post object
       };
     });
     
+    // Filter out any null posts from invalid data
+    const validPosts = processedPosts.filter(post => post !== null);
+    
     // Sort by created_at, newest first
-    return processedPosts.sort((a, b) => b.created_at - a.created_at);
+    return validPosts.sort((a, b) => b.created_at - a.created_at);
   } catch (error) {
     console.error('Error processing posts:', error);
     return posts;
@@ -349,24 +430,69 @@ export const processPostsWithData = async (posts, supplementaryData) => {
  * @param {Object} eventTemplate - Event template 
  * @returns {Promise<Object>} Published event
  */
-export const createAndPublishEvent = async (eventTemplate) => {
+export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null) => {
   try {
-    if (!window.nostr) {
-      throw new Error('Nostr extension not available');
+    let pubkey = pubkeyOverride;
+    let signedEvent;
+    
+    // Use platform-specific signing
+    if (Platform.OS === 'android') {
+      // Check if Amber is available
+      const isAmberAvailable = await AmberAuth.isAmberInstalled();
+      
+      if (isAmberAvailable) {
+        // For Android with Amber, we use Amber for signing
+        if (!pubkey) {
+          // If no pubkey provided, we need to get it first
+          // This would typically come from your authentication system
+          pubkey = localStorage.getItem('userPublicKey');
+          
+          if (!pubkey) {
+            throw new Error('No public key available. Please log in first.');
+          }
+        }
+        
+        // Create the event with user's pubkey
+        const event = {
+          ...eventTemplate,
+          pubkey,
+          created_at: Math.floor(Date.now() / 1000)
+        };
+        
+        // Sign using Amber
+        signedEvent = await AmberAuth.signEvent(event);
+        
+        // If signedEvent is null, the signing is happening asynchronously
+        // and we'll need to handle it via deep linking
+        if (!signedEvent) {
+          // In a real implementation, you would return a Promise that
+          // resolves when the deep link callback is received
+          return null;
+        }
+      }
     }
     
-    // Get the public key from nostr extension
-    const pubkey = await window.nostr.getPublicKey();
-    
-    // Create the event with user's pubkey
-    const event = {
-      ...eventTemplate,
-      pubkey,
-      created_at: Math.floor(Date.now() / 1000)
-    };
-    
-    // Sign the event using the browser extension
-    const signedEvent = await window.nostr.signEvent(event);
+    // For web or if Amber is not available/failed, use window.nostr
+    if (!signedEvent) {
+      if (!window.nostr) {
+        throw new Error('No signing method available');
+      }
+      
+      // Get the public key from nostr extension if not provided
+      if (!pubkey) {
+        pubkey = await window.nostr.getPublicKey();
+      }
+      
+      // Create the event with user's pubkey
+      const event = {
+        ...eventTemplate,
+        pubkey,
+        created_at: Math.floor(Date.now() / 1000)
+      };
+      
+      // Sign the event using the browser extension
+      signedEvent = await window.nostr.signEvent(event);
+    }
     
     // Create NDK Event and publish
     const ndkEvent = new NDKEvent(ndk, signedEvent);

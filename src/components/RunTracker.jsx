@@ -58,15 +58,7 @@ export const RunTracker = () => {
     // Listen for run completed events
     const handleRunCompleted = () => {
       console.log("Run completed event received");
-      
-      // First attempt to load immediately
       loadRecentRun();
-      
-      // Retry loading after a short delay to ensure localStorage is fully updated
-      // This helps in case the event fired before localStorage was fully updated
-      setTimeout(() => {
-        loadRecentRun();
-      }, 150); // Slightly longer than the delay in the RunTracker service
     };
     
     document.addEventListener('runCompleted', handleRunCompleted);
@@ -406,22 +398,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                 </div>
               </div>
               <div className="text-right text-gray-400">
-                <span className="block text-lg font-semibold">
-                  {(() => {
-                    // Special handling to ensure duration is correct
-                    try {
-                      // Check localStorage directly for duration
-                      const localRuns = JSON.parse(localStorage.getItem('runHistory') || '[]');
-                      if (localRuns.length > 0 && typeof localRuns[0].duration === 'number') {
-                        return formatTime(localRuns[0].duration).split(':').slice(0, 2).join(':');
-                      }
-                    } catch (e) {
-                      console.log("Error getting direct duration:", e);
-                    }
-                    // Fallback to using recentRun
-                    return formatTime(recentRun.duration).split(':').slice(0, 2).join(':');
-                  })()}
-                </span>
+                <span className="block text-lg font-semibold">{formatTime(recentRun.duration).split(':').slice(0, 2).join(':')}</span>
                 <button 
                   onClick={handlePostToNostr}
                   className="text-xs mt-1 text-indigo-400 flex items-center"
