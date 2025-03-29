@@ -24,14 +24,16 @@ const RunClub = () => {
     userReposts,
     setUserReposts,
     loadSupplementaryData,
+    loadMorePosts,
     fetchRunPostsViaSubscription,
-    loadedSupplementaryData
+    loadedSupplementaryData,
+    canLoadMore,
+    handleCommentClick
   } = useRunFeed();
   
   const {
     commentText,
     setCommentText,
-    handleCommentClick,
     handleLike,
     handleRepost,
     handleZap,
@@ -142,21 +144,36 @@ const RunClub = () => {
           </button>
         </div>
       ) : (
-        <PostList
-          posts={posts}
-          loading={loading}
-          page={1}
-          userLikes={userLikes}
-          userReposts={userReposts}
-          handleLike={handleLike}
-          handleRepost={handleRepost}
-          handleZap={(post) => handleZap(post, wallet)}
-          handleCommentClick={handleCommentClick}
-          handleComment={handleComment}
-          commentText={commentText}
-          setCommentText={setCommentText}
-          wallet={wallet}
-        />
+        <>
+          <PostList
+            posts={posts}
+            loading={loading}
+            page={1}
+            userLikes={userLikes}
+            userReposts={userReposts}
+            handleLike={handleLike}
+            handleRepost={handleRepost}
+            handleZap={(post) => handleZap(post, wallet)}
+            handleCommentClick={handleCommentClick}
+            handleComment={handleComment}
+            commentText={commentText}
+            setCommentText={setCommentText}
+            wallet={wallet}
+          />
+          
+          {/* Load More Button */}
+          {canLoadMore() && (
+            <div className="load-more-container">
+              <button 
+                className="load-more-button" 
+                onClick={loadMorePosts}
+                disabled={loading}
+              >
+                {loading ? 'Loading...' : 'Load More Posts'}
+              </button>
+            </div>
+          )}
+        </>
       )}
       
       {/* Debug toggle button */}

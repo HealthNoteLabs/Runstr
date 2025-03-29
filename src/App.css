@@ -1844,53 +1844,72 @@ textarea {
 
 .post-actions {
   display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.5rem 0;
-  border-top: 1px solid #333;
-  margin-top: 1rem;
   width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
+  justify-content: space-between;
+  margin-top: 15px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 15px;
 }
 
-.like-button,
-.comment-button,
-.zap-button,
-.repost-button {
-  background: none;
-  border: none;
-  padding: 0.5rem;
-  cursor: pointer;
+.action-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #888;
-  transition: color 0.2s;
-  font-size: 0.9rem;
-  width: 24%;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.85rem;
 }
 
-.like-button:hover,
-.comment-button:hover,
-.repost-button:hover {
-  color: #646cff;
+.action-button.zap-button {
+  color: #f5cc00;
 }
 
-.like-button.liked {
-  color: #ff4646;
+.action-button.zap-button:hover {
+  background-color: rgba(245, 204, 0, 0.1);
 }
 
-.repost-button.reposted {
+.action-button.like-button {
+  color: #ff4b4b;
+}
+
+.action-button.like-button:hover {
+  background-color: rgba(255, 75, 75, 0.1);
+}
+
+.action-button.repost-button {
   color: #4caf50;
 }
 
-.zap-button {
-  color: #888;
+.action-button.repost-button:hover {
+  background-color: rgba(76, 175, 80, 0.1);
 }
 
-.zap-button:hover {
-  color: #ffcc00;
+.action-button.comment-button {
+  color: #4176ff;
+}
+
+.action-button.comment-button:hover {
+  background-color: rgba(65, 118, 255, 0.1);
+}
+
+.action-text {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+@media (max-width: 480px) {
+  .action-text {
+    display: none;
+  }
+  
+  .action-button {
+    padding: 8px;
+  }
 }
 
 .comments-section {
@@ -5499,4 +5518,59 @@ input:checked + .toggle-slider:before {
   background-color: #1a1a1a;
   color: #e2e8f0;
   font-size: 16px;
+}
+
+/* Post content formatting */
+.hashtag {
+  color: #4176ff;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.post-content a {
+  color: #4176ff;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.post-content a:hover {
+  text-decoration: underline;
+}
+
+.action-count {
+  display: inline-flex;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+  padding: 1px 6px;
+  margin-left: 4px;
+}
+
+/* Comment loading state */
+.comments-loading {
+  text-align: center;
+  padding: 10px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+/* View more comments button */
+.view-more-comments {
+  background: transparent;
+  border: none;
+  color: #4176ff;
+  text-align: center;
+  width: 100%;
+  padding: 8px;
+  margin: 5px 0;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.view-more-comments:hover {
+  color: #646cff;
+  text-decoration: underline;
 }

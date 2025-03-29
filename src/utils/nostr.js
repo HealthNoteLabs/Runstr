@@ -72,7 +72,7 @@ export const fetchEvents = async (filter) => {
  * @param {number} since - timestamp to fetch posts since
  * @returns {Promise<Array>} Array of running posts
  */
-export const fetchRunningPosts = async (limit = 10, since = undefined) => {
+export const fetchRunningPosts = async (limit = 7, since = undefined) => {
   try {
     // If no custom "since" provided, use 30 days (not 90 days)
     const defaultSince = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
@@ -83,7 +83,7 @@ export const fetchRunningPosts = async (limit = 10, since = undefined) => {
     // Standardized hashtag list across the app
     const hashtagFilter = {
       kinds: [1], // Regular posts
-      limit: limit || 10,
+      limit: limit || 7,
       "#t": ["running", "run", "runner", "runstr", "5k", "10k", "marathon", "jog"],
       since: sinceTimestamp
     };

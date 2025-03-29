@@ -707,4 +707,33 @@
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Load more button styles */
+.load-more-container {
+  display: flex;
+  justify-content: center;
+  margin: 20px 0 30px;
+  width: 100%;
+}
+
+.load-more-button {
+  background-color: #4176ff;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.load-more-button:hover {
+  background-color: #3060db;
+}
+
+.load-more-button:disabled {
+  background-color: #a0b1d9;
+  cursor: not-allowed;
 } 

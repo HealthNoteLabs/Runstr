@@ -1,5 +1,50 @@
-import { formatSplitTimesInContent } from '../utils/postFormatters';
+import { formatPostContent } from '../utils/postFormatters';
 import PropTypes from 'prop-types';
+import { useState, useCallback, memo } from 'react';
+
+/**
+ * Comment component - memoized to prevent unnecessary re-renders
+ */
+const Comment = memo(({ comment, handleAvatarError }) => {
+  return (
+    <div className="comment-item">
+      <img
+        src={comment.author.profile.picture || '/default-avatar.svg'}
+        alt={comment.author.profile.name}
+        className="comment-avatar"
+        onError={handleAvatarError}
+        loading="lazy"
+        width="32"
+        height="32"
+      />
+      <div className="comment-content">
+        <strong>
+          {comment.author.profile.name || 'Anonymous'}
+        </strong>
+        <p>{comment.content}</p>
+      </div>
+    </div>
+  );
+});
+
+// Add displayName for debugging
+Comment.displayName = 'Comment';
+
+// Add prop types for the Comment component
+Comment.propTypes = {
+  comment: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    content: PropTypes.string.isRequired,
+    author: PropTypes.shape({
+      pubkey: PropTypes.string,
+      profile: PropTypes.shape({
+        name: PropTypes.string,
+        picture: PropTypes.string
+      })
+    }).isRequired
+  }).isRequired,
+  handleAvatarError: PropTypes.func.isRequired
+};
 
 /**
  * Component for displaying a single post in the run feed - optimized for Android
@@ -17,6 +62,9 @@ export const Post = ({
   setCommentText,
   wallet
 }) => {
+  // Track if comments are loading
+  const [commentsLoading, setCommentsLoading] = useState(false);
+
   // Android optimization: handle avatar error
   const handleAvatarError = (event) => {
     event.target.src = '/default-avatar.svg';
@@ -73,6 +121,22 @@ export const Post = ({
   // Use the pre-extracted images array from the post object
   const images = post.images || [];
 
+  // Create HTML from formatted content
+  const formattedContent = formatPostContent(post.content);
+
+  // Handle comment click with loading state
+  const handleCommentClickWithLoading = useCallback((postId) => {
+    if (!post.commentsLoaded && !commentsLoading) {
+      setCommentsLoading(true);
+      // Call the original handler which should load the comments
+      handleCommentClick(postId).finally(() => {
+        setCommentsLoading(false);
+      });
+    } else {
+      handleCommentClick(postId);
+    }
+  }, [post, commentsLoading, handleCommentClick]);
+
   return (
     <div className="post-card" data-post-id={post.id}>
       <div className="post-header">
@@ -93,113 +157,124 @@ export const Post = ({
         </div>
       </div>
       
-      <div className="post-content">
-        {formatSplitTimesInContent(post.content)}
-        {images.length > 0 && (
-          <div className="post-images">
-            {images.slice(0, 2).map(
-              (imageUrl, index) => (
-                <div 
-                  key={index}
-                  className="image-container"
+      <div className="post-content" dangerouslySetInnerHTML={{ __html: formattedContent }}></div>
+      
+      {images.length > 0 && (
+        <div className="post-images">
+          {images.slice(0, 2).map(
+            (imageUrl, index) => (
+              <div 
+                key={index}
+                className="image-container"
+                style={{ 
+                  aspectRatio: '16/9',
+                  position: 'relative'
+                }}
+              >
+                <img
+                  src={imageUrl}
+                  alt="Run activity"
+                  className="post-image"
+                  loading="lazy"
+                  width="100%"
+                  height="100%"
+                  onLoad={handleImageLoad}
                   style={{ 
-                    aspectRatio: '16/9',
-                    position: 'relative'
+                    objectFit: 'cover',
+                    position: 'absolute',
+                    width: '100%',
+                    height: '100%',
+                    top: 0,
+                    left: 0
                   }}
-                >
-                  <img
-                    src={imageUrl}
-                    alt="Run activity"
-                    className="post-image"
-                    loading="lazy"
-                    width="100%"
-                    height="100%"
-                    onLoad={handleImageLoad}
-                    style={{ 
-                      objectFit: 'cover',
-                      position: 'absolute',
-                      width: '100%',
-                      height: '100%',
-                      top: 0,
-                      left: 0
-                    }}
-                    onClick={() => {
-                      // On Android, simply show in full screen instead of opening a new window
-                      const imageElement = document.createElement('div');
-                      imageElement.className = 'fullscreen-image-container';
-                      imageElement.innerHTML = `
-                        <div class="fullscreen-image-backdrop"></div>
-                        <img src="${imageUrl}" alt="Full size" class="fullscreen-image" />
-                      `;
-                      imageElement.addEventListener('click', () => {
-                        document.body.removeChild(imageElement);
-                      });
-                      document.body.appendChild(imageElement);
-                    }}
-                  />
-                </div>
-              )
-            )}
-            {images.length > 2 && (
-              <div className="more-images-indicator">
-                +{images.length - 2} more
+                  onClick={() => {
+                    // On Android, simply show in full screen instead of opening a new window
+                    const imageElement = document.createElement('div');
+                    imageElement.className = 'fullscreen-image-container';
+                    imageElement.innerHTML = `
+                      <div class="fullscreen-image-backdrop"></div>
+                      <img src="${imageUrl}" alt="Full size" class="fullscreen-image" />
+                    `;
+                    imageElement.addEventListener('click', () => {
+                      document.body.removeChild(imageElement);
+                    });
+                    document.body.appendChild(imageElement);
+                  }}
+                />
               </div>
-            )}
-          </div>
-        )}
-      </div>
+            )
+          )}
+          {images.length > 2 && (
+            <div className="more-images-indicator">
+              +{images.length - 2} more
+            </div>
+          )}
+        </div>
+      )}
       
       <div className="post-actions">
         <button
-          className="zap-button"
+          className="action-button zap-button"
           onClick={() => handleZap(post, wallet)}
         >
-          ⚡️ {post.zaps > 0 ? post.zaps : ''}
+          ⚡️ <span className="action-text">Kudos</span>
+          {post.zaps > 0 && <span className="action-count">{post.zaps}</span>}
         </button>
         <button
-          className={`like-button ${userLikes.has(post.id) ? 'liked' : ''}`}
+          className={`action-button like-button ${userLikes.has(post.id) ? 'liked' : ''}`}
           onClick={() => handleLike(post)}
         >
-          {userLikes.has(post.id) ? '❤️' : '🤍'} {post.likes > 0 ? post.likes : ''}
+          {userLikes.has(post.id) ? '❤️' : '🤍'} <span className="action-text">Like</span>
+          {post.likes > 0 && <span className="action-count">{post.likes}</span>}
         </button>
         <button
-          className={`repost-button ${userReposts.has(post.id) ? 'reposted' : ''}`}
+          className={`action-button repost-button ${userReposts.has(post.id) ? 'reposted' : ''}`}
           onClick={() => handleRepost(post)}
         >
-          {userReposts.has(post.id) ? '🔁' : '🔄'} {post.reposts > 0 ? post.reposts : ''}
+          {userReposts.has(post.id) ? '🔁' : '🔄'} <span className="action-text">Repost</span>
+          {post.reposts > 0 && <span className="action-count">{post.reposts}</span>}
         </button>
         <button
-          className="comment-button"
-          onClick={() => handleCommentClick(post.id)}
+          className="action-button comment-button"
+          onClick={() => handleCommentClickWithLoading(post.id)}
         >
-          💬 {post.comments?.length || 0}
+          💬 <span className="action-text">Comment</span>
+          {(post.comments?.length > 0) && <span className="action-count">{post.comments.length}</span>}
         </button>
       </div>
       
       {post.showComments && (
         <div className="comments-section">
           <div className="comments-list">
-            {post.comments?.map((comment) => (
-              <div key={comment.id} className="comment-item">
-                <img
-                  src={comment.author.profile.picture || '/default-avatar.svg'}
-                  alt={comment.author.profile.name}
-                  className="comment-avatar"
-                  onError={handleAvatarError}
-                  loading="lazy"
-                  width="32"
-                  height="32"
-                />
-                <div className="comment-content">
-                  <strong>
-                    {comment.author.profile.name || 'Anonymous'}
-                  </strong>
-                  <p>{comment.content}</p>
-                </div>
-              </div>
-            ))}
-            {post.comments?.length === 0 && (
-              <div className="no-comments">No comments yet. Be the first to comment!</div>
+            {commentsLoading ? (
+              <div className="comments-loading">Loading comments...</div>
+            ) : (
+              <>
+                {post.comments && post.comments.length > 0 ? (
+                  <>
+                    {/* Only render the first 5 comments initially, for better performance */}
+                    {post.comments.slice(0, 5).map((comment) => (
+                      <Comment 
+                        key={comment.id} 
+                        comment={comment} 
+                        handleAvatarError={handleAvatarError} 
+                      />
+                    ))}
+                    
+                    {/* Show "View more comments" button if there are more than 5 comments */}
+                    {post.comments.length > 5 && (
+                      <button 
+                        className="view-more-comments"
+                        onClick={() => console.log('View all comments')}
+                      >
+                        View all {post.comments.length} comments
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <div className="no-comments">No comments yet. Be the first to comment!</div>
+                )}
+              </>
             )}
           </div>
           <div className="comment-input">
@@ -239,6 +314,7 @@ Post.propTypes = {
     }).isRequired,
     comments: PropTypes.array,
     showComments: PropTypes.bool,
+    commentsLoaded: PropTypes.bool,
     likes: PropTypes.number,
     reposts: PropTypes.number,
     zaps: PropTypes.number,
