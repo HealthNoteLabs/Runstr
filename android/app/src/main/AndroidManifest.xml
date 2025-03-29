@@ -21,6 +21,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            
+            <!-- Deep link intent filter for handling callbacks from Amber -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="runstr" />
+            </intent-filter>
 
         </activity>
 
@@ -50,16 +58,4 @@
             <data android:scheme="nostrsigner" />
         </intent>
     </queries>
-
-    <!-- Add URL scheme for handling callbacks from Amber -->
-    <activity
-        android:name=".MainActivity"
-        android:launchMode="singleTask">
-        <intent-filter>
-            <action android:name="android.intent.action.VIEW" />
-            <category android:name="android.intent.category.DEFAULT" />
-            <category android:name="android.intent.category.BROWSABLE" />
-            <data android:scheme="runstr" />
-        </intent-filter>
-    </activity>
 </manifest>
