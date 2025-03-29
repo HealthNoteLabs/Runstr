@@ -12,6 +12,7 @@ const Goals = lazy(() => import('./pages/Goals').then(module => ({ default: modu
 const Team = lazy(() => import('./pages/Team').then(module => ({ default: module.Team })));
 const Events = lazy(() => import('./pages/Events').then(module => ({ default: module.Events })));
 const Profile = lazy(() => import('./pages/Profile').then(module => ({ default: module.Profile })));
+const About = lazy(() => import('./pages/About').then(module => ({ default: module.About })));
 
 // Loading fallback component
 const LoadingComponent = () => (
@@ -33,6 +34,7 @@ export const AppRoutes = () => {
         <Route path="/music" element={<Music />} />
         <Route path="/nwc" element={<NWC />} />
         <Route path="/goals" element={<Goals />} />
+        <Route path="/about" element={<About />} />
         <Route path="/" element={<RunTracker />} />
       </Routes>
     </Suspense>

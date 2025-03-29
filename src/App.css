@@ -1854,15 +1854,21 @@ textarea {
 .action-button {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 5px;
   background: transparent;
+  color: rgba(255, 255, 255, 0.7);
   border: none;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-size: 0.85rem;
+  min-height: 36px;
+  justify-content: center;
+}
+
+.action-button:hover {
+  background-color: rgba(100, 108, 255, 0.2);
+  color: white;
 }
 
 .action-button.zap-button {
@@ -1871,6 +1877,7 @@ textarea {
 
 .action-button.zap-button:hover {
   background-color: rgba(245, 204, 0, 0.1);
+  color: #f5cc00;
 }
 
 .action-button.like-button {
@@ -1879,14 +1886,16 @@ textarea {
 
 .action-button.like-button:hover {
   background-color: rgba(255, 75, 75, 0.1);
+  color: #ff4b4b;
 }
 
-.action-button.repost-button {
+.action-button.reposted, .action-button.repost-button {
   color: #4caf50;
 }
 
 .action-button.repost-button:hover {
   background-color: rgba(76, 175, 80, 0.1);
+  color: #4caf50;
 }
 
 .action-button.comment-button {
@@ -1895,6 +1904,11 @@ textarea {
 
 .action-button.comment-button:hover {
   background-color: rgba(65, 118, 255, 0.1);
+  color: #4176ff;
+}
+
+.action-button.liked {
+  color: #ff4b4b;
 }
 
 .action-text {
@@ -4900,10 +4914,11 @@ input:checked + .toggle-slider:before {
   color: rgba(255, 255, 255, 0.7);
   border: none;
   padding: 8px 12px;
-  border-radius: 20px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.2s ease;
   min-height: 36px;
+  justify-content: center;
 }
 
 .action-button:hover {
@@ -4911,16 +4926,44 @@ input:checked + .toggle-slider:before {
   color: white;
 }
 
-.action-button.liked {
+.action-button.zap-button {
+  color: #f5cc00;
+}
+
+.action-button.zap-button:hover {
+  background-color: rgba(245, 204, 0, 0.1);
+  color: #f5cc00;
+}
+
+.action-button.like-button {
   color: #ff4b4b;
 }
 
-.action-button.reposted {
+.action-button.like-button:hover {
+  background-color: rgba(255, 75, 75, 0.1);
+  color: #ff4b4b;
+}
+
+.action-button.reposted, .action-button.repost-button {
   color: #4caf50;
 }
 
-.action-button.zapped {
-  color: #ffc107;
+.action-button.repost-button:hover {
+  background-color: rgba(76, 175, 80, 0.1);
+  color: #4caf50;
+}
+
+.action-button.comment-button {
+  color: #4176ff;
+}
+
+.action-button.comment-button:hover {
+  background-color: rgba(65, 118, 255, 0.1);
+  color: #4176ff;
+}
+
+.action-button.liked {
+  color: #ff4b4b;
 }
 
 /* Comments section */
