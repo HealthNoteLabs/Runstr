@@ -102,18 +102,16 @@ jobs:
           # Create fresh capacitor config if needed
           if [ ! -f "capacitor.config.ts" ] && [ ! -f "capacitor.config.js" ] && [ ! -f "capacitor.config.json" ]; then
             echo "Creating basic capacitor config"
-            cat > capacitor.config.ts << 'EOFCAP'
-import { CapacitorConfig } from '@capacitor/cli';
-
-const config: CapacitorConfig = {
-  appId: 'com.runstr.app',
-  appName: 'Runstr',
-  webDir: 'build',
-  bundledWebRuntime: false
-};
-
-export default config;
-EOFCAP
+            echo "import { CapacitorConfig } from '@capacitor/cli';" > capacitor.config.ts
+            echo "" >> capacitor.config.ts
+            echo "const config: CapacitorConfig = {" >> capacitor.config.ts
+            echo "  appId: 'com.runstr.app'," >> capacitor.config.ts
+            echo "  appName: 'Runstr'," >> capacitor.config.ts
+            echo "  webDir: 'build'," >> capacitor.config.ts
+            echo "  bundledWebRuntime: false" >> capacitor.config.ts
+            echo "};" >> capacitor.config.ts
+            echo "" >> capacitor.config.ts
+            echo "export default config;" >> capacitor.config.ts
           fi
           
           # Add Android platform
@@ -138,15 +136,13 @@ EOFCAP
       - name: Configure Android project for Java 17
         run: |
           # Create gradle.properties with Java 17 settings
-          cat > android/gradle.properties << 'EOF'
-org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED
-org.gradle.java.home=${JAVA_HOME}
-android.useAndroidX=true
-android.enableJetifier=true
-kotlin.jvm.target.validation.mode=warning
-org.gradle.caching=true
-org.gradle.parallel=true
-EOF
+          echo "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED" > android/gradle.properties
+          echo "org.gradle.java.home=${JAVA_HOME}" >> android/gradle.properties
+          echo "android.useAndroidX=true" >> android/gradle.properties
+          echo "android.enableJetifier=true" >> android/gradle.properties
+          echo "kotlin.jvm.target.validation.mode=warning" >> android/gradle.properties
+          echo "org.gradle.caching=true" >> android/gradle.properties
+          echo "org.gradle.parallel=true" >> android/gradle.properties
           
           # Show build.gradle files for debugging
           echo "App build.gradle content:"
