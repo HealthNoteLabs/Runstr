@@ -16,7 +16,7 @@ export const About = () => {
         <h2 className="text-xl font-semibold mb-4">What is RUNSTR?</h2>
         <p className="mb-4">
           RUNSTR is a motion tracking app built on top of nostr. The project is built by TheWildHustle and TheNostrDev Team. 
-          The project has been tinkered with for about 3 months, but development has picked up and its goals and direction have become much clearer.
+          The project has been tinkered with for around 3 months, but development has picked up and its goals and direction have become much clearer.
         </p>
         
         <p className="mb-6">
