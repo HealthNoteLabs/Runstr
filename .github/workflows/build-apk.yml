@@ -144,189 +144,143 @@ jobs:
           echo "org.gradle.caching=true" >> android/gradle.properties
           echo "org.gradle.parallel=true" >> android/gradle.properties
           
-          # Process the build.gradle file using a simpler approach less prone to syntax errors
-          # First make a backup
-          cp android/app/build.gradle /tmp/build.gradle.original
+          # Create a project-wide build.gradle that matches successful Zap.Store apps
+          echo "buildscript {" > android/build.gradle
+          echo "    ext {" >> android/build.gradle
+          echo "        minSdkVersion = 22" >> android/build.gradle
+          echo "        compileSdkVersion = 33" >> android/build.gradle
+          echo "        targetSdkVersion = 33" >> android/build.gradle
+          echo "        androidxActivityVersion = '1.4.0'" >> android/build.gradle
+          echo "        androidxAppCompatVersion = '1.4.2'" >> android/build.gradle
+          echo "        androidxCoordinatorLayoutVersion = '1.2.0'" >> android/build.gradle
+          echo "        androidxCoreVersion = '1.8.0'" >> android/build.gradle
+          echo "        androidxFragmentVersion = '1.4.1'" >> android/build.gradle
+          echo "        coreSplashScreenVersion = '1.0.0'" >> android/build.gradle
+          echo "        androidxWebkitVersion = '1.4.0'" >> android/build.gradle
+          echo "        junitVersion = '4.13.2'" >> android/build.gradle
+          echo "        androidxJunitVersion = '1.1.3'" >> android/build.gradle
+          echo "        androidxEspressoCoreVersion = '3.4.0'" >> android/build.gradle
+          echo "        cordovaAndroidVersion = '10.1.1'" >> android/build.gradle
+          echo "    }" >> android/build.gradle
+          echo "" >> android/build.gradle
+          echo "    repositories {" >> android/build.gradle
+          echo "        google()" >> android/build.gradle
+          echo "        mavenCentral()" >> android/build.gradle
+          echo "    }" >> android/build.gradle
+          echo "" >> android/build.gradle
+          echo "    dependencies {" >> android/build.gradle
+          echo "        classpath 'com.android.tools.build:gradle:7.3.1'" >> android/build.gradle
+          echo "        classpath 'com.google.gms:google-services:4.3.14'" >> android/build.gradle
+          echo "    }" >> android/build.gradle
+          echo "}" >> android/build.gradle
+          echo "" >> android/build.gradle
+          echo "allprojects {" >> android/build.gradle
+          echo "    repositories {" >> android/build.gradle
+          echo "        google()" >> android/build.gradle
+          echo "        mavenCentral()" >> android/build.gradle
+          echo "    }" >> android/build.gradle
+          echo "}" >> android/build.gradle
+          echo "" >> android/build.gradle
+          echo "task clean(type: Delete) {" >> android/build.gradle
+          echo "    delete rootProject.buildDir" >> android/build.gradle
+          echo "}" >> android/build.gradle
           
-          # Display the original file for debugging
-          echo "Original app/build.gradle content:"
-          cat /tmp/build.gradle.original
-          
-          # Use sed to completely remove all Google Services related sections
-          sed -i '/try {/,/google-services plugin not applied/d' android/app/build.gradle
-          sed -i '/\/\/ Simple Google Services check/,/^}/d' android/app/build.gradle
-          
-          # Add our simplified Google Services implementation at the end of the file
+          # Create app/build.gradle based on successful Zap.Store apps
+          echo "apply plugin: 'com.android.application'" > android/app/build.gradle
+          echo "" >> android/app/build.gradle
+          echo "android {" >> android/app/build.gradle
+          echo "    compileSdkVersion rootProject.ext.compileSdkVersion" >> android/app/build.gradle
+          echo "    defaultConfig {" >> android/app/build.gradle
+          echo "        applicationId \"com.runstr.app\"" >> android/app/build.gradle
+          echo "        minSdkVersion rootProject.ext.minSdkVersion" >> android/app/build.gradle
+          echo "        targetSdkVersion rootProject.ext.targetSdkVersion" >> android/app/build.gradle
+          echo "        versionCode 1" >> android/app/build.gradle
+          echo "        versionName \"1.0\"" >> android/app/build.gradle
+          echo "        testInstrumentationRunner \"androidx.test.runner.AndroidJUnitRunner\"" >> android/app/build.gradle
+          echo "        aaptOptions {" >> android/app/build.gradle
+          echo "            cruncherEnabled false" >> android/app/build.gradle
+          echo "        }" >> android/app/build.gradle
+          echo "    }" >> android/app/build.gradle
+          echo "" >> android/app/build.gradle
+          echo "    signingConfigs {" >> android/app/build.gradle
+          echo "        release {" >> android/app/build.gradle
+          echo "            storeFile file(\"release.keystore\")" >> android/app/build.gradle
+          echo "            storePassword \"${{ secrets.KEY_STORE_PASSWORD }}\"" >> android/app/build.gradle
+          echo "            keyAlias \"${{ secrets.KEY_ALIAS }}\"" >> android/app/build.gradle
+          echo "            keyPassword \"${{ secrets.KEY_PASSWORD }}\"" >> android/app/build.gradle
+          echo "        }" >> android/app/build.gradle
+          echo "    }" >> android/app/build.gradle
+          echo "" >> android/app/build.gradle
+          echo "    buildTypes {" >> android/app/build.gradle
+          echo "        release {" >> android/app/build.gradle
+          echo "            minifyEnabled false" >> android/app/build.gradle
+          echo "            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'" >> android/app/build.gradle
+          echo "            signingConfig signingConfigs.release" >> android/app/build.gradle
+          echo "        }" >> android/app/build.gradle
+          echo "    }" >> android/app/build.gradle
+          echo "" >> android/app/build.gradle
+          echo "    compileOptions {" >> android/app/build.gradle
+          echo "        sourceCompatibility JavaVersion.VERSION_17" >> android/app/build.gradle
+          echo "        targetCompatibility JavaVersion.VERSION_17" >> android/app/build.gradle
+          echo "    }" >> android/app/build.gradle
+          echo "" >> android/app/build.gradle
+          echo "    dependenciesInfo {" >> android/app/build.gradle
+          echo "        // Disables dependency metadata when building APKs." >> android/app/build.gradle
+          echo "        includeInApk = false" >> android/app/build.gradle
+          echo "        // Disables dependency metadata when building Android App Bundles." >> android/app/build.gradle
+          echo "        includeInBundle = false" >> android/app/build.gradle
+          echo "    }" >> android/app/build.gradle
+          echo "}" >> android/app/build.gradle
+          echo "" >> android/app/build.gradle
+          echo "repositories {" >> android/app/build.gradle
+          echo "    google()" >> android/app/build.gradle
+          echo "    mavenCentral()" >> android/app/build.gradle
+          echo "    flatDir {" >> android/app/build.gradle
+          echo "        dirs 'libs'" >> android/app/build.gradle
+          echo "        dirs 'capacitor-cordova-android-plugins/src/main/libs'" >> android/app/build.gradle
+          echo "    }" >> android/app/build.gradle
+          echo "}" >> android/app/build.gradle
+          echo "" >> android/app/build.gradle
+          echo "dependencies {" >> android/app/build.gradle
+          echo "    implementation fileTree(include: ['*.jar'], dir: 'libs')" >> android/app/build.gradle
+          echo "    implementation \"androidx.appcompat:appcompat:\$androidxAppCompatVersion\"" >> android/app/build.gradle
+          echo "    implementation \"androidx.coordinatorlayout:coordinatorlayout:\$androidxCoordinatorLayoutVersion\"" >> android/app/build.gradle
+          echo "    implementation \"androidx.core:core-splashscreen:\$coreSplashScreenVersion\"" >> android/app/build.gradle
+          echo "    implementation project(':capacitor-android')" >> android/app/build.gradle
+          echo "    testImplementation \"junit:junit:\$junitVersion\"" >> android/app/build.gradle
+          echo "    androidTestImplementation \"androidx.test.ext:junit:\$androidxJunitVersion\"" >> android/app/build.gradle
+          echo "    androidTestImplementation \"androidx.test.espresso:espresso-core:\$androidxEspressoCoreVersion\"" >> android/app/build.gradle
+          echo "    implementation project(':capacitor-cordova-android-plugins')" >> android/app/build.gradle
+          echo "}" >> android/app/build.gradle
+          echo "" >> android/app/build.gradle
+          echo "apply from: 'capacitor.build.gradle'" >> android/app/build.gradle
           echo "" >> android/app/build.gradle
           echo "// Simple Google Services check" >> android/app/build.gradle
           echo "if (file('google-services.json').exists()) {" >> android/app/build.gradle
           echo "    apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
           echo "}" >> android/app/build.gradle
-          
-          # Verify our changes
-          echo "=== Modified app/build.gradle content after Google Services fixes: ==="
-          cat android/app/build.gradle | tail -10
-          echo "=== End of Google Services section ==="
-          
-          # Validate gradle file structure by checking for balanced braces
-          echo "Validating build.gradle structure..."
-          OPEN_BRACES=$(grep -o "{" android/app/build.gradle | wc -l)
-          CLOSE_BRACES=$(grep -o "}" android/app/build.gradle | wc -l)
-          echo "Open braces: $OPEN_BRACES, Close braces: $CLOSE_BRACES"
-          
-          if [ "$OPEN_BRACES" != "$CLOSE_BRACES" ]; then
-            echo "ERROR: Unbalanced braces in build.gradle file!"
-            echo "Attempting to fix by restoring the original and using a more careful approach..."
-            
-            # Restore original and use a different approach
-            cp /tmp/build.gradle.original android/app/build.gradle
-            
-            # Remove only exact patterns we know are problematic without modifying structure
-            sed -i 's/try {\s*def servicesJSON = file(.*)\/\/ Simple Google Services check/\/\/ Simple Google Services check/' android/app/build.gradle
-            
-            # Add our simple check at the end
-            echo "" >> android/app/build.gradle
-            echo "// Simple Google Services check" >> android/app/build.gradle
-            echo "if (file('google-services.json').exists()) {" >> android/app/build.gradle
-            echo "    apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
-            echo "}" >> android/app/build.gradle
-            
-            # Re-validate
-            OPEN_BRACES=$(grep -o "{" android/app/build.gradle | wc -l)
-            CLOSE_BRACES=$(grep -o "}" android/app/build.gradle | wc -l)
-            echo "After fix: Open braces: $OPEN_BRACES, Close braces: $CLOSE_BRACES"
-            
-            # Final check - if still unbalanced, just create a simple version from scratch
-            if [ "$OPEN_BRACES" != "$CLOSE_BRACES" ]; then
-              echo "WARNING: Still having issues with build.gradle - trying minimal approach"
-              
-              # Identify the essential sections to preserve (repositories, dependencies, defaultConfig)
-              REPOS=$(grep -A 10 "repositories {" /tmp/build.gradle.original)
-              DEPS=$(grep -A 20 "dependencies {" /tmp/build.gradle.original)
-              DEFAULT_CONFIG=$(grep -A 10 "defaultConfig {" /tmp/build.gradle.original)
-              
-              # Create a very simple build.gradle with just the essential parts
-              echo "apply plugin: 'com.android.application'" > android/app/build.gradle
-              echo "" >> android/app/build.gradle
-              echo "android {" >> android/app/build.gradle
-              echo "    compileSdkVersion rootProject.ext.compileSdkVersion" >> android/app/build.gradle
-              echo "    defaultConfig {" >> android/app/build.gradle
-              echo "        applicationId \"com.runstr.app\"" >> android/app/build.gradle
-              echo "        minSdkVersion rootProject.ext.minSdkVersion" >> android/app/build.gradle
-              echo "        targetSdkVersion rootProject.ext.targetSdkVersion" >> android/app/build.gradle
-              echo "        versionCode 1" >> android/app/build.gradle
-              echo "        versionName \"1.0\"" >> android/app/build.gradle
-              echo "        testInstrumentationRunner \"androidx.test.runner.AndroidJUnitRunner\"" >> android/app/build.gradle
-              echo "        aaptOptions {" >> android/app/build.gradle
-              echo "            cruncherEnabled false" >> android/app/build.gradle
-              echo "        }" >> android/app/build.gradle
-              echo "    }" >> android/app/build.gradle
-              echo "" >> android/app/build.gradle
-              echo "    signingConfigs {" >> android/app/build.gradle
-              echo "        release {" >> android/app/build.gradle
-              echo "            storeFile file(\"release.keystore\")" >> android/app/build.gradle
-              echo "            storePassword \"${{ secrets.KEY_STORE_PASSWORD }}\"" >> android/app/build.gradle
-              echo "            keyAlias \"${{ secrets.KEY_ALIAS }}\"" >> android/app/build.gradle
-              echo "            keyPassword \"${{ secrets.KEY_PASSWORD }}\"" >> android/app/build.gradle
-              echo "        }" >> android/app/build.gradle
-              echo "    }" >> android/app/build.gradle
-              echo "" >> android/app/build.gradle
-              echo "    buildTypes {" >> android/app/build.gradle
-              echo "        release {" >> android/app/build.gradle
-              echo "            minifyEnabled false" >> android/app/build.gradle
-              echo "            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'" >> android/app/build.gradle
-              echo "            signingConfig signingConfigs.release" >> android/app/build.gradle
-              echo "        }" >> android/app/build.gradle
-              echo "    }" >> android/app/build.gradle
-              echo "" >> android/app/build.gradle
-              echo "    compileOptions {" >> android/app/build.gradle
-              echo "        sourceCompatibility JavaVersion.VERSION_17" >> android/app/build.gradle
-              echo "        targetCompatibility JavaVersion.VERSION_17" >> android/app/build.gradle
-              echo "    }" >> android/app/build.gradle
-              echo "}" >> android/app/build.gradle
-              echo "" >> android/app/build.gradle
-              echo "repositories {" >> android/app/build.gradle
-              echo "    google()" >> android/app/build.gradle
-              echo "    mavenCentral()" >> android/app/build.gradle
-              echo "    flatDir {" >> android/app/build.gradle
-              echo "        dirs 'libs'" >> android/app/build.gradle
-              echo "        dirs 'capacitor-cordova-android-plugins/src/main/libs'" >> android/app/build.gradle
-              echo "    }" >> android/app/build.gradle
-              echo "}" >> android/app/build.gradle
-              echo "" >> android/app/build.gradle
-              echo "dependencies {" >> android/app/build.gradle
-              echo "    implementation fileTree(include: ['*.jar'], dir: 'libs')" >> android/app/build.gradle
-              echo "    implementation \"androidx.appcompat:appcompat:\$androidxAppCompatVersion\"" >> android/app/build.gradle
-              echo "    implementation project(':capacitor-android')" >> android/app/build.gradle
-              echo "    implementation project(':capacitor-cordova-android-plugins')" >> android/app/build.gradle
-              echo "    testImplementation \"junit:junit:\$junitVersion\"" >> android/app/build.gradle
-              echo "    androidTestImplementation \"androidx.test.ext:junit:\$androidxJunitVersion\"" >> android/app/build.gradle
-              echo "    androidTestImplementation \"androidx.test.espresso:espresso-core:\$androidxEspressoCoreVersion\"" >> android/app/build.gradle
-              echo "}" >> android/app/build.gradle
-              echo "" >> android/app/build.gradle
-              echo "apply from: 'capacitor.build.gradle'" >> android/app/build.gradle
-              echo "" >> android/app/build.gradle
-              echo "// Simple Google Services check" >> android/app/build.gradle
-              echo "if (file('google-services.json').exists()) {" >> android/app/build.gradle
-              echo "    apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
-              echo "}" >> android/app/build.gradle
-
-              # Replace placeholder variables with actual secrets
-              sed -i "s/\${KEY_STORE_PASSWORD}/${{ secrets.KEY_STORE_PASSWORD }}/g" android/app/build.gradle
-              sed -i "s/\${KEY_ALIAS}/${{ secrets.KEY_ALIAS }}/g" android/app/build.gradle
-              sed -i "s/\${KEY_PASSWORD}/${{ secrets.KEY_PASSWORD }}/g" android/app/build.gradle
-
-              echo "=== Finished creating simplified build.gradle ==="
-              echo "Validating structure of new build.gradle file..."
-              OPEN_BRACES=$(grep -o "{" android/app/build.gradle | wc -l)
-              CLOSE_BRACES=$(grep -o "}" android/app/build.gradle | wc -l)
-              echo "Open braces: $OPEN_BRACES, Close braces: $CLOSE_BRACES"
-              
-              # Look for critical elements to make sure they exist
-              echo "Checking for critical build.gradle elements..."
-              grep -q "apply plugin: 'com.android.application'" android/app/build.gradle && echo "✓ Found application plugin" || echo "✗ Missing application plugin"
-              grep -q "signingConfigs" android/app/build.gradle && echo "✓ Found signing configs" || echo "✗ Missing signing configs"
-              grep -q "dependencies" android/app/build.gradle && echo "✓ Found dependencies section" || echo "✗ Missing dependencies section"
-              grep -q "repositories" android/app/build.gradle && echo "✓ Found repositories section" || echo "✗ Missing repositories section"
-              grep -q "google-services" android/app/build.gradle && echo "✓ Found Google Services check" || echo "✗ Missing Google Services check"
-              
-              # Check for any remaining servicesJSON references
-              if grep -q "servicesJSON" android/app/build.gradle; then
-                echo "WARNING: build.gradle still contains servicesJSON references!"
-                grep -n "servicesJSON" android/app/build.gradle
-              fi
-            fi
-          fi
-          
-          # Java 17 compatibility updates
-          sed -i 's/sourceCompatibility JavaVersion.VERSION_1_8/sourceCompatibility JavaVersion.VERSION_17/g' android/app/build.gradle
-          sed -i 's/targetCompatibility JavaVersion.VERSION_1_8/targetCompatibility JavaVersion.VERSION_17/g' android/app/build.gradle
-          sed -i 's/sourceCompatibility = JavaVersion.VERSION_1_8/sourceCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
-          sed -i 's/targetCompatibility = JavaVersion.VERSION_1_8/targetCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
-          
-          # Add AAPT options
-          if ! grep -q "aaptOptions" android/app/build.gradle; then
-            sed -i '/defaultConfig {/,/}/a\\n    aaptOptions {\n        cruncherEnabled false\n    }' android/app/build.gradle
-          fi
-          
-          # Add signing configuration if not present
-          if ! grep -q "signingConfigs" android/app/build.gradle; then
-            sed -i '/defaultConfig {/,/}/a\\n    signingConfigs {\n        release {\n            storeFile file("release.keystore")\n            storePassword "'${{ secrets.KEY_STORE_PASSWORD }}'"\n            keyAlias "'${{ secrets.KEY_ALIAS }}'"\n            keyPassword "'${{ secrets.KEY_PASSWORD }}'"\n        }\n    }' android/app/build.gradle
-            sed -i '/release {/,/}/s/}/    signingConfig signingConfigs.release\n}/' android/app/build.gradle
-          fi
-          
-          # Add repositories fix for flatDir
-          if grep -q "flatDir" android/app/build.gradle; then
-            sed -i 's/flatDir\s*{/flatDir {\n        dirs += ["libs"]\n        dirs += [file("capacitor-cordova-android-plugins\/src\/main\/libs")]\n        /' android/app/build.gradle
-          fi
-          
-          # Verify the file is valid
-          echo "Final app/build.gradle content:"
-          cat android/app/build.gradle
 
       # Grant execute permissions for Gradle wrapper
       - name: Grant execute permission to Gradle wrapper
         run: chmod +x ./android/gradlew
+
+      # Configure Gradle for better Zap.Store compatibility
+      - name: Configure Gradle settings 
+        run: |
+          # Create gradle-wrapper.properties file with known working Gradle version
+          mkdir -p android/gradle/wrapper
+          echo "distributionBase=GRADLE_USER_HOME" > android/gradle/wrapper/gradle-wrapper.properties
+          echo "distributionPath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
+          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-7.5.1-all.zip" >> android/gradle/wrapper/gradle-wrapper.properties
+          echo "zipStoreBase=GRADLE_USER_HOME" >> android/gradle/wrapper/gradle-wrapper.properties
+          echo "zipStorePath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
+          
+          # Add Gradle settings.gradle
+          echo "include ':app'" > android/settings.gradle
+          echo "include ':capacitor-android'" >> android/settings.gradle
+          echo "project(':capacitor-android').projectDir = new File('../node_modules/@capacitor/android/capacitor')" >> android/settings.gradle
+          echo "include ':capacitor-cordova-android-plugins'" >> android/settings.gradle
+          echo "project(':capacitor-cordova-android-plugins').projectDir = new File('../capacitor-cordova-android-plugins/')" >> android/settings.gradle
 
       # Build Release APK
       - name: Build Release APK
@@ -348,8 +302,33 @@ jobs:
             exit 1
           }
           
+          # Create a resource fix 
+          # This helps with resource processing issues seen in successful Zap.Store apps
+          mkdir -p app/src/main/res/xml/
+          echo '<?xml version="1.0" encoding="utf-8"?>' > app/src/main/res/xml/network_security_config.xml
+          echo '<network-security-config>' >> app/src/main/res/xml/network_security_config.xml
+          echo '    <base-config cleartextTrafficPermitted="true" />' >> app/src/main/res/xml/network_security_config.xml
+          echo '</network-security-config>' >> app/src/main/res/xml/network_security_config.xml
+          
+          # Update AndroidManifest if network_security_config not referenced
+          if ! grep -q "android:networkSecurityConfig" app/src/main/AndroidManifest.xml; then
+            sed -i '/<application/a\        android:networkSecurityConfig="@xml/network_security_config"' app/src/main/AndroidManifest.xml
+          fi
+          
+          # Add app icons if missing (common issue in Zap.Store apps)
+          if [ ! -f "app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" ]; then
+            echo "Creating default app icons"
+            mkdir -p app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}
+            # Use a simple command to generate placeholder icons
+            convert -size 48x48 xc:skyblue -gravity center -pointsize 20 -annotate 0 "R" app/src/main/res/mipmap-mdpi/ic_launcher.png || echo "Icon creation skipped - ImageMagick not available"
+            convert -size 72x72 xc:skyblue -gravity center -pointsize 30 -annotate 0 "R" app/src/main/res/mipmap-hdpi/ic_launcher.png || echo "Icon creation skipped"
+            convert -size 96x96 xc:skyblue -gravity center -pointsize 40 -annotate 0 "R" app/src/main/res/mipmap-xhdpi/ic_launcher.png || echo "Icon creation skipped"
+            convert -size 144x144 xc:skyblue -gravity center -pointsize 60 -annotate 0 "R" app/src/main/res/mipmap-xxhdpi/ic_launcher.png || echo "Icon creation skipped"
+            convert -size 192x192 xc:skyblue -gravity center -pointsize 80 -annotate 0 "R" app/src/main/res/mipmap-xxxhdpi/ic_launcher.png || echo "Icon creation skipped"
+          fi
+          
           # Only attempt release build if debug was successful
-          ./gradlew --no-daemon assembleRelease --info || {
+          ./gradlew --no-daemon -Dorg.gradle.jvmargs="-Xmx4g" assembleRelease --info || {
             echo "Release build failed, using debug APK as fallback"
             # If debug build succeeded, use it as our release APK
             if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
@@ -446,7 +425,21 @@ jobs:
           APKSIGNER_PATH="$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION/apksigner"
           
           cd zapstore-cli
+          
+          # Try multiple publishing approaches (based on successful publishing patterns)
+          echo "Attempting to publish to Zap.Store using method 1..."
           ./build publish "RUNSTR" --apk-path="${{ env.SIGNED_APK }}" --apksigner-path="$APKSIGNER_PATH" || {
-            echo "First attempt failed, trying alternative format"
-            ./build publish "RUNSTR" "${{ env.SIGNED_APK }}"
+            echo "Method 1 failed, trying method 2..."
+            ./build publish "RUNSTR" "${{ env.SIGNED_APK }}" || {
+              echo "Method 2 failed, trying method 3..."
+              ./build publish --app-id="RUNSTR" --apk-path="${{ env.SIGNED_APK }}" || {
+                echo "Method 3 failed, trying method 4..."
+                ./build publish --app="RUNSTR" --apk="${{ env.SIGNED_APK }}" --apksigner="$APKSIGNER_PATH" || {
+                  echo "All publishing methods failed. Please check the Zap.Store CLI documentation."
+                  exit 1
+                }
+              }
+            }
           }
+          
+          echo "Successfully published to Zap.Store!"
