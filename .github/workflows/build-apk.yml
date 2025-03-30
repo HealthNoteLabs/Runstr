@@ -144,48 +144,67 @@ jobs:
           echo "org.gradle.caching=true" >> android/gradle.properties
           echo "org.gradle.parallel=true" >> android/gradle.properties
           
-          # Show build.gradle files for debugging
-          echo "App build.gradle content before modifications:"
-          cat android/app/build.gradle || echo "app/build.gradle not found"
+          # Save original build.gradle for reference
+          cp android/app/build.gradle /tmp/build.gradle.original
           
-          # Fix Java 17 compatibility in build.gradle
-          sed -i 's/sourceCompatibility JavaVersion.VERSION_1_8/sourceCompatibility JavaVersion.VERSION_17/' android/app/build.gradle || echo "No Java 8 reference to update"
-          sed -i 's/targetCompatibility JavaVersion.VERSION_1_8/targetCompatibility JavaVersion.VERSION_17/' android/app/build.gradle || echo "No Java 8 reference to update"
-          sed -i 's/sourceCompatibility = JavaVersion.VERSION_1_8/sourceCompatibility = JavaVersion.VERSION_17/' android/app/build.gradle || echo "No Java 8 reference to update"
-          sed -i 's/targetCompatibility = JavaVersion.VERSION_1_8/targetCompatibility = JavaVersion.VERSION_17/' android/app/build.gradle || echo "No Java 8 reference to update"
+          # Display the original file for debugging
+          echo "Original app/build.gradle content:"
+          cat /tmp/build.gradle.original
           
-          # Disable AAPT2 crunching to avoid resource processing issues
+          # Create a temporary file with our Google Services changes
+          echo "// Creating a new build.gradle with Google Services changes"
+          
+          # Process the build.gradle file using awk for better structure preservation
+          awk '
+          # Print everything until we find the problematic try block
+          /try {/ && /servicesJSON/ { 
+            in_try_block = 1; 
+            next; 
+          }
+          
+          # Skip anything inside the problematic try block
+          in_try_block == 1 && /}/ { 
+            in_try_block = 0; 
+            next; 
+          }
+          
+          # Print lines not in the problematic try block
+          in_try_block == 0 { 
+            print; 
+          }
+          ' /tmp/build.gradle.original > /tmp/build.gradle.clean
+          
+          # Add our simple Google Services implementation at the end of the file
+          echo "" >> /tmp/build.gradle.clean
+          echo "// Simple Google Services check" >> /tmp/build.gradle.clean
+          echo "if (file('google-services.json').exists()) {" >> /tmp/build.gradle.clean
+          echo "    apply plugin: 'com.google.gms.google-services'" >> /tmp/build.gradle.clean
+          echo "}" >> /tmp/build.gradle.clean
+          
+          # Replace the original file with our clean version
+          cp /tmp/build.gradle.clean android/app/build.gradle
+          
+          # Java 17 compatibility updates
+          sed -i 's/sourceCompatibility JavaVersion.VERSION_1_8/sourceCompatibility JavaVersion.VERSION_17/g' android/app/build.gradle
+          sed -i 's/targetCompatibility JavaVersion.VERSION_1_8/targetCompatibility JavaVersion.VERSION_17/g' android/app/build.gradle
+          sed -i 's/sourceCompatibility = JavaVersion.VERSION_1_8/sourceCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
+          sed -i 's/targetCompatibility = JavaVersion.VERSION_1_8/targetCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
+          
+          # Add AAPT options
           if ! grep -q "aaptOptions" android/app/build.gradle; then
             sed -i '/defaultConfig {/,/}/a\\n    aaptOptions {\n        cruncherEnabled false\n    }' android/app/build.gradle
           fi
           
-          # Fix repositories block to handle missing directories
-          sed -i 's/flatDir{/flatDir {\n        dirs += ["libs"]\n        dirs += [file("capacitor-cordova-android-plugins\/src\/main\/libs")]\n        /' android/app/build.gradle || echo "No flatDir block found"
-          
-          # Add signing configuration
+          # Add signing configuration if not present
           if ! grep -q "signingConfigs" android/app/build.gradle; then
             sed -i '/defaultConfig {/,/}/a\\n    signingConfigs {\n        release {\n            storeFile file("release.keystore")\n            storePassword "'${{ secrets.KEY_STORE_PASSWORD }}'"\n            keyAlias "'${{ secrets.KEY_ALIAS }}'"\n            keyPassword "'${{ secrets.KEY_PASSWORD }}'"\n        }\n    }' android/app/build.gradle
             sed -i '/release {/,/}/s/}/    signingConfig signingConfigs.release\n}/' android/app/build.gradle
           fi
           
-          # Completely replace the Google Services section by creating a backup of the file
-          # and removing anything related to servicesJSON or Google Services
-          cp android/app/build.gradle /tmp/build.gradle.original
-          
-          # Build a clean file by selecting specific sections we know we want to keep
-          echo "// Extracting all parts of the build.gradle file except the Google Services code"
-          
-          # Use a pattern-based approach to extract and rebuild the file
-          cat /tmp/build.gradle.original | sed -n '1,/try {/p' | sed '/try {/d' > /tmp/build.gradle.new
-          
-          # Add our simple Google Services implementation to the end
-          echo "// Simple Google Services check" >> /tmp/build.gradle.new
-          echo "if (file('google-services.json').exists()) {" >> /tmp/build.gradle.new
-          echo "    apply plugin: 'com.google.gms.google-services'" >> /tmp/build.gradle.new
-          echo "}" >> /tmp/build.gradle.new
-          
-          # Replace the original file with our clean version
-          cp /tmp/build.gradle.new android/app/build.gradle
+          # Add repositories fix for flatDir
+          if grep -q "flatDir" android/app/build.gradle; then
+            sed -i 's/flatDir\s*{/flatDir {\n        dirs += ["libs"]\n        dirs += [file("capacitor-cordova-android-plugins\/src\/main\/libs")]\n        /' android/app/build.gradle
+          fi
           
           # Verify the file is valid
           echo "Final app/build.gradle content:"
