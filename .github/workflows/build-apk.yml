@@ -145,7 +145,7 @@ jobs:
           echo "org.gradle.parallel=true" >> android/gradle.properties
           
           # Show build.gradle files for debugging
-          echo "App build.gradle content:"
+          echo "App build.gradle content before modifications:"
           cat android/app/build.gradle || echo "app/build.gradle not found"
           
           # Configure signing in app/build.gradle
@@ -168,10 +168,16 @@ jobs:
           # Fix repositories block to handle missing directories
           sed -i 's/flatDir{/flatDir {\n        dirs += ["libs"]\n        dirs += [file("capacitor-cordova-android-plugins\/src\/main\/libs")]\n        /' android/app/build.gradle || echo "No flatDir block found"
           
-          # Update Google Services block to prevent errors
-          sed -i 's/try {/try {\n    \/\/ Safely check for google-services.json\n/' android/app/build.gradle || echo "No try block found"
-          sed -i 's/def servicesJSON = file/def servicesJSON = fileExists("google-services.json") ? file/' android/app/build.gradle || echo "No servicesJSON line found"
-          grep -q "fileExists" android/app/build.gradle || sed -i '/catch(Exception e) {/i\\ndef fileExists(String path) {\n    return new File(path).exists()\n}' android/app/build.gradle || echo "Could not add fileExists function"
+          # Fix Google Services block - simplest solution
+          sed -i '/try {/,/servicesJSON/d' android/app/build.gradle || true
+          sed -i '/try {/,/google-services.json/d' android/app/build.gradle || true
+          sed -i '/catch(Exception e)/,/}/d' android/app/build.gradle || true
+
+          # Write a simple Google Services implementation at the end
+          echo -e "\n// Simple Google Services check" >> android/app/build.gradle
+          echo "if (file('google-services.json').exists()) {" >> android/app/build.gradle
+          echo "    apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
+          echo "}" >> android/app/build.gradle
 
       # Grant execute permissions for Gradle wrapper
       - name: Grant execute permission to Gradle wrapper
