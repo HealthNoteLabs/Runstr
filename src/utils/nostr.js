@@ -1,6 +1,8 @@
 import NDK, { NDKEvent } from '@nostr-dev-kit/ndk';
 import { Platform } from '../utils/react-native-shim';
 import AmberAuth from '../services/AmberAuth';
+// Import nostr-tools implementation for fallback
+import { createAndPublishEvent as publishWithNostrTools } from './nostrClient';
 
 // Optimized relay list based on testing results
 export const RELAYS = [
@@ -25,6 +27,11 @@ const ndk = new NDK({
 // Storage for subscriptions
 const activeSubscriptions = new Set();
 
+// Track connection status
+let isConnected = false;
+let lastConnectionCheck = 0;
+const CONNECTION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
 /**
  * Initialize the Nostr client - connect to relays
  * @returns {Promise<boolean>} Success status
@@ -34,11 +41,57 @@ export const initializeNostr = async () => {
     // Connect to relays
     await ndk.connect();
     console.log('Connected to NDK relays');
+    isConnected = true;
+    lastConnectionCheck = Date.now();
     return true;
   } catch (error) {
     console.error('Error initializing Nostr:', error);
+    isConnected = false;
     return false;
   }
+};
+
+/**
+ * Ensure connection to relays is active
+ * @returns {Promise<boolean>} Connection status
+ */
+export const ensureConnection = async () => {
+  // Check if we're due for a connection check
+  const now = Date.now();
+  const timeSinceLastCheck = now - lastConnectionCheck;
+  
+  if (!isConnected || timeSinceLastCheck > CONNECTION_CHECK_INTERVAL) {
+    console.log('Verifying relay connections...');
+    
+    try {
+      // Check existing connections
+      const connectionStatus = await diagnoseConnection();
+      
+      // If we have no connected relays, reconnect
+      if (!connectionStatus.connectedRelays || connectionStatus.connectedRelays.length === 0) {
+        console.log('No active relay connections, reconnecting...');
+        await ndk.connect();
+        isConnected = true;
+      } else {
+        console.log(`Connected to ${connectionStatus.connectedRelays.length} relays`);
+        isConnected = true;
+      }
+    } catch (error) {
+      console.error('Error checking connection:', error);
+      // Attempt to reconnect
+      try {
+        await ndk.connect();
+        isConnected = true;
+      } catch (reconnectError) {
+        console.error('Failed to reconnect:', reconnectError);
+        isConnected = false;
+      }
+    }
+    
+    lastConnectionCheck = now;
+  }
+  
+  return isConnected;
 };
 
 /**
@@ -67,9 +120,9 @@ export const fetchEvents = async (filter) => {
 };
 
 /**
- * Get running posts - matches the working implementation
- * @param {number} limit - max posts to fetch
- * @param {number} since - timestamp to fetch posts since
+ * Fetch running posts from Nostr relays
+ * @param {number} limit - Maximum number of posts to fetch
+ * @param {number} since - Timestamp to fetch posts since
  * @returns {Promise<Array>} Array of running posts
  */
 export const fetchRunningPosts = async (limit = 7, since = undefined) => {
@@ -80,54 +133,90 @@ export const fetchRunningPosts = async (limit = 7, since = undefined) => {
     
     console.log(`Fetching running posts from ${new Date(sinceTimestamp * 1000).toLocaleString()}`);
     
-    // Standardized hashtag list across the app
-    const hashtagFilter = {
-      kinds: [1], // Regular posts
-      limit: limit || 7,
-      "#t": ["running", "run", "runner", "runstr", "5k", "10k", "marathon", "jog"],
-      since: sinceTimestamp
-    };
+    // Standardized hashtag list across the app - ensure "runstr" has high priority
+    const runningTags = ["runstr", "running", "run", "runner", "5k", "10k", "marathon", "jog"];
     
-    // Add enhanced debugging
-    console.log('Using hashtag filter:', hashtagFilter);
+    // Try fetching posts with multiple approaches in parallel for better performance
+    const promises = [
+      // Approach 1: Direct hashtag filtering - fastest but might miss some
+      ndk.fetchEvents({
+        kinds: [1], // Regular posts
+        limit: limit,
+        "#t": runningTags,
+        since: sinceTimestamp
+      }),
+      
+      // Approach 2: Fetch posts with more specific "runstr" tag - highest relevance
+      ndk.fetchEvents({
+        kinds: [1],
+        limit: limit,
+        "#t": ["runstr"],
+        since: sinceTimestamp
+      }),
+      
+      // Approach 3: Use content filtering with a higher limit - slower but more comprehensive
+      ndk.fetchEvents({
+        kinds: [1],
+        limit: limit * 3, // Get more to filter client-side
+        since: sinceTimestamp
+      }).then(events => {
+        const allEvents = Array.from(events);
+        // Filter for running content client-side
+        return allEvents.filter(event => {
+          const content = event.content.toLowerCase();
+          return runningTags.some(keyword => 
+            content.includes(keyword) || 
+            content.includes(`#${keyword}`) || 
+            event.tags.some(tag => tag[0] === 't' && runningTags.includes(tag[1].toLowerCase()))
+          );
+        }).slice(0, limit);
+      })
+    ];
     
-    // Ensure NDK is connected
-    if (!ndk.pool?.relays?.size) {
-      console.log('NDK not connected, connecting...');
-      await initializeNostr();
-    }
+    // Wait for all approaches to complete and combine results
+    const results = await Promise.all(promises);
     
-    // Fetch events with hashtags
-    const events = await ndk.fetchEvents(hashtagFilter);
-    const eventArray = Array.from(events);
-    console.log(`Fetched ${eventArray.length} running posts with hashtags out of limit ${limit}`);
+    // Combine all events, removing duplicates
+    const uniqueEvents = new Map();
+    let totalFound = 0;
     
-    // If hashtag search found results, return them
+    results.forEach(eventSet => {
+      if (!eventSet) return;
+      
+      const events = Array.isArray(eventSet) ? eventSet : Array.from(eventSet);
+      totalFound += events.length;
+      
+      events.forEach(event => {
+        if (event && event.id && !uniqueEvents.has(event.id)) {
+          uniqueEvents.set(event.id, event);
+        }
+      });
+    });
+    
+    console.log(`Found ${totalFound} total posts across all methods, ${uniqueEvents.size} unique`);
+    
+    // Convert to array and sort by created_at (newest first)
+    const eventArray = Array.from(uniqueEvents.values())
+      .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
+      .slice(0, limit);
+    
+    // If we got results, return them
     if (eventArray.length > 0) {
       return eventArray;
     }
     
-    // No results found with hashtags, try content-based filtering as fallback
-    console.log("No hashtag results, trying content-based filtering...");
-    const contentFilter = {
+    // No results found, try one last fallback with very basic filter
+    console.log("No results from optimized approaches, using emergency fallback...");
+    const simpleFilter = {
       kinds: [1],
-      limit: (limit || 10) * 3, // Get more to filter client-side
-      since: sinceTimestamp
+      limit: limit || 10
     };
     
-    console.log('Using content filter:', contentFilter);
-    const contentEvents = await ndk.fetchEvents(contentFilter);
-    const allEvents = Array.from(contentEvents);
+    const events = await ndk.fetchEvents(simpleFilter);
+    const fallbackArray = Array.from(events);
+    console.log(`Emergency fallback retrieved ${fallbackArray.length} general posts`);
     
-    // Filter for running content client-side
-    const runningKeywords = ["running", "run", "runner", "runstr", "5k", "10k", "marathon", "jog"];
-    const runningEvents = allEvents.filter(event => {
-      const content = event.content.toLowerCase();
-      return runningKeywords.some(keyword => content.includes(keyword));
-    }).slice(0, limit);
-    
-    console.log(`Found ${runningEvents.length} posts via content filtering`);
-    return runningEvents;
+    return fallbackArray;
   } catch (error) {
     console.error('Error fetching running posts:', error);
     
@@ -426,12 +515,52 @@ export const processPostsWithData = async (posts, supplementaryData) => {
 };
 
 /**
- * Create and publish an event
+ * Helper function to publish an NDK event with retries
+ * @param {NDKEvent} ndkEvent - The NDK event to publish
+ * @param {number} maxRetries - Maximum number of retry attempts
+ * @param {number} delay - Delay between retries in ms
+ * @returns {Promise<{success: boolean, error: string|null}>} Result of publish attempt
+ */
+const publishWithRetry = async (ndkEvent, maxRetries = 3, delay = 2000) => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`Publishing to NDK relays - attempt ${attempt}/${maxRetries}...`);
+      
+      // Ensure we're connected before publishing
+      await ensureConnection();
+      
+      // Publish the event
+      await ndkEvent.publish();
+      console.log('Successfully published with NDK');
+      return { success: true, error: null };
+    } catch (error) {
+      console.error(`NDK publish attempt ${attempt} failed:`, error);
+      if (attempt < maxRetries) {
+        console.log(`Waiting ${delay/1000}s before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  return { success: false, error: 'Failed to publish with NDK after all retry attempts' };
+};
+
+/**
+ * Create and publish an event to the nostr network
+ * Uses NDK with fallback to nostr-tools for reliable posting
  * @param {Object} eventTemplate - Event template 
+ * @param {string|null} pubkeyOverride - Override for pubkey (optional)
  * @returns {Promise<Object>} Published event
  */
 export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null) => {
   try {
+    // Get publishing strategy metadata to return to caller
+    const publishResult = {
+      success: false,
+      method: null,
+      signMethod: null,
+      error: null
+    };
+
     let pubkey = pubkeyOverride;
     let signedEvent;
     
@@ -444,7 +573,6 @@ export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null
         // For Android with Amber, we use Amber for signing
         if (!pubkey) {
           // If no pubkey provided, we need to get it first
-          // This would typically come from your authentication system
           pubkey = localStorage.getItem('userPublicKey');
           
           if (!pubkey) {
@@ -461,6 +589,7 @@ export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null
         
         // Sign using Amber
         signedEvent = await AmberAuth.signEvent(event);
+        publishResult.signMethod = 'amber';
         
         // If signedEvent is null, the signing is happening asynchronously
         // and we'll need to handle it via deep linking
@@ -492,15 +621,45 @@ export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null
       
       // Sign the event using the browser extension
       signedEvent = await window.nostr.signEvent(event);
+      publishResult.signMethod = 'extension';
     }
     
-    // Create NDK Event and publish
-    const ndkEvent = new NDKEvent(ndk, signedEvent);
-    await ndkEvent.publish();
+    // APPROACH 1: Try NDK first
+    try {
+      // Make sure we're connected before attempting to publish
+      await ensureConnection();
+      
+      // Create NDK Event and publish with retry
+      const ndkEvent = new NDKEvent(ndk, signedEvent);
+      const ndkResult = await publishWithRetry(ndkEvent);
+      
+      if (ndkResult.success) {
+        publishResult.success = true;
+        publishResult.method = 'ndk';
+        return { ...signedEvent, ...publishResult };
+      }
+    } catch (ndkError) {
+      console.error('Error in NDK publishing:', ndkError);
+      // Continue to fallback
+    }
     
-    return signedEvent;
+    // APPROACH 2: Fallback to nostr-tools if NDK failed
+    console.log('NDK publishing failed, falling back to nostr-tools...');
+    try {
+      // Use nostr-tools as fallback
+      await publishWithNostrTools(signedEvent);
+      publishResult.success = true;
+      publishResult.method = 'nostr-tools';
+      console.log('Successfully published with nostr-tools fallback');
+    } catch (fallbackError) {
+      console.error('Fallback to nostr-tools also failed:', fallbackError);
+      publishResult.error = fallbackError.message;
+      throw new Error(`Failed to publish with both NDK and nostr-tools: ${fallbackError.message}`);
+    }
+    
+    return { ...signedEvent, ...publishResult };
   } catch (error) {
-    console.error('Error publishing event:', error);
+    console.error('Error in createAndPublishEvent:', error);
     throw error;
   }
 };
@@ -608,5 +767,20 @@ export const diagnoseConnection = async () => {
     };
   }
 };
+
+// Set up periodic connection check
+setInterval(async () => {
+  try {
+    await ensureConnection();
+  } catch (error) {
+    console.error('Error in periodic connection check:', error);
+  }
+}, CONNECTION_CHECK_INTERVAL);
+
+// Initialize connection on module load
+if (typeof window !== 'undefined') {
+  // Only run in browser environment
+  initializeNostr().catch(err => console.error('Initial connection failed:', err));
+}
 
 export { ndk };

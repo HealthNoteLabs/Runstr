@@ -22,12 +22,12 @@ const isAmberInstalled = async () => {
 /**
  * Request authentication using Amber
  * This will open Amber and prompt the user for authentication
- * @returns {Promise<string|null>} The public key if successful, null otherwise
+ * @returns {Promise<boolean>} Success status
  */
 const requestAuthentication = async () => {
   if (Platform.OS !== 'android') {
     console.warn('Amber authentication is only supported on Android');
-    return null;
+    return false;
   }
   
   try {
@@ -36,60 +36,83 @@ const requestAuthentication = async () => {
       kind: 22242, // Auth event kind
       created_at: Math.floor(Date.now() / 1000),
       content: 'Login to Runstr',
-      tags: [['relay', 'wss://relay.damus.io']] // Example relay
+      tags: [
+        ['relay', 'wss://relay.damus.io'],
+        ['relay', 'wss://nos.lol'],
+        ['relay', 'wss://relay.nostr.band']
+      ]
     };
     
     // Convert to JSON and encode for URL
     const eventJson = JSON.stringify(authEvent);
     const encodedEvent = encodeURIComponent(eventJson);
     
-    // Create the URI with the nostrsigner scheme
-    const amberUri = `nostrsigner:sign?event=${encodedEvent}`;
+    // Create the URI with the nostrsigner scheme and add callback URL
+    const callbackUrl = encodeURIComponent('runstr://callback');
+    const amberUri = `nostrsigner:sign?event=${encodedEvent}&callback=${callbackUrl}`;
+    
+    console.log('Opening Amber with URI:', amberUri);
     
     // Open Amber using the URI
     await Linking.openURL(amberUri);
     
-    // The actual response will be handled by deep linking
-    // We'll need to set up a listener in the app to handle the response
-    
+    // Authentication success will be handled by deep linking callback
     return true;
   } catch (error) {
     console.error('Error authenticating with Amber:', error);
-    return null;
+    if (error.message && error.message.includes('Activity not found')) {
+      console.error('Amber app not found or not responding');
+      return false;
+    }
+    return false;
   }
 };
 
 /**
  * Sign an event using Amber
  * @param {Object} event - The event to sign
- * @returns {Promise<Object|null>} The signed event if successful, null otherwise
+ * @returns {Promise<boolean>} Success status
  */
 const signEvent = async (event) => {
   if (Platform.OS !== 'android') {
     console.warn('Amber signing is only supported on Android');
-    return null;
+    return false;
   }
   
   try {
+    // Make sure event has required fields
+    if (!event.kind || !event.content) {
+      console.error('Invalid event object for signing');
+      return false;
+    }
+    
+    // Ensure created_at is set
+    if (!event.created_at) {
+      event.created_at = Math.floor(Date.now() / 1000);
+    }
+    
     // Convert to JSON and encode for URL
     const eventJson = JSON.stringify(event);
     const encodedEvent = encodeURIComponent(eventJson);
     
-    // Create the URI with the nostrsigner scheme
-    const amberUri = `nostrsigner:sign?event=${encodedEvent}`;
+    // Create the URI with the nostrsigner scheme and add callback URL
+    const callbackUrl = encodeURIComponent('runstr://callback');
+    const amberUri = `nostrsigner:sign?event=${encodedEvent}&callback=${callbackUrl}`;
+    
+    console.log('Opening Amber to sign event');
     
     // Open Amber using the URI
     await Linking.openURL(amberUri);
     
-    // The actual response will be handled by deep linking
-    // We'll need to set up a listener in the app to handle the response
-    
-    // For now, return a placeholder. In actual implementation,
-    // this function would wait for the callback from deep linking
-    return null;
+    // Signing success will be handled by deep linking callback
+    return true;
   } catch (error) {
     console.error('Error signing with Amber:', error);
-    return null;
+    if (error.message && error.message.includes('Activity not found')) {
+      console.error('Amber app not found or not responding');
+      return false;
+    }
+    return false;
   }
 };
 
@@ -98,28 +121,40 @@ const signEvent = async (event) => {
  * @param {Function} callback - The callback to handle the response
  */
 const setupDeepLinkHandling = (callback) => {
+  console.log('Setting up deep link handling for Amber responses');
+  
   // Set up event listener for deep links
   const linkingListener = Linking.addEventListener('url', ({ url }) => {
+    console.log('Received deep link URL:', url);
+    
     // Handle the response from Amber
     // URL format: runstr://callback?response=...
     if (url && url.startsWith('runstr://callback')) {
-      // Parse the URL to get the response
-      const response = url.split('response=')[1];
-      
-      if (response) {
-        try {
-          // Decode and parse the response
-          const decodedResponse = decodeURIComponent(response);
-          const parsedResponse = JSON.parse(decodedResponse);
-          
-          // Call the callback with the parsed response
-          callback(parsedResponse);
-        } catch (error) {
-          console.error('Error parsing Amber response:', error);
+      try {
+        // Parse the URL to get the response
+        const urlObj = new URL(url);
+        const response = urlObj.searchParams.get('response');
+        
+        if (response) {
+          try {
+            // Decode and parse the response
+            const decodedResponse = decodeURIComponent(response);
+            const parsedResponse = JSON.parse(decodedResponse);
+            
+            console.log('Successfully parsed Amber response');
+            
+            // Call the callback with the parsed response
+            callback(parsedResponse);
+          } catch (error) {
+            console.error('Error parsing Amber response JSON:', error);
+            callback(null);
+          }
+        } else {
+          console.error('No response data in callback URL');
           callback(null);
         }
-      } else {
-        console.error('No response data in callback URL');
+      } catch (error) {
+        console.error('Error processing callback URL:', error);
         callback(null);
       }
     }

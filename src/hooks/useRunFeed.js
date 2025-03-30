@@ -7,6 +7,14 @@ import {
   searchRunningContent
 } from '../utils/nostr';
 
+// Global state for caching posts across component instances
+const globalState = {
+  allPosts: [],
+  lastFetchTime: 0,
+  isInitialized: false,
+  activeSubscription: null,
+};
+
 export const useRunFeed = () => {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,9 +25,141 @@ export const useRunFeed = () => {
   const [hasMore, setHasMore] = useState(true);
   const [loadedSupplementaryData, setLoadedSupplementaryData] = useState(new Set());
   const [displayLimit, setDisplayLimit] = useState(7); // New state for display limit
-  const [allPosts, setAllPosts] = useState([]); // Store all fetched posts
+  const [allPosts, setAllPosts] = useState(globalState.allPosts || []); // Use global cache
   const timeoutRef = useRef(null);
-  const initialLoadRef = useRef(false);
+  const initialLoadRef = useRef(globalState.isInitialized);
+  const subscriptionRef = useRef(null);
+
+  // Initialize Nostr as soon as the hook is used, even if component isn't visible
+  useEffect(() => {
+    const initNostr = async () => {
+      // Only initialize once
+      if (!globalState.isInitialized) {
+        await initializeNostr();
+        globalState.isInitialized = true;
+      }
+    };
+    
+    initNostr();
+  }, []);
+
+  // Background fetch for new posts
+  const setupBackgroundFetch = useCallback(() => {
+    // Clear any existing timeouts
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
+    // Set up a recurring fetch every 60 seconds
+    timeoutRef.current = setInterval(async () => {
+      console.log('Background fetch: Checking for new posts');
+      
+      try {
+        // Only fetch posts that are newer than our most recent post
+        const newestPostTime = globalState.allPosts.length > 0 
+          ? Math.max(...globalState.allPosts.map(p => p.created_at)) * 1000
+          : undefined;
+          
+        // Only fetch if we haven't fetched in the last 30 seconds
+        const now = Date.now();
+        if (now - globalState.lastFetchTime < 30000) {
+          console.log('Skipping background fetch, last fetch was too recent');
+          return;
+        }
+        
+        globalState.lastFetchTime = now;
+        
+        // Fetch new posts
+        const limit = 10; // Fetch just a few new posts
+        const runPostsArray = await fetchRunningPosts(limit, newestPostTime);
+        
+        if (runPostsArray.length === 0) {
+          console.log('No new posts found in background fetch');
+          return;
+        }
+        
+        console.log(`Background fetch: Found ${runPostsArray.length} new posts`);
+        
+        // Load supplementary data in parallel
+        const supplementaryData = await loadSupplementaryData(runPostsArray);
+        
+        // Process posts with all the data
+        const processedPosts = await processPostsWithData(runPostsArray, supplementaryData);
+        
+        // Update global cache with new posts
+        if (processedPosts.length > 0) {
+          // Remove duplicates and merge with existing posts
+          const existingIds = new Set(globalState.allPosts.map(p => p.id));
+          const newPosts = processedPosts.filter(p => !existingIds.has(p.id));
+          
+          if (newPosts.length > 0) {
+            globalState.allPosts = [...newPosts, ...globalState.allPosts];
+            
+            // Update local state if component is mounted
+            setAllPosts(prevPosts => {
+              const mergedPosts = [...newPosts, ...prevPosts];
+              return mergedPosts;
+            });
+            
+            // Update displayed posts
+            setPosts(prevPosts => {
+              // Create merged array with new posts at the top
+              const mergedPosts = [...newPosts, ...prevPosts];
+              
+              // Only display up to the display limit
+              return mergedPosts.slice(0, displayLimit);
+            });
+            
+            // Update user interactions
+            updateUserInteractions(supplementaryData);
+          }
+        }
+      } catch (error) {
+        console.error('Error in background fetch:', error);
+        // Don't set error state - this is a background operation
+      }
+    }, 60000); // Check every minute
+    
+    // Store reference to cleanup
+    subscriptionRef.current = timeoutRef.current;
+    return () => {
+      if (timeoutRef.current) {
+        clearInterval(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, [displayLimit]);
+
+  // Extract user interactions logic to reuse
+  const updateUserInteractions = useCallback((supplementaryData) => {
+    const newUserLikes = new Set([...userLikes]);
+    const newUserReposts = new Set([...userReposts]);
+    
+    supplementaryData.likes?.forEach(like => {
+      try {
+        if (window.nostr && like.pubkey === window.nostr.getPublicKey()) {
+          const postId = like.tags.find(tag => tag[0] === 'e')?.[1];
+          if (postId) newUserLikes.add(postId);
+        }
+      } catch (err) {
+        console.error('Error processing user likes:', err);
+      }
+    });
+    
+    supplementaryData.reposts?.forEach(repost => {
+      try {
+        if (window.nostr && repost.pubkey === window.nostr.getPublicKey()) {
+          const postId = repost.tags.find(tag => tag[0] === 'e')?.[1];
+          if (postId) newUserReposts.add(postId);
+        }
+      } catch (err) {
+        console.error('Error processing user reposts:', err);
+      }
+    });
+    
+    setUserLikes(newUserLikes);
+    setUserReposts(newUserReposts);
+  }, [userLikes, userReposts]);
 
   // Main function to fetch run posts
   const fetchRunPostsViaSubscription = useCallback(async () => {
@@ -34,6 +174,22 @@ export const useRunFeed = () => {
 
       // Initialize Nostr first
       await initializeNostr();
+
+      // Check if we have cached posts that are recent enough (less than 5 minutes old)
+      const now = Date.now();
+      const isCacheValid = globalState.allPosts.length > 0 && 
+                        (now - globalState.lastFetchTime < 5 * 60 * 1000);
+                        
+      if (isCacheValid) {
+        console.log('Using cached posts from global state');
+        setAllPosts(globalState.allPosts);
+        setPosts(globalState.allPosts.slice(0, displayLimit));
+        setLoading(false);
+        
+        // Still update in the background for freshness
+        setupBackgroundFetch();
+        return;
+      }
 
       // Set timestamp for paginated loading
       const since = page > 1 ? Date.now() - (page * 7 * 24 * 60 * 60 * 1000) : undefined;
@@ -58,42 +214,23 @@ export const useRunFeed = () => {
           // Process posts with all the data
           const processedPosts = await processPostsWithData(contentPosts, supplementaryData);
           
+          // Update global cache
+          globalState.allPosts = processedPosts;
+          globalState.lastFetchTime = now;
+          
           // Update state with all processed posts, but only display up to the limit
           setAllPosts(processedPosts);
           setPosts(processedPosts.slice(0, displayLimit));
           
-          // Capture which posts the user has liked/reposted
-          const newUserLikes = new Set();
-          const newUserReposts = new Set();
-          
-          supplementaryData.likes?.forEach(like => {
-            try {
-              if (window.nostr && like.pubkey === window.nostr.getPublicKey()) {
-                const postId = like.tags.find(tag => tag[0] === 'e')?.[1];
-                if (postId) newUserLikes.add(postId);
-              }
-            } catch (err) {
-              console.error('Error processing user likes:', err);
-            }
-          });
-          
-          supplementaryData.reposts?.forEach(repost => {
-            try {
-              if (window.nostr && repost.pubkey === window.nostr.getPublicKey()) {
-                const postId = repost.tags.find(tag => tag[0] === 'e')?.[1];
-                if (postId) newUserReposts.add(postId);
-              }
-            } catch (err) {
-              console.error('Error processing user reposts:', err);
-            }
-          });
-          
-          setUserLikes(newUserLikes);
-          setUserReposts(newUserReposts);
+          // Update user interactions
+          updateUserInteractions(supplementaryData);
           
           setHasMore(contentPosts.length >= limit);
           setLoading(false);
           initialLoadRef.current = true;
+          
+          // Set up background fetch
+          setupBackgroundFetch();
           return;
         }
       }
@@ -120,6 +257,10 @@ export const useRunFeed = () => {
       // Process posts with all the data
       const processedPosts = await processPostsWithData(runPostsArray, supplementaryData);
       
+      // Update global cache
+      globalState.allPosts = processedPosts;
+      globalState.lastFetchTime = now;
+      
       // Update state with processed posts
       if (page === 1) {
         setAllPosts(processedPosts);
@@ -129,7 +270,12 @@ export const useRunFeed = () => {
         setAllPosts(prevPosts => {
           const existingIds = new Set(prevPosts.map(p => p.id));
           const newPosts = processedPosts.filter(p => !existingIds.has(p.id));
-          return [...prevPosts, ...newPosts];
+          const mergedPosts = [...prevPosts, ...newPosts];
+          
+          // Update global cache
+          globalState.allPosts = mergedPosts;
+          
+          return mergedPosts;
         });
         // Update displayed posts
         setPosts(prevPosts => {
@@ -149,43 +295,20 @@ export const useRunFeed = () => {
         });
       }
       
-      // Capture which posts the user has liked/reposted
-      const newUserLikes = new Set();
-      const newUserReposts = new Set();
-      
-      supplementaryData.likes?.forEach(like => {
-        try {
-          if (window.nostr && like.pubkey === window.nostr.getPublicKey()) {
-            const postId = like.tags.find(tag => tag[0] === 'e')?.[1];
-            if (postId) newUserLikes.add(postId);
-          }
-        } catch (err) {
-          console.error('Error processing user likes:', err);
-        }
-      });
-      
-      supplementaryData.reposts?.forEach(repost => {
-        try {
-          if (window.nostr && repost.pubkey === window.nostr.getPublicKey()) {
-            const postId = repost.tags.find(tag => tag[0] === 'e')?.[1];
-            if (postId) newUserReposts.add(postId);
-          }
-        } catch (err) {
-          console.error('Error processing user reposts:', err);
-        }
-      });
-      
-      setUserLikes(newUserLikes);
-      setUserReposts(newUserReposts);
+      // Update user interactions
+      updateUserInteractions(supplementaryData);
       
       initialLoadRef.current = true;
+      
+      // Set up background fetch
+      setupBackgroundFetch();
     } catch (err) {
       console.error('Error fetching running posts:', err);
       setError(`Failed to load posts: ${err.message}`);
     } finally {
       setLoading(false);
     }
-  }, [page, displayLimit]);
+  }, [page, displayLimit, updateUserInteractions, setupBackgroundFetch]);
 
   // Load more posts function - increases the display limit
   const loadMorePosts = useCallback(() => {
@@ -209,6 +332,14 @@ export const useRunFeed = () => {
     if (!initialLoadRef.current) {
       fetchRunPostsViaSubscription();
     }
+    
+    // Cleanup function when component unmounts
+    return () => {
+      if (timeoutRef.current) {
+        clearInterval(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
   }, [fetchRunPostsViaSubscription]);
 
   // Update displayed posts when displayLimit changes

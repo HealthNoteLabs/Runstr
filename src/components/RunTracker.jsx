@@ -1,6 +1,6 @@
 import { useState, useEffect, useContext } from 'react';
 import { useRunTracker } from '../contexts/RunTrackerContext';
-import { convertDistance, formatPaceWithUnit, formatTime, formatElevation, formatPace } from '../utils/formatters';
+import { convertDistance, formatPaceWithUnit, formatElevation } from '../utils/formatters';
 import { PermissionDialog } from './PermissionDialog';
 import { createAndPublishEvent } from '../utils/nostr';
 import { displayDistance } from '../utils/formatters';
@@ -88,7 +88,7 @@ export const RunTracker = () => {
       const content = `
 Just completed a run with Runstr! 🏃‍♂️💨
 
-⏱️ Duration: ${formatTime(run.duration)}
+⏱️ Duration: ${runDataService.formatTime(run.duration)}
 📏 Distance: ${displayDistance(run.distance, distanceUnit)}
 ⚡ Pace: ${(run.duration / 60 / (distanceUnit === 'km' ? run.distance/1000 : run.distance/1609.344)).toFixed(2)} min/${distanceUnit}
 🔥 Calories: ${caloriesBurned} kcal
@@ -284,7 +284,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             </div>
             <span className="text-sm text-gray-400">Time</span>
           </div>
-          <div className="text-3xl font-bold">{formatTime(duration)}</div>
+          <div className="text-3xl font-bold">{runDataService.formatTime(duration)}</div>
         </div>
 
         {/* Pace Card */}
@@ -398,7 +398,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                 </div>
               </div>
               <div className="text-right text-gray-400">
-                <span className="block text-lg font-semibold">{formatTime(recentRun.duration).split(':').slice(0, 2).join(':')}</span>
+                <span className="block text-lg font-semibold">{runDataService.formatTime(recentRun.duration)}</span>
                 <button 
                   onClick={handlePostToNostr}
                   className="text-xs mt-1 text-indigo-400 flex items-center"

@@ -153,43 +153,59 @@ export const getUserPublicKey = async () => {
 
 /**
  * Create and publish an event to the nostr network
- * @param {Object} eventTemplate Template for the event
+ * @param {Object} eventTemplate Template for the event or a pre-signed event
  * @param {Uint8Array} privateKey Private key to sign with (optional)
  * @returns {Promise<Object>} The published event
  */
 export const createAndPublishEvent = async (eventTemplate, privateKey) => {
   try {
-    // Get signing key if not provided
-    const sk = privateKey || await getSigningKey();
-    if (!sk) {
-      throw new Error('No signing key available');
-    }
+    let signedEvent;
     
-    // Get user's public key
-    const pk = await getUserPublicKey();
-    if (!pk) {
-      throw new Error('No public key available');
-    }
-    
-    // Create the event
-    const event = {
-      ...eventTemplate,
-      pubkey: pk,
-      created_at: Math.floor(Date.now() / 1000),
-      tags: eventTemplate.tags || []
-    };
-    
-    // Sign the event
-    const signedEvent = finalizeEvent(event, sk);
-    
-    // Verify the signature
-    const valid = verifyEvent(signedEvent);
-    if (!valid) {
-      throw new Error('Event signature verification failed');
+    // Check if we're being passed a pre-signed event (when used as a fallback)
+    if (eventTemplate.sig && eventTemplate.pubkey && eventTemplate.created_at) {
+      // This is already a signed event, no need to sign it again
+      signedEvent = eventTemplate;
+      
+      // Verify the signature to be safe
+      const valid = verifyEvent(signedEvent);
+      if (!valid) {
+        throw new Error('Pre-signed event signature verification failed');
+      }
+    } else {
+      // We need to sign the event ourselves
+      
+      // Get signing key if not provided
+      const sk = privateKey || await getSigningKey();
+      if (!sk) {
+        throw new Error('No signing key available');
+      }
+      
+      // Get user's public key
+      const pk = await getUserPublicKey();
+      if (!pk) {
+        throw new Error('No public key available');
+      }
+      
+      // Create the event
+      const event = {
+        ...eventTemplate,
+        pubkey: pk,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: eventTemplate.tags || []
+      };
+      
+      // Sign the event
+      signedEvent = finalizeEvent(event, sk);
+      
+      // Verify the signature
+      const valid = verifyEvent(signedEvent);
+      if (!valid) {
+        throw new Error('Event signature verification failed');
+      }
     }
     
     // Publish the event to all relays
-    const pubs = pool.publish(relays, signedEvent);
+    pool.publish(relays, signedEvent);
     
     return signedEvent;
   } catch (error) {
