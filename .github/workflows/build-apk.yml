@@ -168,16 +168,43 @@ jobs:
           # Fix repositories block to handle missing directories
           sed -i 's/flatDir{/flatDir {\n        dirs += ["libs"]\n        dirs += [file("capacitor-cordova-android-plugins\/src\/main\/libs")]\n        /' android/app/build.gradle || echo "No flatDir block found"
           
-          # Fix Google Services block - simplest solution
-          sed -i '/try {/,/servicesJSON/d' android/app/build.gradle || true
-          sed -i '/try {/,/google-services.json/d' android/app/build.gradle || true
-          sed -i '/catch(Exception e)/,/}/d' android/app/build.gradle || true
-
-          # Write a simple Google Services implementation at the end
+          # Create a completely fresh build.gradle without any Google Services or servicesJSON references
+          # We use grep to find all lines that don't contain "servicesJSON" and rewrite the build.gradle file
+          grep -v "servicesJSON" android/app/build.gradle > /tmp/build.gradle.clean
+          grep -v "try\s*{" /tmp/build.gradle.clean > /tmp/build.gradle.clean2
+          grep -v "catch" /tmp/build.gradle.clean2 > android/app/build.gradle
+          
+          # Add our simple Google Services check at the end
           echo -e "\n// Simple Google Services check" >> android/app/build.gradle
           echo "if (file('google-services.json').exists()) {" >> android/app/build.gradle
           echo "    apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
           echo "}" >> android/app/build.gradle
+          
+          # Double-check for any remaining servicesJSON references
+          if grep -q "servicesJSON" android/app/build.gradle; then
+            echo "WARNING: servicesJSON still found in build.gradle after cleaning"
+            echo "Attempting more aggressive cleanup..."
+            
+            # Create a simplified build.gradle without the problematic sections
+            awk 'BEGIN {skip=0} 
+                 /servicesJSON/ {skip=1; next} 
+                 /try\s*{/ {skip=1; next} 
+                 /catch/ {skip=1; next} 
+                 /}/ && skip==1 {skip=0; next} 
+                 skip==0 {print}' android/app/build.gradle > /tmp/build.gradle.final
+            
+            mv /tmp/build.gradle.final android/app/build.gradle
+            
+            # Add our simple Google Services check at the end again
+            echo -e "\n// Simple Google Services check" >> android/app/build.gradle
+            echo "if (file('google-services.json').exists()) {" >> android/app/build.gradle
+            echo "    apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
+            echo "}" >> android/app/build.gradle
+          fi
+          
+          # Show final build.gradle content for verification
+          echo "Final app/build.gradle content:"
+          cat android/app/build.gradle
 
       # Grant execute permissions for Gradle wrapper
       - name: Grant execute permission to Gradle wrapper
