@@ -132,7 +132,7 @@ jobs:
       # Build Release APK instead of Debug
       - name: Build Release APK
         id: build_apk
-        continue-on-error: true  # Allow continuing to see detailed error output
+        continue-on-error: false  # Changed to false to ensure we don't proceed if build fails
         run: |
           cd android
           
@@ -155,28 +155,48 @@ jobs:
             -Dorg.gradle.java.home="$JAVA_HOME" \
             assembleRelease
           
-          # Check the build exit code
-          BUILD_RESULT=$?
-          if [ $BUILD_RESULT -ne 0 ]; then
-            echo "::error::Build failed with exit code $BUILD_RESULT"
+          # Check the build output directory
+          mkdir -p app/build/outputs/apk/release
+          
+          # Check if APK was actually generated
+          if [ ! -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            echo "::error::Failed to generate APK. Check build logs for errors."
+            exit 1
+          else
+            echo "APK successfully built at: $(ls -la app/build/outputs/apk/release/)"
+          fi
+
+      # Verify APK exists before signing
+      - name: Verify APK Output
+        run: |
+          echo "Checking APK output directory..."
+          if [ -d "android/app/build/outputs/apk/release" ]; then
+            echo "Directory exists. Contents:"
+            ls -la android/app/build/outputs/apk/release/
+            APK_COUNT=$(find android/app/build/outputs/apk/release -name "*.apk" | wc -l)
+            if [ "$APK_COUNT" -eq 0 ]; then
+              echo "::error::No APK files found in the output directory."
+              exit 1
+            else
+              echo "Found $APK_COUNT APK file(s)."
+            fi
+          else
+            echo "Creating APK output directory..."
+            mkdir -p android/app/build/outputs/apk/release
             
-            # Print Gradle diagnostics info
-            echo "==== GRADLE DIAGNOSTICS ===="
-            ./gradlew --debug --scan help || true
-            echo "==========================="
+            # Try to find the APK elsewhere
+            echo "Searching for APKs in the android directory..."
+            find android -name "*.apk" | while read apk; do
+              echo "Found APK at: $apk"
+              echo "Copying to the expected location..."
+              cp "$apk" android/app/build/outputs/apk/release/
+            done
             
-            # Check for Java version issues
-            echo "==== GRADLE PROJECT INFO ===="
-            ./gradlew -q projects || true
-            echo "============================"
-            
-            # Extra diagnostics - what files were generated?
-            echo "==== OUTPUT FILES ===="
-            find . -name "*.apk" | sort
-            echo "======================"
-            
-            # Exit with the original error code
-            exit $BUILD_RESULT
+            # Check if we found and copied any APKs
+            if [ $(find android/app/build/outputs/apk/release -name "*.apk" | wc -l) -eq 0 ]; then
+              echo "::error::Failed to locate any APK files to sign."
+              exit 1
+            fi
           fi
 
       # Sign the release APK
@@ -191,6 +211,17 @@ jobs:
           keyPassword: ${{ secrets.KEY_PASSWORD }}
         env:
           BUILD_TOOLS_VERSION: "34.0.0"
+          
+      # Verify signed APK exists
+      - name: Verify Signed APK
+        run: |
+          if [ -z "${{ steps.sign_app.outputs.signedReleaseFile }}" ]; then
+            echo "::error::No signed APK was produced. Check signing step output."
+            exit 1
+          else
+            echo "Signed APK successfully created at: ${{ steps.sign_app.outputs.signedReleaseFile }}"
+            ls -la "${{ steps.sign_app.outputs.signedReleaseFile }}"
+          fi
 
       # Create a Release
       - name: Create Release
