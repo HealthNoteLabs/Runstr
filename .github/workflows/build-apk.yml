@@ -110,11 +110,35 @@ jobs:
           asset_name: app-release-signed.apk
           asset_content_type: application/vnd.android.package-archive
 
-      # Deploy to Zap.Store
-      - name: Upload to Zap.Store
-        uses: KoalaSat/deploy-zap-store@3564328459104ed6e2bf88787cea79fb80058409
-        with:
-          app_name: "RUNSTR"
-          nsec: ${{ secrets.NSEC }}
-          api_version: 34
-          build_tools_version: 34.0.0
+      # Setup for Zap.Store publishing
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1.6.5
+      
+      - name: Install Apktool
+        run: |
+          wget "https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool"
+          wget "https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar"
+          mv apktool_2.10.0.jar apktool.jar
+          sudo cp apktool /usr/local/bin
+          sudo cp apktool.jar /usr/local/bin
+          sudo chmod +x /usr/local/bin/apktool
+          sudo chmod +x /usr/local/bin/apktool.jar
+      
+      - name: Get Zap.Store CLI
+        run: |
+          mkdir -p /home/runner/.zapstore
+          git clone https://github.com/zapstore/zapstore-cli.git
+          cd zapstore-cli
+          git fetch --tags
+          LATEST_RELEASE=$(curl -s https://api.github.com/repos/zapstore/zapstore-cli/releases/latest)
+          TAG_NAME=$(echo $LATEST_RELEASE | jq -r .tag_name)
+          git checkout $TAG_NAME
+          dart pub get
+          dart compile exe lib/main.dart -o build
+      
+      - name: Publish to Zap.Store
+        env:
+          NSEC: ${{ secrets.NSEC }}
+        run: |
+          cd $GITHUB_WORKSPACE
+          APKSIGNER_PATH=$ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner ./zapstore-cli/build publish "RUNSTR"
