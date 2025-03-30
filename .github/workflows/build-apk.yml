@@ -199,112 +199,97 @@ jobs:
       # Build Release APK instead of Debug
       - name: Build Release APK
         id: build_apk
-        # Change to false to immediately see build failures
-        continue-on-error: false
+        run: |
+          cd android
+          
+          # Create direct signing config to avoid issues
+          echo "// Direct signing configuration" > app/signing.gradle
+          cat >> app/signing.gradle << EOF
+          android {
+              signingConfigs {
+                  release {
+                      storeFile file("release.keystore")
+                      storePassword "${KEY_STORE_PASSWORD}"
+                      keyAlias "${KEY_ALIAS}"
+                      keyPassword "${KEY_PASSWORD}"
+                  }
+              }
+              
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                  }
+              }
+          }
+          EOF
+          
+          # Add the signing config to app's build.gradle
+          echo "apply from: 'signing.gradle'" >> app/build.gradle
+          
+          # Very verbose build with retries
+          echo "==== BUILDING APK (ATTEMPT 1) ===="
+          ./gradlew --no-daemon clean assembleRelease --info || (
+            echo "First build attempt failed, retrying..."
+            echo "==== BUILDING APK (ATTEMPT 2) ===="
+            ./gradlew --no-daemon clean assembleRelease --info
+          )
+          
+          # Check for APKs
+          echo "==== CHECKING FOR APK FILES ===="
+          find . -name "*.apk" -type f | sort
+          
+          # Copy APK to the expected location for signing
+          mkdir -p app/build/outputs/apk/release
+          RELEASE_APK=$(find . -name "*release*.apk" -type f | head -n 1)
+          if [ -n "$RELEASE_APK" ]; then
+            echo "Found release APK: $RELEASE_APK"
+            cp "$RELEASE_APK" app/build/outputs/apk/release/app-release-unsigned.apk
+            echo "Copied to app/build/outputs/apk/release/app-release-unsigned.apk"
+            ls -la app/build/outputs/apk/release/
+          else
+            echo "No APK found, build failed!"
+            exit 1
+          fi
         env:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-        run: |
-          cd android
-          
-          # Print detailed info for debugging
-          echo "==== ENVIRONMENT INFO ===="
-          echo "JAVA_HOME = $JAVA_HOME"
-          echo "Android SDK = $ANDROID_SDK_ROOT"
-          echo "=========================="
-          
-          # Print information about gradle file
-          echo "==== GRADLE CONFIG INFO ===="
-          cat app/build.gradle
-          echo "============================="
-          
-          # Check all possible flavor/variant combinations to see what's available
-          echo "==== GRADLE TASKS ===="
-          ./gradlew tasks --group="build"
-          echo "======================="
-          
-          # Build with more basic settings first
-          echo "==== BUILDING DEBUG APK FIRST AS TEST ===="
-          ./gradlew assembleDebug --info
-          ls -la app/build/outputs/apk/debug/
-          echo "=========================================="
-          
-          # Then try the release build
-          echo "==== BUILDING RELEASE APK ===="
-          ./gradlew \
-            -Dorg.gradle.java.home="$JAVA_HOME" \
-            assembleRelease --info
-          
-          # Check where the APK was actually built
-          echo "==== SEARCHING FOR APK FILES ===="
-          find . -name "*.apk" -type f | sort
-          
-          # If we can't find any APKs, that's a failure
-          if [ $(find . -name "*.apk" -type f | wc -l) -eq 0 ]; then
-            echo "ERROR: No APK files were generated. Build failed."
-            exit 1
-          fi
 
-      # Properly locate and prepare APK for signing
-      - name: Locate and Prepare APK for Signing
-        id: locate_apk
-        run: |
-          echo "Locating APK files..."
-          
-          # Find all APK files
-          APK_FILES=$(find android -name "*.apk" -type f | sort)
-          echo "Found these APK files:"
-          echo "$APK_FILES"
-          
-          # Find the main release APK
-          RELEASE_APK=$(find android -name "*release*.apk" -type f | grep -v "unsigned" | head -n 1)
-          
-          # If no release APK found, use the first APK
-          if [ -z "$RELEASE_APK" ]; then
-            echo "No specific release APK found, using the first APK found"
-            RELEASE_APK=$(echo "$APK_FILES" | head -n 1)
-          fi
-          
-          if [ -z "$RELEASE_APK" ]; then
-            echo "No APK files found. This shouldn't happen as build step should have failed."
-            exit 1
-          fi
-          
-          echo "Using APK: $RELEASE_APK"
-          
-          # Create the directory expected by the sign-android-release action
-          mkdir -p android/app/build/outputs/apk/release
-          
-          # Copy to the expected location
-          cp "$RELEASE_APK" android/app/build/outputs/apk/release/app-release-unsigned.apk
-          
-          echo "APK prepared for signing at: android/app/build/outputs/apk/release/app-release-unsigned.apk"
-          echo "apk_path=android/app/build/outputs/apk/release" >> $GITHUB_OUTPUT
-
-      # Verify APK exists before signing - we don't need this anymore since we've handled it in the locate_apk step
-      - name: Sign APK
+      # Skip the locate_apk step as it's now handled in the build step
+      
+      # Sign APK directly with apksigner
+      - name: Sign APK with apksigner
         id: sign_app
-        uses: r0adkll/sign-android-release@v1
-        with:
-          releaseDirectory: ${{ steps.locate_apk.outputs.apk_path }}
-          signingKeyBase64: ${{ steps.generate_keystore.outputs.keystore_base64 }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: "34.0.0"
-          
-      # Verify signed APK exists
-      - name: Verify Signed APK
         run: |
-          if [ -z "${{ steps.sign_app.outputs.signedReleaseFile }}" ]; then
-            echo "::error::No signed APK was produced. Check signing step output."
+          echo "==== SIGNING APK DIRECTLY ===="
+          # Ensure the APK exists
+          if [ ! -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+            echo "ERROR: APK file not found at expected location"
+            find android -name "*.apk" -type f
             exit 1
-          else
-            echo "Signed APK successfully created at: ${{ steps.sign_app.outputs.signedReleaseFile }}"
-            ls -la "${{ steps.sign_app.outputs.signedReleaseFile }}"
           fi
+          
+          # Create output directory
+          mkdir -p android/app/build/outputs/apk/release/signed
+          
+          # Use Android SDK apksigner directly
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner"
+          
+          # Sign the APK
+          $APKSIGNER sign --ks release.keystore \
+            --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
+            --ks-pass pass:"${{ secrets.KEY_STORE_PASSWORD }}" \
+            --key-pass pass:"${{ secrets.KEY_PASSWORD }}" \
+            --out android/app/build/outputs/apk/release/signed/app-release-signed.apk \
+            android/app/build/outputs/apk/release/app-release-unsigned.apk
+          
+          # Verify the signing
+          $APKSIGNER verify --verbose android/app/build/outputs/apk/release/signed/app-release-signed.apk
+          
+          # Set output variable
+          echo "signedReleaseFile=android/app/build/outputs/apk/release/signed/app-release-signed.apk" >> $GITHUB_OUTPUT
+          
+          echo "==== APK SIGNED SUCCESSFULLY ===="
 
       # Create a Release
       - name: Create Release
@@ -355,9 +340,36 @@ jobs:
           dart pub get
           dart compile exe lib/main.dart -o build
       
+      # Publish to Zap.Store
       - name: Publish to Zap.Store
         env:
           NSEC: ${{ secrets.NSEC }}
         run: |
-          cd $GITHUB_WORKSPACE
-          APKSIGNER_PATH=$ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner ./zapstore-cli/build publish "RUNSTR"
+          echo "==== PUBLISHING TO ZAP.STORE ===="
+          
+          # Ensure the file exists
+          if [ ! -f "${{ steps.sign_app.outputs.signedReleaseFile }}" ]; then
+            echo "ERROR: Signed APK file not found!"
+            exit 1
+          fi
+          
+          # Print file info
+          ls -la ${{ steps.sign_app.outputs.signedReleaseFile }}
+          
+          # Verify the file is valid
+          file ${{ steps.sign_app.outputs.signedReleaseFile }}
+          
+          # Copy to a simple path to avoid issues
+          cp ${{ steps.sign_app.outputs.signedReleaseFile }} ./runstr-app.apk
+          
+          # Show zapstore-cli help
+          cd zapstore-cli && ./build --help
+          
+          # Explicitly use the copied APK with the absolute path
+          APK_PATH="$GITHUB_WORKSPACE/runstr-app.apk"
+          echo "Using APK: $APK_PATH"
+          
+          # Run the publish command with explicit paths
+          ./build publish "RUNSTR" --apk-path="$APK_PATH" --apksigner-path="$ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner"
+          
+          echo "==== ZAP.STORE PUBLISHING COMPLETE ===="
