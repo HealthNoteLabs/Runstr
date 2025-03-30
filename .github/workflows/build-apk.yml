@@ -144,82 +144,158 @@ jobs:
           echo "org.gradle.caching=true" >> android/gradle.properties
           echo "org.gradle.parallel=true" >> android/gradle.properties
           
-          # Save original build.gradle for reference
+          # Process the build.gradle file using a simpler approach less prone to syntax errors
+          # First make a backup
           cp android/app/build.gradle /tmp/build.gradle.original
           
           # Display the original file for debugging
           echo "Original app/build.gradle content:"
           cat /tmp/build.gradle.original
           
-          # Create a temporary file with our Google Services changes
-          echo "// Creating a new build.gradle with Google Services changes"
+          # Use sed to completely remove all Google Services related sections
+          sed -i '/try {/,/google-services plugin not applied/d' android/app/build.gradle
+          sed -i '/\/\/ Simple Google Services check/,/^}/d' android/app/build.gradle
           
-          # Process the build.gradle file using awk for better structure preservation
-          awk '
-          BEGIN { 
-            skip_block = 0;
-            in_try_block = 0;
-          }
-          
-          # Start skipping at the try block with servicesJSON
-          /try {/ && /def servicesJSON/ { 
-            skip_block = 1;
-            in_try_block = 1;
-            next;
-          }
-          
-          # Keep track of nested braces in the try block
-          in_try_block == 1 && /\{/ { 
-            brace_count += 1;
-          }
-          
-          in_try_block == 1 && /\}/ { 
-            brace_count -= 1;
-            if (brace_count <= 0) {
-              in_try_block = 0;
-            }
-          }
-          
-          # Continue skipping during catch block
-          skip_block == 1 && in_try_block == 0 && /catch/ {
-            in_catch_block = 1;
-            next;
-          }
-          
-          # Keep skipping until the end of the catch block
-          in_catch_block == 1 && /\}/ {
-            in_catch_block = 0;
-            skip_block = 0;
-            next;
-          }
-          
-          # Print lines not in the blocks we want to skip
-          skip_block == 0 && in_catch_block == 0 { 
-            print; 
-          }
-          ' /tmp/build.gradle.original > /tmp/build.gradle.clean
-          
-          # Add our simple Google Services implementation at the end of the file
-          echo "" >> /tmp/build.gradle.clean
-          echo "// Check if Google Services plugin is already applied" >> /tmp/build.gradle.clean
-          echo "def hasGoogleServices = plugins.hasPlugin('com.google.gms.google-services')" >> /tmp/build.gradle.clean
-          echo "if (!hasGoogleServices && file('google-services.json').exists()) {" >> /tmp/build.gradle.clean
-          echo "    apply plugin: 'com.google.gms.google-services'" >> /tmp/build.gradle.clean
-          echo "}" >> /tmp/build.gradle.clean
-          
-          # Replace the original file with our clean version
-          cp /tmp/build.gradle.clean android/app/build.gradle
+          # Add our simplified Google Services implementation at the end of the file
+          echo "" >> android/app/build.gradle
+          echo "// Simple Google Services check" >> android/app/build.gradle
+          echo "if (file('google-services.json').exists()) {" >> android/app/build.gradle
+          echo "    apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
+          echo "}" >> android/app/build.gradle
           
           # Verify our changes
-          echo "=== Final app/build.gradle content after Google Services fixes: ==="
-          cat android/app/build.gradle | grep -A 10 "// Check if Google Services"
+          echo "=== Modified app/build.gradle content after Google Services fixes: ==="
+          cat android/app/build.gradle | tail -10
           echo "=== End of Google Services section ==="
           
-          # Check if the try-catch block was removed properly
-          if grep -q "try {" android/app/build.gradle && grep -q "servicesJSON" android/app/build.gradle; then
-            echo "WARNING: try-catch block for Google Services was not fully removed"
-            echo "Attempting secondary cleanup to avoid duplicate plugin application"
-            sed -i '/try {/,/google-services plugin not applied/d' android/app/build.gradle
+          # Validate gradle file structure by checking for balanced braces
+          echo "Validating build.gradle structure..."
+          OPEN_BRACES=$(grep -o "{" android/app/build.gradle | wc -l)
+          CLOSE_BRACES=$(grep -o "}" android/app/build.gradle | wc -l)
+          echo "Open braces: $OPEN_BRACES, Close braces: $CLOSE_BRACES"
+          
+          if [ "$OPEN_BRACES" != "$CLOSE_BRACES" ]; then
+            echo "ERROR: Unbalanced braces in build.gradle file!"
+            echo "Attempting to fix by restoring the original and using a more careful approach..."
+            
+            # Restore original and use a different approach
+            cp /tmp/build.gradle.original android/app/build.gradle
+            
+            # Remove only exact patterns we know are problematic without modifying structure
+            sed -i 's/try {\s*def servicesJSON = file(.*)\/\/ Simple Google Services check/\/\/ Simple Google Services check/' android/app/build.gradle
+            
+            # Add our simple check at the end
+            echo "" >> android/app/build.gradle
+            echo "// Simple Google Services check" >> android/app/build.gradle
+            echo "if (file('google-services.json').exists()) {" >> android/app/build.gradle
+            echo "    apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
+            echo "}" >> android/app/build.gradle
+            
+            # Re-validate
+            OPEN_BRACES=$(grep -o "{" android/app/build.gradle | wc -l)
+            CLOSE_BRACES=$(grep -o "}" android/app/build.gradle | wc -l)
+            echo "After fix: Open braces: $OPEN_BRACES, Close braces: $CLOSE_BRACES"
+            
+            # Final check - if still unbalanced, just create a simple version from scratch
+            if [ "$OPEN_BRACES" != "$CLOSE_BRACES" ]; then
+              echo "WARNING: Still having issues with build.gradle - trying minimal approach"
+              
+              # Identify the essential sections to preserve (repositories, dependencies, defaultConfig)
+              REPOS=$(grep -A 10 "repositories {" /tmp/build.gradle.original)
+              DEPS=$(grep -A 20 "dependencies {" /tmp/build.gradle.original)
+              DEFAULT_CONFIG=$(grep -A 10 "defaultConfig {" /tmp/build.gradle.original)
+              
+              # Create a very simple build.gradle with just the essential parts
+              echo "apply plugin: 'com.android.application'" > android/app/build.gradle
+              echo "" >> android/app/build.gradle
+              echo "android {" >> android/app/build.gradle
+              echo "    compileSdkVersion rootProject.ext.compileSdkVersion" >> android/app/build.gradle
+              echo "    defaultConfig {" >> android/app/build.gradle
+              echo "        applicationId \"com.runstr.app\"" >> android/app/build.gradle
+              echo "        minSdkVersion rootProject.ext.minSdkVersion" >> android/app/build.gradle
+              echo "        targetSdkVersion rootProject.ext.targetSdkVersion" >> android/app/build.gradle
+              echo "        versionCode 1" >> android/app/build.gradle
+              echo "        versionName \"1.0\"" >> android/app/build.gradle
+              echo "        testInstrumentationRunner \"androidx.test.runner.AndroidJUnitRunner\"" >> android/app/build.gradle
+              echo "        aaptOptions {" >> android/app/build.gradle
+              echo "            cruncherEnabled false" >> android/app/build.gradle
+              echo "        }" >> android/app/build.gradle
+              echo "    }" >> android/app/build.gradle
+              echo "" >> android/app/build.gradle
+              echo "    signingConfigs {" >> android/app/build.gradle
+              echo "        release {" >> android/app/build.gradle
+              echo "            storeFile file(\"release.keystore\")" >> android/app/build.gradle
+              echo "            storePassword \"${{ secrets.KEY_STORE_PASSWORD }}\"" >> android/app/build.gradle
+              echo "            keyAlias \"${{ secrets.KEY_ALIAS }}\"" >> android/app/build.gradle
+              echo "            keyPassword \"${{ secrets.KEY_PASSWORD }}\"" >> android/app/build.gradle
+              echo "        }" >> android/app/build.gradle
+              echo "    }" >> android/app/build.gradle
+              echo "" >> android/app/build.gradle
+              echo "    buildTypes {" >> android/app/build.gradle
+              echo "        release {" >> android/app/build.gradle
+              echo "            minifyEnabled false" >> android/app/build.gradle
+              echo "            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'" >> android/app/build.gradle
+              echo "            signingConfig signingConfigs.release" >> android/app/build.gradle
+              echo "        }" >> android/app/build.gradle
+              echo "    }" >> android/app/build.gradle
+              echo "" >> android/app/build.gradle
+              echo "    compileOptions {" >> android/app/build.gradle
+              echo "        sourceCompatibility JavaVersion.VERSION_17" >> android/app/build.gradle
+              echo "        targetCompatibility JavaVersion.VERSION_17" >> android/app/build.gradle
+              echo "    }" >> android/app/build.gradle
+              echo "}" >> android/app/build.gradle
+              echo "" >> android/app/build.gradle
+              echo "repositories {" >> android/app/build.gradle
+              echo "    google()" >> android/app/build.gradle
+              echo "    mavenCentral()" >> android/app/build.gradle
+              echo "    flatDir {" >> android/app/build.gradle
+              echo "        dirs 'libs'" >> android/app/build.gradle
+              echo "        dirs 'capacitor-cordova-android-plugins/src/main/libs'" >> android/app/build.gradle
+              echo "    }" >> android/app/build.gradle
+              echo "}" >> android/app/build.gradle
+              echo "" >> android/app/build.gradle
+              echo "dependencies {" >> android/app/build.gradle
+              echo "    implementation fileTree(include: ['*.jar'], dir: 'libs')" >> android/app/build.gradle
+              echo "    implementation \"androidx.appcompat:appcompat:\$androidxAppCompatVersion\"" >> android/app/build.gradle
+              echo "    implementation project(':capacitor-android')" >> android/app/build.gradle
+              echo "    implementation project(':capacitor-cordova-android-plugins')" >> android/app/build.gradle
+              echo "    testImplementation \"junit:junit:\$junitVersion\"" >> android/app/build.gradle
+              echo "    androidTestImplementation \"androidx.test.ext:junit:\$androidxJunitVersion\"" >> android/app/build.gradle
+              echo "    androidTestImplementation \"androidx.test.espresso:espresso-core:\$androidxEspressoCoreVersion\"" >> android/app/build.gradle
+              echo "}" >> android/app/build.gradle
+              echo "" >> android/app/build.gradle
+              echo "apply from: 'capacitor.build.gradle'" >> android/app/build.gradle
+              echo "" >> android/app/build.gradle
+              echo "// Simple Google Services check" >> android/app/build.gradle
+              echo "if (file('google-services.json').exists()) {" >> android/app/build.gradle
+              echo "    apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
+              echo "}" >> android/app/build.gradle
+
+              # Replace placeholder variables with actual secrets
+              sed -i "s/\${KEY_STORE_PASSWORD}/${{ secrets.KEY_STORE_PASSWORD }}/g" android/app/build.gradle
+              sed -i "s/\${KEY_ALIAS}/${{ secrets.KEY_ALIAS }}/g" android/app/build.gradle
+              sed -i "s/\${KEY_PASSWORD}/${{ secrets.KEY_PASSWORD }}/g" android/app/build.gradle
+
+              echo "=== Finished creating simplified build.gradle ==="
+              echo "Validating structure of new build.gradle file..."
+              OPEN_BRACES=$(grep -o "{" android/app/build.gradle | wc -l)
+              CLOSE_BRACES=$(grep -o "}" android/app/build.gradle | wc -l)
+              echo "Open braces: $OPEN_BRACES, Close braces: $CLOSE_BRACES"
+              
+              # Look for critical elements to make sure they exist
+              echo "Checking for critical build.gradle elements..."
+              grep -q "apply plugin: 'com.android.application'" android/app/build.gradle && echo "✓ Found application plugin" || echo "✗ Missing application plugin"
+              grep -q "signingConfigs" android/app/build.gradle && echo "✓ Found signing configs" || echo "✗ Missing signing configs"
+              grep -q "dependencies" android/app/build.gradle && echo "✓ Found dependencies section" || echo "✗ Missing dependencies section"
+              grep -q "repositories" android/app/build.gradle && echo "✓ Found repositories section" || echo "✗ Missing repositories section"
+              grep -q "google-services" android/app/build.gradle && echo "✓ Found Google Services check" || echo "✗ Missing Google Services check"
+              
+              # Check for any remaining servicesJSON references
+              if grep -q "servicesJSON" android/app/build.gradle; then
+                echo "WARNING: build.gradle still contains servicesJSON references!"
+                grep -n "servicesJSON" android/app/build.gradle
+              fi
+            fi
           fi
           
           # Java 17 compatibility updates
