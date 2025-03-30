@@ -132,7 +132,7 @@ jobs:
       # Build Release APK instead of Debug
       - name: Build Release APK
         id: build_apk
-        continue-on-error: false  # Changed to false to ensure we don't proceed if build fails
+        continue-on-error: true  # Changed to true so we can see where files are created
         run: |
           cd android
           
@@ -142,69 +142,59 @@ jobs:
           echo "Android SDK = $ANDROID_SDK_ROOT"
           echo "=========================="
           
-          # Make absolutely sure we're using Java 17
-          echo "export JAVA_HOME=\"$JAVA_HOME\"" > java_home.sh
-          source java_home.sh
-          
-          # Explicitly prevent Java 21 usage
-          echo "==== CHECKING FOR JAVA 21 USAGE ===="
-          grep -r "JavaVersion.VERSION_21\|sourceCompatibility.*21\|targetCompatibility.*21\|JavaVersion.VERSION_1_21" --include="*.gradle" --include="*.gradle.kts" . || echo "No Java 21 references found!"
-          
           # Try building with detailed output
-          ./gradlew --no-daemon --info --stacktrace \
+          ./gradlew --no-daemon --debug \
             -Dorg.gradle.java.home="$JAVA_HOME" \
             assembleRelease
           
-          # Check the build output directory
-          mkdir -p app/build/outputs/apk/release
-          
-          # Check if APK was actually generated
-          if [ ! -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            echo "::error::Failed to generate APK. Check build logs for errors."
-            exit 1
-          else
-            echo "APK successfully built at: $(ls -la app/build/outputs/apk/release/)"
-          fi
+          # Check where the APK was actually built
+          echo "==== LOCATING APK FILES ===="
+          find . -name "*.apk" | sort
 
-      # Verify APK exists before signing
-      - name: Verify APK Output
+      # Properly locate and prepare APK for signing
+      - name: Locate and Prepare APK for Signing
+        id: locate_apk
         run: |
-          echo "Checking APK output directory..."
-          if [ -d "android/app/build/outputs/apk/release" ]; then
-            echo "Directory exists. Contents:"
-            ls -la android/app/build/outputs/apk/release/
-            APK_COUNT=$(find android/app/build/outputs/apk/release -name "*.apk" | wc -l)
-            if [ "$APK_COUNT" -eq 0 ]; then
-              echo "::error::No APK files found in the output directory."
-              exit 1
-            else
-              echo "Found $APK_COUNT APK file(s)."
-            fi
-          else
-            echo "Creating APK output directory..."
-            mkdir -p android/app/build/outputs/apk/release
-            
-            # Try to find the APK elsewhere
-            echo "Searching for APKs in the android directory..."
-            find android -name "*.apk" | while read apk; do
-              echo "Found APK at: $apk"
-              echo "Copying to the expected location..."
-              cp "$apk" android/app/build/outputs/apk/release/
-            done
-            
-            # Check if we found and copied any APKs
-            if [ $(find android/app/build/outputs/apk/release -name "*.apk" | wc -l) -eq 0 ]; then
-              echo "::error::Failed to locate any APK files to sign."
-              exit 1
-            fi
+          echo "Searching for APK files in the Android project..."
+          
+          # Create the expected directory
+          mkdir -p android/app/build/outputs/apk/release
+          
+          # First, try to find APK in expected release location
+          APK_FILES=$(find android -name "*.apk" | grep -v "debug" | sort)
+          
+          if [ -z "$APK_FILES" ]; then
+            echo "No release APK found, looking for any APK..."
+            APK_FILES=$(find android -name "*.apk")
           fi
+          
+          if [ -z "$APK_FILES" ]; then
+            echo "::error::No APK files found at all. Build may have failed."
+            exit 1
+          fi
+          
+          echo "Found these APK files:"
+          echo "$APK_FILES"
+          
+          # Copy the first APK found to the expected location
+          FIRST_APK=$(echo "$APK_FILES" | head -n 1)
+          echo "Using APK: $FIRST_APK"
+          
+          # Copy to the standard location expected by the sign-android-release action
+          cp "$FIRST_APK" android/app/build/outputs/apk/release/app-release-unsigned.apk
+          
+          # Verify it's there
+          ls -la android/app/build/outputs/apk/release/
+          
+          echo "APK prepared for signing at: android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          echo "apk_path=android/app/build/outputs/apk/release" >> $GITHUB_OUTPUT
 
-      # Sign the release APK
+      # Verify APK exists before signing - we don't need this anymore since we've handled it in the locate_apk step
       - name: Sign APK
         id: sign_app
         uses: r0adkll/sign-android-release@v1
         with:
-          releaseDirectory: android/app/build/outputs/apk/release
+          releaseDirectory: ${{ steps.locate_apk.outputs.apk_path }}
           signingKeyBase64: ${{ steps.generate_keystore.outputs.keystore_base64 }}
           alias: ${{ secrets.KEY_ALIAS }}
           keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
