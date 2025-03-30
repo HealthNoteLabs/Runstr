@@ -112,9 +112,9 @@ jobs:
 
       # Deploy to Zap.Store
       - name: Upload to Zap.Store
-        uses: KoalaSat/deploy-zap-store@v1
+        uses: KoalaSat/deploy-zap-store@3564328459104ed6e2bf88787cea79fb80058409
         with:
-          app_name: "RUNSTR" # Replace with your actual app name
+          app_name: "RUNSTR"
           nsec: ${{ secrets.NSEC }}
           api_version: 34
           build_tools_version: 34.0.0
