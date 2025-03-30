@@ -51,33 +51,40 @@ jobs:
       - name: Generate Keystore
         id: generate_keystore
         run: |
-          # Generate keystore directly for signing
-          echo "${{ secrets.SIGNING_KEY_BASE64 || '' }}" > release.keystore.base64
-          # If we have a key base64, decode it
-          if [ -s release.keystore.base64 ]; then
-            # Platform-independent base64 decode
-            if [ "$(uname)" == "Darwin" ]; then
-              # macOS
-              base64 -D -i release.keystore.base64 -o release.keystore
-            else
-              # Linux and others
-              base64 -d release.keystore.base64 > release.keystore
-            fi
+          echo "==== GENERATING NEW KEYSTORE ===="
+          # Print current directory for debugging
+          echo "Current directory: $(pwd)"
+          
+          echo "Generating new keystore for signing..."
+          keytool -genkey -v -keystore release.keystore \
+            -alias ${{ secrets.KEY_ALIAS }} \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass ${{ secrets.KEY_STORE_PASSWORD }} \
+            -keypass ${{ secrets.KEY_PASSWORD }} \
+            -dname "cn=Unknown, ou=Unknown, o=Unknown, c=US"
+          
+          # Verify keystore was created
+          if [ -f "release.keystore" ]; then
+            echo "✅ Keystore file created successfully"
+            echo "Keystore size: $(wc -c release.keystore | awk '{print $1}') bytes"
+            ls -la release.keystore
+            
+            # Generate base64 for signing step
+            base64 release.keystore > release.keystore.base64
+            
+            # Make a copy of the keystore in android/app/ directory
+            mkdir -p android/app/
+            cp release.keystore android/app/release.keystore
+            echo "Copied keystore to android/app/release.keystore"
+            
+            # Set the keystore base64 as an output and remove newlines
+            echo "keystore_base64=$(cat release.keystore.base64 | tr -d '\n')" >> $GITHUB_OUTPUT
           else
-            # Generate a new keystore if no base64 key is provided
-            keytool -genkey -v -keystore release.keystore -alias ${{ secrets.KEY_ALIAS }} -keyalg RSA -keysize 2048 -validity 10000 -storepass ${{ secrets.KEY_STORE_PASSWORD }} -keypass ${{ secrets.KEY_PASSWORD }} -dname "cn=Unknown, ou=Unknown, o=Unknown, c=US"
-            # Platform-independent base64 encode
-            if [ "$(uname)" == "Darwin" ]; then
-              # macOS
-              base64 -i release.keystore -o release.keystore.base64
-            else
-              # Linux and others
-              base64 release.keystore > release.keystore.base64
-            fi
+            echo "❌ FAILED to create keystore file!"
+            exit 1
           fi
-          # Set the keystore base64 as an output and remove newlines
-          echo "keystore_base64=$(cat release.keystore.base64 | tr -d '\n')" >> $GITHUB_OUTPUT
-          echo "Keystore size: $(wc -c release.keystore | awk '{print $1}') bytes"
+          
+          echo "==== KEYSTORE GENERATION COMPLETE ===="
 
       # Sync React build with Android platform
       - name: Sync Capacitor with Android
@@ -88,10 +95,15 @@ jobs:
         run: |
           echo "==== PREPARING ANDROID PROJECT ===="
           
+          # Print current directory for debugging
+          echo "Current directory: $(pwd)"
+          
+          # Verify android directory exists
+          ls -la
+          
           # Check if android/ directory exists
           if [ ! -d "android" ]; then
             echo "ERROR: Android directory not found. Did capacitor sync fail?"
-            ls -la
             exit 1
           fi
           
@@ -111,17 +123,23 @@ jobs:
             cp android/app/build.gradle android/app/build.gradle.bak
             
             # Inject signing config
-            sed -i '/defaultConfig {/,/}/a\\n    signingConfigs {\n        release {\n            storeFile file("release.keystore")\n            storePassword System.getenv("KEY_STORE_PASSWORD") ?: "password"\n            keyAlias System.getenv("KEY_ALIAS") ?: "alias"\n            keyPassword System.getenv("KEY_PASSWORD") ?: "password"\n        }\n    }' android/app/build.gradle
+            sed -i '/defaultConfig {/,/}/a\\n    signingConfigs {\n        release {\n            storeFile file("release.keystore")\n            storePassword "'${{ secrets.KEY_STORE_PASSWORD }}'"\n            keyAlias "'${{ secrets.KEY_ALIAS }}'"\n            keyPassword "'${{ secrets.KEY_PASSWORD }}'"\n        }\n    }' android/app/build.gradle
             
             # Reference signing config in buildTypes
             sed -i '/release {/,/}/s/}/    signingConfig signingConfigs.release\n}/' android/app/build.gradle
+          else
+            echo "Signing config already exists in build.gradle"
           fi
           
-          # Copy keystore to the right location
-          echo "Copying keystore to Android project directory..."
-          cp release.keystore android/app/release.keystore
+          # Verify keystore file exists in android/app/
+          if [ -f "android/app/release.keystore" ]; then
+            echo "✅ Keystore file exists in android/app/"
+          else
+            echo "WARNING: Keystore not found in android/app/, copying again..."
+            cp release.keystore android/app/release.keystore
+          fi
           
-          # Create keystore.properties
+          # Create keystore.properties (as an additional way to provide keystore info)
           echo "Creating keystore.properties..."
           cat > android/keystore.properties << EOF
           storePassword=${{ secrets.KEY_STORE_PASSWORD }}
