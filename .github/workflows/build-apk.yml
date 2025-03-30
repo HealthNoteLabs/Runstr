@@ -66,6 +66,13 @@ jobs:
       - name: Grant execute permission to Gradle wrapper
         run: chmod +x ./android/gradlew
 
+      # Fix Capacitor Java version
+      - name: Patch Capacitor Java version
+        run: |
+          sed -i 's/sourceCompatibility JavaVersion.VERSION_21/sourceCompatibility JavaVersion.VERSION_17/g' node_modules/@capacitor/android/capacitor/build.gradle
+          sed -i 's/targetCompatibility JavaVersion.VERSION_21/targetCompatibility JavaVersion.VERSION_17/g' node_modules/@capacitor/android/capacitor/build.gradle
+          echo "Patched Capacitor Java version from 21 to 17"
+
       # Generate keystore for signing
       - name: Generate Keystore
         run: |
