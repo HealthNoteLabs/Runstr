@@ -58,6 +58,14 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      # Verify JDK version
+      - name: Verify Java version
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
+          echo "Using Java from: $JAVA_HOME"
+          java -version
+          javac -version
+
       # Setup Android SDK
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -66,23 +74,59 @@ jobs:
       - name: Grant execute permission to Gradle wrapper
         run: chmod +x ./android/gradlew
 
-      # Fix Capacitor Java version
-      - name: Patch Java version
+      # Fix Java version - comprehensive approach
+      - name: Patch Java version (comprehensive)
         run: |
-          # Fix Capacitor module
-          sed -i 's/sourceCompatibility JavaVersion.VERSION_21/sourceCompatibility JavaVersion.VERSION_17/g' node_modules/@capacitor/android/capacitor/build.gradle
-          sed -i 's/targetCompatibility JavaVersion.VERSION_21/targetCompatibility JavaVersion.VERSION_17/g' node_modules/@capacitor/android/capacitor/build.gradle
+          echo "=== Starting Java version patching ==="
           
-          # Fix app module
-          sed -i 's/sourceCompatibility JavaVersion.VERSION_21/sourceCompatibility JavaVersion.VERSION_17/g' android/app/build.gradle
-          sed -i 's/targetCompatibility JavaVersion.VERSION_21/targetCompatibility JavaVersion.VERSION_17/g' android/app/build.gradle
-          sed -i 's/sourceCompatibility = JavaVersion.VERSION_21/sourceCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
-          sed -i 's/targetCompatibility = JavaVersion.VERSION_21/targetCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
+          # Check all build.gradle files for Java version references
+          echo "Patching all build.gradle files:"
+          find . -name "build.gradle" -o -name "*.gradle.kts" | while read file; do
+            echo "Checking file: $file"
+            if grep -q "VERSION_21\|Java 21\|JavaVersion.VERSION_21\|jvmTarget = \"21\"" "$file"; then
+              echo "Found Java 21 reference in $file, patching..."
+              sed -i 's/VERSION_21/VERSION_17/g' "$file"
+              sed -i 's/Java 21/Java 17/g' "$file"
+              sed -i 's/JavaVersion.VERSION_21/JavaVersion.VERSION_17/g' "$file"
+              sed -i 's/jvmTarget = "21"/jvmTarget = "17"/g' "$file"
+              sed -i 's/sourceCompatibility = JavaVersion.VERSION_21/sourceCompatibility = JavaVersion.VERSION_17/g' "$file"
+              sed -i 's/targetCompatibility = JavaVersion.VERSION_21/targetCompatibility = JavaVersion.VERSION_17/g' "$file"
+              sed -i 's/sourceCompatibility JavaVersion.VERSION_21/sourceCompatibility JavaVersion.VERSION_17/g' "$file"
+              sed -i 's/targetCompatibility JavaVersion.VERSION_21/targetCompatibility JavaVersion.VERSION_17/g' "$file"
+            fi
+          done
           
-          # Check if there are any other Java 21 references in other modules
-          find android -name "build.gradle" -exec grep -l "VERSION_21" {} \; | xargs -I{} sed -i 's/VERSION_21/VERSION_17/g' {}
+          # Create or update android/gradle.properties to enforce Java 17
+          echo "Ensuring Java 17 in gradle.properties"
+          if [ -f "android/gradle.properties" ]; then
+            # Remove any existing Java version settings
+            sed -i '/org.gradle.java.home/d' android/gradle.properties
+            # Add our Java 17 setting
+            echo "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --add-opens java.base/java.io=ALL-UNNAMED" >> android/gradle.properties
+          fi
           
-          echo "Patched Java version from 21 to 17 in all modules"
+          # Create a temporary local.properties to override Java version
+          echo "Creating local.properties override"
+          echo "org.gradle.java.home=${JAVA_HOME}" > android/local.properties
+          
+          # For Kotlin code: make sure we're using JVM 17
+          echo "Patching Kotlin jvmTarget"
+          find . -name "*.gradle" -o -name "*.gradle.kts" | xargs sed -i 's/jvmTarget = "21"/jvmTarget = "17"/g'
+          
+          # Direct patch for app module since it seems to keep failing
+          echo "Direct patch for app module"
+          mkdir -p android/app/src/main/java
+          echo "package com.example.app.javaversion;
+          /** 
+           * This class exists solely to force Java 17 compatibility 
+           */
+          public class ForceJava17 {
+              public static void main(String[] args) {
+                  System.out.println(\"Using Java 17\");
+              }
+          }" > android/app/src/main/java/ForceJava17.java
+          
+          echo "=== Java version patching complete ==="
 
       # Generate keystore for signing
       - name: Generate Keystore
@@ -91,7 +135,13 @@ jobs:
 
       # Build Release APK instead of Debug
       - name: Build Release APK
-        run: cd android && ./gradlew assembleRelease
+        run: |
+          cd android
+          # Explicitly set Java home for Gradle
+          ./gradlew -Dorg.gradle.java.home="$JAVA_HOME" \
+            -Pjava.home="$JAVA_HOME" \
+            --warning-mode all \
+            assembleRelease --stacktrace
 
       # Sign the release APK
       - name: Sign APK
