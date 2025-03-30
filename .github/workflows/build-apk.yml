@@ -102,18 +102,18 @@ jobs:
           # Create fresh capacitor config if needed
           if [ ! -f "capacitor.config.ts" ] && [ ! -f "capacitor.config.js" ] && [ ! -f "capacitor.config.json" ]; then
             echo "Creating basic capacitor config"
-            cat > capacitor.config.ts << EOF
-            import { CapacitorConfig } from '@capacitor/cli';
-            
-            const config: CapacitorConfig = {
-              appId: 'com.runstr.app',
-              appName: 'Runstr',
-              webDir: 'build',
-              bundledWebRuntime: false
-            };
-            
-            export default config;
-            EOF
+            cat > capacitor.config.ts << 'EOFCAP'
+import { CapacitorConfig } from '@capacitor/cli';
+
+const config: CapacitorConfig = {
+  appId: 'com.runstr.app',
+  appName: 'Runstr',
+  webDir: 'build',
+  bundledWebRuntime: false
+};
+
+export default config;
+EOFCAP
           fi
           
           # Add Android platform
@@ -138,15 +138,15 @@ jobs:
       - name: Configure Android project for Java 17
         run: |
           # Create gradle.properties with Java 17 settings
-          cat > android/gradle.properties << EOF
-          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED
-          org.gradle.java.home=${JAVA_HOME}
-          android.useAndroidX=true
-          android.enableJetifier=true
-          kotlin.jvm.target.validation.mode=warning
-          org.gradle.caching=true
-          org.gradle.parallel=true
-          EOF
+          cat > android/gradle.properties << 'EOF'
+org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED
+org.gradle.java.home=${JAVA_HOME}
+android.useAndroidX=true
+android.enableJetifier=true
+kotlin.jvm.target.validation.mode=warning
+org.gradle.caching=true
+org.gradle.parallel=true
+EOF
           
           # Show build.gradle files for debugging
           echo "App build.gradle content:"
@@ -170,12 +170,12 @@ jobs:
           fi
           
           # Fix repositories block to handle missing directories
-          sed -i 's/flatDir{/flatDir {\n        dirs += ["libs"]\n        dirs += [file("capacitor-cordova-android-plugins\/src\/main\/libs")]\n        /' android/app/build.gradle
+          sed -i 's/flatDir{/flatDir {\n        dirs += ["libs"]\n        dirs += [file("capacitor-cordova-android-plugins\/src\/main\/libs")]\n        /' android/app/build.gradle || echo "No flatDir block found"
           
           # Update Google Services block to prevent errors
-          sed -i 's/try {/try {\n    \/\/ Safely check for google-services.json\n/' android/app/build.gradle
-          sed -i 's/def servicesJSON = file/def servicesJSON = fileExists("google-services.json") ? file/' android/app/build.gradle
-          sed -i '/catch(Exception e) {/i\\ndef fileExists(String path) {\n    return new File(path).exists()\n}' android/app/build.gradle
+          sed -i 's/try {/try {\n    \/\/ Safely check for google-services.json\n/' android/app/build.gradle || echo "No try block found"
+          sed -i 's/def servicesJSON = file/def servicesJSON = fileExists("google-services.json") ? file/' android/app/build.gradle || echo "No servicesJSON line found"
+          grep -q "fileExists" android/app/build.gradle || sed -i '/catch(Exception e) {/i\\ndef fileExists(String path) {\n    return new File(path).exists()\n}' android/app/build.gradle || echo "Could not add fileExists function"
 
       # Grant execute permissions for Gradle wrapper
       - name: Grant execute permission to Gradle wrapper
