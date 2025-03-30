@@ -47,6 +47,38 @@ jobs:
       - name: Install Capacitor CLI
         run: npm install -g @capacitor/cli
 
+      # Generate keystore for signing
+      - name: Generate Keystore
+        id: generate_keystore
+        run: |
+          # Generate keystore directly for signing
+          echo "${{ secrets.SIGNING_KEY_BASE64 || '' }}" > release.keystore.base64
+          # If we have a key base64, decode it
+          if [ -s release.keystore.base64 ]; then
+            # Platform-independent base64 decode
+            if [ "$(uname)" == "Darwin" ]; then
+              # macOS
+              base64 -D -i release.keystore.base64 -o release.keystore
+            else
+              # Linux and others
+              base64 -d release.keystore.base64 > release.keystore
+            fi
+          else
+            # Generate a new keystore if no base64 key is provided
+            keytool -genkey -v -keystore release.keystore -alias ${{ secrets.KEY_ALIAS }} -keyalg RSA -keysize 2048 -validity 10000 -storepass ${{ secrets.KEY_STORE_PASSWORD }} -keypass ${{ secrets.KEY_PASSWORD }} -dname "cn=Unknown, ou=Unknown, o=Unknown, c=US"
+            # Platform-independent base64 encode
+            if [ "$(uname)" == "Darwin" ]; then
+              # macOS
+              base64 -i release.keystore -o release.keystore.base64
+            else
+              # Linux and others
+              base64 release.keystore > release.keystore.base64
+            fi
+          fi
+          # Set the keystore base64 as an output and remove newlines
+          echo "keystore_base64=$(cat release.keystore.base64 | tr -d '\n')" >> $GITHUB_OUTPUT
+          echo "Keystore size: $(wc -c release.keystore | awk '{print $1}') bytes"
+
       # Sync React build with Android platform
       - name: Sync Capacitor with Android
         run: npx cap sync android
@@ -86,6 +118,7 @@ jobs:
           fi
           
           # Copy keystore to the right location
+          echo "Copying keystore to Android project directory..."
           cp release.keystore android/app/release.keystore
           
           # Create keystore.properties
@@ -144,38 +177,6 @@ jobs:
           EOF
           
           echo "=== Java setup complete ==="
-
-      # Generate keystore for signing
-      - name: Generate Keystore
-        id: generate_keystore
-        run: |
-          # Generate keystore directly for signing
-          echo "${{ secrets.SIGNING_KEY_BASE64 || '' }}" > release.keystore.base64
-          # If we have a key base64, decode it
-          if [ -s release.keystore.base64 ]; then
-            # Platform-independent base64 decode
-            if [ "$(uname)" == "Darwin" ]; then
-              # macOS
-              base64 -D -i release.keystore.base64 -o release.keystore
-            else
-              # Linux and others
-              base64 -d release.keystore.base64 > release.keystore
-            fi
-          else
-            # Generate a new keystore if no base64 key is provided
-            keytool -genkey -v -keystore release.keystore -alias ${{ secrets.KEY_ALIAS }} -keyalg RSA -keysize 2048 -validity 10000 -storepass ${{ secrets.KEY_STORE_PASSWORD }} -keypass ${{ secrets.KEY_PASSWORD }} -dname "cn=Unknown, ou=Unknown, o=Unknown, c=US"
-            # Platform-independent base64 encode
-            if [ "$(uname)" == "Darwin" ]; then
-              # macOS
-              base64 -i release.keystore -o release.keystore.base64
-            else
-              # Linux and others
-              base64 release.keystore > release.keystore.base64
-            fi
-          fi
-          # Set the keystore base64 as an output and remove newlines
-          echo "keystore_base64=$(cat release.keystore.base64 | tr -d '\n')" >> $GITHUB_OUTPUT
-          echo "Keystore size: $(wc -c release.keystore | awk '{print $1}') bytes"
 
       # Build Release APK instead of Debug
       - name: Build Release APK
