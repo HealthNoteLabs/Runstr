@@ -104,7 +104,7 @@ export const RunHistory = () => {
         
         // Fix unrealistic distance values (>100 km is extremely unlikely for normal runs)
         const MAX_REALISTIC_DISTANCE = 100 * 1000; // 100 km in meters
-        if (isNaN(run.distance) || run.distance <= 0) {
+        if (isNaN(run.distance) || run.distance < 0) {
           run.distance = 5000; // Default to 5 km for invalid distances
           // Update the run using the service
           runDataService.updateRun(run.id, { distance: run.distance });
