@@ -79,6 +79,25 @@ jobs:
         run: |
           echo "=== Starting Java version patching ==="
           
+          # Create direct compiler override in app module
+          echo "Creating direct compiler override for app module"
+          mkdir -p android/app/src/main/java
+          cat > android/app/build.gradle.override << EOF
+          // Direct override for Java compilation
+          tasks.withType(JavaCompile) {
+              options.compilerArgs.add('-source')
+              options.compilerArgs.add('17')
+              options.compilerArgs.add('-target')
+              options.compilerArgs.add('17')
+              options.release.set(17)
+              sourceCompatibility = JavaVersion.VERSION_17
+              targetCompatibility = JavaVersion.VERSION_17
+          }
+          EOF
+          
+          # Apply the override
+          echo "apply from: 'build.gradle.override'" >> android/app/build.gradle
+          
           # Check all build.gradle files for Java version references
           echo "Patching all build.gradle files:"
           find . -name "build.gradle" -o -name "*.gradle.kts" | while read file; do
@@ -103,6 +122,7 @@ jobs:
             sed -i '/org.gradle.java.home/d' android/gradle.properties
             # Add our Java 17 setting
             echo "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --add-opens java.base/java.io=ALL-UNNAMED" >> android/gradle.properties
+            echo "org.gradle.java.home=${JAVA_HOME}" >> android/gradle.properties
           fi
           
           # Create a temporary local.properties to override Java version
@@ -112,19 +132,6 @@ jobs:
           # For Kotlin code: make sure we're using JVM 17
           echo "Patching Kotlin jvmTarget"
           find . -name "*.gradle" -o -name "*.gradle.kts" | xargs sed -i 's/jvmTarget = "21"/jvmTarget = "17"/g'
-          
-          # Direct patch for app module since it seems to keep failing
-          echo "Direct patch for app module"
-          mkdir -p android/app/src/main/java
-          echo "package com.example.app.javaversion;
-          /** 
-           * This class exists solely to force Java 17 compatibility 
-           */
-          public class ForceJava17 {
-              public static void main(String[] args) {
-                  System.out.println(\"Using Java 17\");
-              }
-          }" > android/app/src/main/java/ForceJava17.java
           
           echo "=== Java version patching complete ==="
 
@@ -137,11 +144,17 @@ jobs:
       - name: Build Release APK
         run: |
           cd android
-          # Explicitly set Java home for Gradle
+          # Explicitly set Java home for Gradle with direct Java 17 flags
           ./gradlew -Dorg.gradle.java.home="$JAVA_HOME" \
             -Pjava.home="$JAVA_HOME" \
+            -PcompileJava.source=17 \
+            -PcompileJava.target=17 \
+            -PcompileJava.release=17 \
+            -PcompileJava.sourceCompatibility=17 \
+            -PcompileJava.targetCompatibility=17 \
             --warning-mode all \
-            assembleRelease --stacktrace
+            assembleRelease \
+            --stacktrace
 
       # Sign the release APK
       - name: Sign APK
