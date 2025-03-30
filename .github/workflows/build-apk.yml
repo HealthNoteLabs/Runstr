@@ -35,7 +35,12 @@ jobs:
           javac -version
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          # Install Capacitor CLI globally
+          npm install -g @capacitor/cli
+          # List installed packages to verify Capacitor installation
+          npm list --depth=0
 
       # Extract version and generate release tag
       - name: Configure version information
@@ -74,9 +79,33 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # Sync React build with Android platform
-      - name: Sync Capacitor with Android
-        run: npx cap sync android
+      # Debug project structure
+      - name: Debug project structure
+        run: |
+          echo "Current directory structure:"
+          ls -la
+          echo "Capacitor config:"
+          cat capacitor.config.ts || cat capacitor.config.js || cat capacitor.config.json || echo "No capacitor config found"
+          echo "node_modules structure:"
+          ls -la node_modules/@capacitor || echo "No @capacitor in node_modules"
+
+      # Sync Capacitor with Android platform
+      - name: Setup Capacitor Android platform
+        run: |
+          # Add Android platform if not already added
+          npx cap add android || echo "Android platform might already exist"
+          # Copy web assets to Android 
+          npx cap copy android
+          # Update native dependencies
+          npx cap update android
+          # Sync everything
+          npx cap sync android
+          
+          # Check if Android platform was created successfully
+          ls -la android || echo "Android directory not created"
+          
+          # Check if capacitor android directories exist
+          ls -la node_modules/@capacitor/android || echo "Capacitor Android not found in node_modules"
 
       # Prepare Android project for Java 17 compatibility
       - name: Configure Android project for Java 17
@@ -106,6 +135,9 @@ jobs:
           if ! grep -q "aaptOptions" android/app/build.gradle; then
             sed -i '/defaultConfig {/,/}/a\\n    aaptOptions {\n        cruncherEnabled false\n    }' android/app/build.gradle
           fi
+          
+          # Enable build cache
+          echo "org.gradle.caching=true" >> android/gradle.properties
 
       # Grant execute permissions for Gradle wrapper
       - name: Grant execute permission to Gradle wrapper
@@ -120,12 +152,21 @@ jobs:
           # Clean project
           ./gradlew clean
           
-          # Build release APK with detailed logging
+          # List all available tasks for debugging
+          ./gradlew tasks
+          
+          # Build debug APK first as a safer option
+          ./gradlew assembleDebug --info || {
+            echo "Debug build failed, checking project structure"
+            ls -la
+            cat app/build.gradle || echo "app/build.gradle not found"
+            exit 1
+          }
+          
+          # Only attempt release build if debug was successful
           ./gradlew assembleRelease --info || {
-            echo "Release build failed, attempting to build debug APK as fallback"
-            ./gradlew assembleDebug --info
-            
-            # If debug build succeeds, use it as our release APK
+            echo "Release build failed, using debug APK as fallback"
+            # If debug build succeeded, use it as our release APK
             if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
               mkdir -p app/build/outputs/apk/release
               cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release-unsigned.apk
