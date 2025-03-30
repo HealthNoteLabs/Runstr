@@ -51,6 +51,54 @@ jobs:
       - name: Sync Capacitor with Android
         run: npx cap sync android
 
+      # Prepare Android project
+      - name: Prepare Android Project
+        run: |
+          echo "==== PREPARING ANDROID PROJECT ===="
+          
+          # Check if android/ directory exists
+          if [ ! -d "android" ]; then
+            echo "ERROR: Android directory not found. Did capacitor sync fail?"
+            ls -la
+            exit 1
+          fi
+          
+          # Check app/build.gradle exists
+          if [ ! -f "android/app/build.gradle" ]; then
+            echo "ERROR: android/app/build.gradle not found. Project structure issue."
+            ls -la android/
+            exit 1
+          fi
+          
+          # Ensure signing config exists in build.gradle
+          echo "Checking signing config in build.gradle..."
+          if ! grep -q "signingConfigs" android/app/build.gradle; then
+            echo "Adding signing configuration to build.gradle"
+            
+            # Create backup
+            cp android/app/build.gradle android/app/build.gradle.bak
+            
+            # Inject signing config
+            sed -i '/defaultConfig {/,/}/a\\n    signingConfigs {\n        release {\n            storeFile file("release.keystore")\n            storePassword System.getenv("KEY_STORE_PASSWORD") ?: "password"\n            keyAlias System.getenv("KEY_ALIAS") ?: "alias"\n            keyPassword System.getenv("KEY_PASSWORD") ?: "password"\n        }\n    }' android/app/build.gradle
+            
+            # Reference signing config in buildTypes
+            sed -i '/release {/,/}/s/}/    signingConfig signingConfigs.release\n}/' android/app/build.gradle
+          fi
+          
+          # Copy keystore to the right location
+          cp release.keystore android/app/release.keystore
+          
+          # Create keystore.properties
+          echo "Creating keystore.properties..."
+          cat > android/keystore.properties << EOF
+          storePassword=${{ secrets.KEY_STORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=release.keystore
+          EOF
+          
+          echo "==== ANDROID PROJECT READY ===="
+
       # Setup Java for Android build - changed to JDK 17 for compatibility with Zap.Store
       - name: Set up JDK 17
         uses: actions/setup-java@v3
@@ -132,7 +180,12 @@ jobs:
       # Build Release APK instead of Debug
       - name: Build Release APK
         id: build_apk
-        continue-on-error: true  # Changed to true so we can see where files are created
+        # Change to false to immediately see build failures
+        continue-on-error: false
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
         run: |
           cd android
           
@@ -142,49 +195,70 @@ jobs:
           echo "Android SDK = $ANDROID_SDK_ROOT"
           echo "=========================="
           
-          # Try building with detailed output
-          ./gradlew --no-daemon --debug \
+          # Print information about gradle file
+          echo "==== GRADLE CONFIG INFO ===="
+          cat app/build.gradle
+          echo "============================="
+          
+          # Check all possible flavor/variant combinations to see what's available
+          echo "==== GRADLE TASKS ===="
+          ./gradlew tasks --group="build"
+          echo "======================="
+          
+          # Build with more basic settings first
+          echo "==== BUILDING DEBUG APK FIRST AS TEST ===="
+          ./gradlew assembleDebug --info
+          ls -la app/build/outputs/apk/debug/
+          echo "=========================================="
+          
+          # Then try the release build
+          echo "==== BUILDING RELEASE APK ===="
+          ./gradlew \
             -Dorg.gradle.java.home="$JAVA_HOME" \
-            assembleRelease
+            assembleRelease --info
           
           # Check where the APK was actually built
-          echo "==== LOCATING APK FILES ===="
-          find . -name "*.apk" | sort
+          echo "==== SEARCHING FOR APK FILES ===="
+          find . -name "*.apk" -type f | sort
+          
+          # If we can't find any APKs, that's a failure
+          if [ $(find . -name "*.apk" -type f | wc -l) -eq 0 ]; then
+            echo "ERROR: No APK files were generated. Build failed."
+            exit 1
+          fi
 
       # Properly locate and prepare APK for signing
       - name: Locate and Prepare APK for Signing
         id: locate_apk
         run: |
-          echo "Searching for APK files in the Android project..."
+          echo "Locating APK files..."
           
-          # Create the expected directory
-          mkdir -p android/app/build/outputs/apk/release
-          
-          # First, try to find APK in expected release location
-          APK_FILES=$(find android -name "*.apk" | grep -v "debug" | sort)
-          
-          if [ -z "$APK_FILES" ]; then
-            echo "No release APK found, looking for any APK..."
-            APK_FILES=$(find android -name "*.apk")
-          fi
-          
-          if [ -z "$APK_FILES" ]; then
-            echo "::error::No APK files found at all. Build may have failed."
-            exit 1
-          fi
-          
+          # Find all APK files
+          APK_FILES=$(find android -name "*.apk" -type f | sort)
           echo "Found these APK files:"
           echo "$APK_FILES"
           
-          # Copy the first APK found to the expected location
-          FIRST_APK=$(echo "$APK_FILES" | head -n 1)
-          echo "Using APK: $FIRST_APK"
+          # Find the main release APK
+          RELEASE_APK=$(find android -name "*release*.apk" -type f | grep -v "unsigned" | head -n 1)
           
-          # Copy to the standard location expected by the sign-android-release action
-          cp "$FIRST_APK" android/app/build/outputs/apk/release/app-release-unsigned.apk
+          # If no release APK found, use the first APK
+          if [ -z "$RELEASE_APK" ]; then
+            echo "No specific release APK found, using the first APK found"
+            RELEASE_APK=$(echo "$APK_FILES" | head -n 1)
+          fi
           
-          # Verify it's there
-          ls -la android/app/build/outputs/apk/release/
+          if [ -z "$RELEASE_APK" ]; then
+            echo "No APK files found. This shouldn't happen as build step should have failed."
+            exit 1
+          fi
+          
+          echo "Using APK: $RELEASE_APK"
+          
+          # Create the directory expected by the sign-android-release action
+          mkdir -p android/app/build/outputs/apk/release
+          
+          # Copy to the expected location
+          cp "$RELEASE_APK" android/app/build/outputs/apk/release/app-release-unsigned.apk
           
           echo "APK prepared for signing at: android/app/build/outputs/apk/release/app-release-unsigned.apk"
           echo "apk_path=android/app/build/outputs/apk/release" >> $GITHUB_OUTPUT
