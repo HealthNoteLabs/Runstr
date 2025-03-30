@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - Simple-updates
+      - updates1
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
@@ -17,24 +18,63 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '17'
-          
+      
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build project
+        run: npm run build
+      
       - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+        run: |
+          if [ -f "./gradlew" ]; then
+            chmod +x gradlew
+          elif [ -f "./android/gradlew" ]; then
+            chmod +x ./android/gradlew
+          else
+            echo "No gradlew file found"
+            exit 1
+          fi
         
       - name: Build APK
-        run: ./gradlew assembleDebug
+        run: |
+          if [ -f "./gradlew" ]; then
+            ./gradlew assembleDebug
+          elif [ -f "./android/gradlew" ]; then
+            cd android
+            ./gradlew assembleDebug
+          else
+            echo "No gradlew file found"
+            exit 1
+          fi
+        
+      - name: Find APK file
+        id: find_apk
+        run: |
+          APK_PATH=$(find . -name "app-debug.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "No APK found"
+            exit 1
+          fi
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          echo "APK found at: $APK_PATH"
         
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.APK_PATH }}
           
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: ${{ env.APK_PATH }}
           name: Simple-updates Build ${{ github.run_number }}
           tag_name: simple-updates-${{ github.run_number }}
           draft: false
