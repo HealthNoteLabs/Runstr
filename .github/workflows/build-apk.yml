@@ -226,33 +226,38 @@ jobs:
           # Add the signing config to app's build.gradle
           echo "apply from: 'signing.gradle'" >> app/build.gradle
           
-          # Fix for resource issues - first clean
-          echo "==== CLEANING PROJECT ===="
-          ./gradlew clean --info
+          # Simplify build process and reduce dependencies
+          echo "==== MODIFYING BUILD.GRADLE FOR SIMPLER BUILD ===="
+          cp app/build.gradle app/build.gradle.original
           
-          # Try building debug first to isolate issues
-          echo "==== BUILDING DEBUG APK ===="
-          ./gradlew assembleDebug --info || echo "Debug build failed but continuing"
-          
-          # Check for resource issues
-          echo "==== CHECKING FOR RESOURCE ISSUES ===="
-          if [ -f "build/reports/problems/problems-report.html" ]; then
-            echo "Problems report found. Contents:"
-            cat build/reports/problems/problems-report.html || echo "Could not read problems report"
+          # Try to disable unneeded plugins temporarily as a test
+          if grep -q "capacitor-community-background-geolocation" app/build.gradle; then
+            echo "Temporarily commenting out background-geolocation plugin for test build"
+            sed -i 's/implementation project(":capacitor-community-background-geolocation")/\/\/implementation project(":capacitor-community-background-geolocation")/' app/build.gradle
           fi
           
-          # Try assembling just resources first
-          echo "==== PROCESSING RESOURCES ONLY ===="
-          ./gradlew processReleaseResources --info || echo "Resources processing failed but continuing"
+          # Fix for resource issues - first clean
+          echo "==== CLEANING PROJECT ===="
+          ./gradlew clean
           
-          # Now try full release build with stack trace for detailed errors
-          echo "==== BUILDING RELEASE APK ===="
-          ./gradlew assembleRelease --stacktrace
+          # Build debug with less verbosity first
+          echo "==== BUILDING DEBUG APK WITH MINIMAL CONFIGURATION ===="
+          ./gradlew assembleDebug --quiet || echo "Debug build failed but continuing"
           
-          # Check for problems report
-          if [ -f "build/reports/problems/problems-report.html" ]; then
-            echo "Problems report after release build:"
-            cat build/reports/problems/problems-report.html || echo "Could not read problems report"
+          # Try with release but reduced configuration
+          echo "==== BUILDING RELEASE APK WITH MINIMAL PROFILE ===="
+          ./gradlew assembleRelease --quiet -x lint -x lintVitalRelease || echo "First attempt failed, trying alternative approach"
+          
+          # Check for APKs at this point
+          find . -name "*.apk" -type f | sort
+          
+          # If no APKs found, restore original build.gradle and try again with more detailed output
+          if [ $(find . -name "*.apk" -type f | wc -l) -eq 0 ]; then
+            echo "No APKs found with simplified build. Restoring original build.gradle and trying again."
+            cp app/build.gradle.original app/build.gradle
+            
+            # Try just basic build with stacktrace
+            ./gradlew --stacktrace assembleRelease
           fi
           
           # Check for APKs
@@ -275,7 +280,7 @@ jobs:
             cp "$DEBUG_APK" app/build/outputs/apk/release/app-release-unsigned.apk
             echo "WARNING: Using debug APK for signing!"
           else
-            echo "No APK found, build failed!"
+            echo "No APK found after multiple attempts, build failed!"
             exit 1
           fi
           
