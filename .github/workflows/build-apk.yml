@@ -4,8 +4,8 @@ on:
   push:
     branches:
       - Simple-updates
-      - updates1 # Added feed branch to automatically trigger the workflow
-  workflow_dispatch:  # Allows manual triggering
+      - updates1
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,46 +16,43 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      # Setup Java 17 specifically for Zap.Store compatibility
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Setup Node
         uses: actions/setup-node@v3
         with:
           node-version: 20
 
+      - name: Verify Java version
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME"
+          java -version
+          javac -version
+
       - name: Install dependencies
         run: npm ci
 
-      # Extract version from package.json
-      - name: Get Version from package.json
-        id: package_version
-        run: echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
-
-      # Generate timestamp for uniqueness
-      - name: Generate Timestamp
-        id: timestamp
-        run: echo "DATE=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_ENV
-
-      # Generate release tag dynamically
-      - name: Generate Release Tag
-        id: release_tag
-        run: echo "RELEASE_TAG=feed-${{ env.VERSION }}-${{ env.DATE }}" >> $GITHUB_ENV
+      # Extract version and generate release tag
+      - name: Configure version information
+        id: version_info
+        run: |
+          echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
+          echo "DATE=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_ENV
+          echo "RELEASE_TAG=feed-${{ env.VERSION }}-${{ env.DATE }}" >> $GITHUB_ENV
 
       # Build the React app
       - name: Build React app
         run: npm run build
 
-      # Install Capacitor CLI if not installed globally
-      - name: Install Capacitor CLI
-        run: npm install -g @capacitor/cli
-
       # Generate keystore for signing
       - name: Generate Keystore
         id: generate_keystore
         run: |
-          echo "==== GENERATING NEW KEYSTORE ===="
-          # Print current directory for debugging
-          echo "Current directory: $(pwd)"
-          
-          echo "Generating new keystore for signing..."
           keytool -genkey -v -keystore release.keystore \
             -alias ${{ secrets.KEY_ALIAS }} \
             -keyalg RSA -keysize 2048 -validity 10000 \
@@ -63,320 +60,115 @@ jobs:
             -keypass ${{ secrets.KEY_PASSWORD }} \
             -dname "cn=Unknown, ou=Unknown, o=Unknown, c=US"
           
-          # Verify keystore was created
-          if [ -f "release.keystore" ]; then
-            echo "✅ Keystore file created successfully"
-            echo "Keystore size: $(wc -c release.keystore | awk '{print $1}') bytes"
-            ls -la release.keystore
-            
-            # Generate base64 for signing step
-            base64 release.keystore > release.keystore.base64
-            
-            # Make a copy of the keystore in android/app/ directory
-            mkdir -p android/app/
-            cp release.keystore android/app/release.keystore
-            echo "Copied keystore to android/app/release.keystore"
-            
-            # Set the keystore base64 as an output and remove newlines
-            echo "keystore_base64=$(cat release.keystore.base64 | tr -d '\n')" >> $GITHUB_OUTPUT
-          else
-            echo "❌ FAILED to create keystore file!"
-            exit 1
-          fi
-          
-          echo "==== KEYSTORE GENERATION COMPLETE ===="
-
-      # Sync React build with Android platform
-      - name: Sync Capacitor with Android
-        run: npx cap sync android
-
-      # Prepare Android project
-      - name: Prepare Android Project
-        run: |
-          echo "==== PREPARING ANDROID PROJECT ===="
-          
-          # Print current directory for debugging
-          echo "Current directory: $(pwd)"
-          
-          # Verify android directory exists
-          ls -la
-          
-          # Check if android/ directory exists
-          if [ ! -d "android" ]; then
-            echo "ERROR: Android directory not found. Did capacitor sync fail?"
-            exit 1
-          fi
-          
-          # Check app/build.gradle exists
-          if [ ! -f "android/app/build.gradle" ]; then
-            echo "ERROR: android/app/build.gradle not found. Project structure issue."
-            ls -la android/
-            exit 1
-          fi
-          
-          # Ensure signing config exists in build.gradle
-          echo "Checking signing config in build.gradle..."
-          if ! grep -q "signingConfigs" android/app/build.gradle; then
-            echo "Adding signing configuration to build.gradle"
-            
-            # Create backup
-            cp android/app/build.gradle android/app/build.gradle.bak
-            
-            # Inject signing config
-            sed -i '/defaultConfig {/,/}/a\\n    signingConfigs {\n        release {\n            storeFile file("release.keystore")\n            storePassword "'${{ secrets.KEY_STORE_PASSWORD }}'"\n            keyAlias "'${{ secrets.KEY_ALIAS }}'"\n            keyPassword "'${{ secrets.KEY_PASSWORD }}'"\n        }\n    }' android/app/build.gradle
-            
-            # Reference signing config in buildTypes
-            sed -i '/release {/,/}/s/}/    signingConfig signingConfigs.release\n}/' android/app/build.gradle
-          else
-            echo "Signing config already exists in build.gradle"
-          fi
-          
-          # Verify keystore file exists in android/app/
-          if [ -f "android/app/release.keystore" ]; then
-            echo "✅ Keystore file exists in android/app/"
-          else
-            echo "WARNING: Keystore not found in android/app/, copying again..."
-            cp release.keystore android/app/release.keystore
-          fi
-          
-          # Create keystore.properties (as an additional way to provide keystore info)
-          echo "Creating keystore.properties..."
-          cat > android/keystore.properties << EOF
-          storePassword=${{ secrets.KEY_STORE_PASSWORD }}
-          keyPassword=${{ secrets.KEY_PASSWORD }}
-          keyAlias=${{ secrets.KEY_ALIAS }}
-          storeFile=release.keystore
-          EOF
-          
-          echo "==== ANDROID PROJECT READY ===="
-
-      # Setup Java for Android build - changed to JDK 17 for compatibility with Zap.Store
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      # Verify JDK version and make sure it's visible
-      - name: Verify Java version
-        run: |
-          echo "JAVA_HOME=$JAVA_HOME"
-          echo "PATH=$PATH"
-          echo "Java version:"
-          java -version
-          echo "Javac version:"
-          javac -version
-          echo "All java installations:"
-          which java || echo "No java found"
-          ls -la $JAVA_HOME/bin/ || echo "No JAVA_HOME/bin directory"
+          # Make a copy of the keystore in android/app/ directory
+          mkdir -p android/app/
+          cp release.keystore android/app/release.keystore
 
       # Setup Android SDK
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      # Sync React build with Android platform
+      - name: Sync Capacitor with Android
+        run: npx cap sync android
+
+      # Prepare Android project for Java 17 compatibility
+      - name: Configure Android project for Java 17
+        run: |
+          # Create gradle.properties with Java 17 settings
+          cat > android/gradle.properties << EOF
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED
+          org.gradle.java.home=${JAVA_HOME}
+          android.useAndroidX=true
+          android.enableJetifier=true
+          kotlin.jvm.target.validation.mode=warning
+          EOF
+          
+          # Configure signing in app/build.gradle
+          if ! grep -q "signingConfigs" android/app/build.gradle; then
+            sed -i '/defaultConfig {/,/}/a\\n    signingConfigs {\n        release {\n            storeFile file("release.keystore")\n            storePassword "'${{ secrets.KEY_STORE_PASSWORD }}'"\n            keyAlias "'${{ secrets.KEY_ALIAS }}'"\n            keyPassword "'${{ secrets.KEY_PASSWORD }}'"\n        }\n    }' android/app/build.gradle
+            sed -i '/release {/,/}/s/}/    signingConfig signingConfigs.release\n}/' android/app/build.gradle
+          fi
+          
+          # Fix Java 17 compatibility in build.gradle
+          sed -i 's/sourceCompatibility JavaVersion.VERSION_1_8/sourceCompatibility JavaVersion.VERSION_17/' android/app/build.gradle || echo "No Java 8 reference to update"
+          sed -i 's/targetCompatibility JavaVersion.VERSION_1_8/targetCompatibility JavaVersion.VERSION_17/' android/app/build.gradle || echo "No Java 8 reference to update"
+          sed -i 's/sourceCompatibility = JavaVersion.VERSION_1_8/sourceCompatibility = JavaVersion.VERSION_17/' android/app/build.gradle || echo "No Java 8 reference to update"
+          sed -i 's/targetCompatibility = JavaVersion.VERSION_1_8/targetCompatibility = JavaVersion.VERSION_17/' android/app/build.gradle || echo "No Java 8 reference to update"
+          
+          # Disable AAPT2 crunching to avoid resource processing issues
+          if ! grep -q "aaptOptions" android/app/build.gradle; then
+            sed -i '/defaultConfig {/,/}/a\\n    aaptOptions {\n        cruncherEnabled false\n    }' android/app/build.gradle
+          fi
+
       # Grant execute permissions for Gradle wrapper
       - name: Grant execute permission to Gradle wrapper
         run: chmod +x ./android/gradlew
 
-      # Fix Java version - simplified approach
-      - name: Prepare Java 17 environment
-        run: |
-          echo "=== Setting up Java 17 compatibility ==="
-          
-          # Create gradle.properties with Java 17 settings
-          cat > android/gradle.properties << EOF
-          # Java 17 settings
-          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --add-opens java.base/java.io=ALL-UNNAMED
-          org.gradle.java.home=${JAVA_HOME}
-          android.useAndroidX=true
-          kotlin.jvm.target.validation.mode=warning
-          # Debug settings
-          org.gradle.logging.level=debug
-          EOF
-          
-          echo "=== Java setup complete ==="
-
-      # Build Release APK instead of Debug
+      # Build Release APK
       - name: Build Release APK
         id: build_apk
         run: |
           cd android
           
-          # Create direct signing config to avoid issues
-          echo "// Direct signing configuration" > app/signing.gradle
-          cat >> app/signing.gradle << EOF
-          android {
-              signingConfigs {
-                  release {
-                      storeFile file("release.keystore")
-                      storePassword "${KEY_STORE_PASSWORD}"
-                      keyAlias "${KEY_ALIAS}"
-                      keyPassword "${KEY_PASSWORD}"
-                  }
-              }
-              
-              buildTypes {
-                  release {
-                      signingConfig signingConfigs.release
-                  }
-              }
-          }
-          EOF
-          
-          # Add the signing config to app's build.gradle
-          echo "apply from: 'signing.gradle'" >> app/build.gradle
-          
-          # Simplify build process and reduce dependencies
-          echo "==== MODIFYING BUILD.GRADLE FOR SIMPLER BUILD ===="
-          cp app/build.gradle app/build.gradle.original
-          
-          # Try to disable unneeded plugins temporarily as a test
-          if grep -q "capacitor-community-background-geolocation" app/build.gradle; then
-            echo "Temporarily commenting out background-geolocation plugin for test build"
-            sed -i 's/implementation project(":capacitor-community-background-geolocation")/\/\/implementation project(":capacitor-community-background-geolocation")/' app/build.gradle
-          fi
-          
-          # Fix for resource issues - first clean
-          echo "==== CLEANING PROJECT ===="
+          # Clean project
           ./gradlew clean
           
-          # Build debug with less verbosity first
-          echo "==== BUILDING DEBUG APK WITH MINIMAL CONFIGURATION ===="
-          ./gradlew assembleDebug --quiet || echo "Debug build failed but continuing"
-          
-          # Try with release but reduced configuration
-          echo "==== BUILDING RELEASE APK WITH MINIMAL PROFILE ===="
-          ./gradlew assembleRelease --quiet -x lint -x lintVitalRelease || echo "First attempt failed, trying alternative approach"
-          
-          # Check for APKs at this point
-          find . -name "*.apk" -type f | sort
-          
-          # If no APKs found, restore original build.gradle and try again with more detailed output
-          if [ $(find . -name "*.apk" -type f | wc -l) -eq 0 ]; then
-            echo "No APKs found with simplified build. Restoring original build.gradle and trying again."
-            cp app/build.gradle.original app/build.gradle
+          # Build release APK with detailed logging
+          ./gradlew assembleRelease --info || {
+            echo "Release build failed, attempting to build debug APK as fallback"
+            ./gradlew assembleDebug --info
             
-            # Try just basic build with stacktrace
-            ./gradlew --stacktrace assembleRelease
+            # If debug build succeeds, use it as our release APK
+            if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+              mkdir -p app/build/outputs/apk/release
+              cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release-unsigned.apk
+              echo "Using debug APK as release APK"
+            else
+              echo "Both release and debug builds failed"
+              exit 1
+            fi
+          }
+
+      # Locate the APK file
+      - name: Locate APK file
+        id: locate_apk
+        run: |
+          APK_PATH=$(find android -name "app-release-unsigned.apk" -o -name "app-release.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH=$(find android -name "app-debug.apk" | head -n 1)
           fi
-          
-          # Check for APKs
-          echo "==== CHECKING FOR APK FILES ===="
-          find . -name "*.apk" -type f | sort
-          
-          # Verify debug APK exists as fallback
-          DEBUG_APK=$(find . -name "*debug*.apk" -type f | head -n 1)
-          
-          # Create output directory
-          mkdir -p app/build/outputs/apk/release
-          
-          # Try using release APK first, fallback to debug if needed
-          RELEASE_APK=$(find . -name "*release*.apk" -type f | head -n 1)
-          if [ -n "$RELEASE_APK" ]; then
-            echo "Found release APK: $RELEASE_APK"
-            cp "$RELEASE_APK" app/build/outputs/apk/release/app-release-unsigned.apk
-          elif [ -n "$DEBUG_APK" ]; then
-            echo "No release APK found, using debug APK: $DEBUG_APK"
-            cp "$DEBUG_APK" app/build/outputs/apk/release/app-release-unsigned.apk
-            echo "WARNING: Using debug APK for signing!"
-          else
-            echo "No APK found after multiple attempts, build failed!"
+          if [ -z "$APK_PATH" ]; then
+            echo "No APK found"
             exit 1
           fi
-          
-          echo "APK copied to app/build/outputs/apk/release/app-release-unsigned.apk"
-          ls -la app/build/outputs/apk/release/
-        env:
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          echo "APK found at: $APK_PATH"
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
 
-      # Skip the locate_apk step as it's now handled in the build step
-      
-      # Sign APK directly with apksigner - more robust version
+      # Sign APK with apksigner
       - name: Sign APK with apksigner
         id: sign_app
         run: |
-          echo "==== SIGNING APK DIRECTLY ===="
+          # Find the latest build tools version
+          BUILD_TOOLS_VERSION=$(ls -1 $ANDROID_SDK_ROOT/build-tools/ | sort -V | tail -n 1)
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION/apksigner"
           
-          # Check for unsigned APK
-          UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
-          if [ ! -f "$UNSIGNED_APK" ]; then
-            echo "ERROR: Unsigned APK not found at expected location"
-            find android -name "*.apk" -type f
-            
-            # Try to find any APK as a fallback
-            FALLBACK_APK=$(find android -name "*.apk" -type f | head -n 1)
-            if [ -n "$FALLBACK_APK" ]; then
-              echo "Using fallback APK: $FALLBACK_APK"
-              mkdir -p $(dirname "$UNSIGNED_APK")
-              cp "$FALLBACK_APK" "$UNSIGNED_APK"
-            else
-              echo "No APK found to sign. Build failed completely."
-              exit 1
-            fi
-          fi
-          
-          # Create output directory
           mkdir -p android/app/build/outputs/apk/release/signed
           SIGNED_APK="android/app/build/outputs/apk/release/signed/app-release-signed.apk"
           
-          echo "Source APK details:"
-          ls -la "$UNSIGNED_APK"
-          file "$UNSIGNED_APK"
-          
-          # List available build tools
-          echo "Available build tools:"
-          ls -la $ANDROID_SDK_ROOT/build-tools/
-          
-          # Find the latest build tools version
-          BUILD_TOOLS_VERSION=$(ls -1 $ANDROID_SDK_ROOT/build-tools/ | sort -V | tail -n 1)
-          echo "Using build tools version: $BUILD_TOOLS_VERSION"
-          
-          # Check if apksigner exists
-          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION/apksigner"
-          if [ ! -f "$APKSIGNER" ]; then
-            echo "ERROR: apksigner not found at: $APKSIGNER"
-            exit 1
-          fi
-          
-          echo "APK signer details:"
-          ls -la "$APKSIGNER"
-          
-          # Check keystore exists
-          if [ ! -f "release.keystore" ]; then
-            echo "Keystore not found at: release.keystore"
-            exit 1
-          fi
-          
-          echo "Keystore details:"
-          ls -la release.keystore
-          
-          # Try signing with verbose output
-          echo "Signing APK..."
           "$APKSIGNER" sign --verbose \
             --ks release.keystore \
             --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
             --ks-pass pass:"${{ secrets.KEY_STORE_PASSWORD }}" \
             --key-pass pass:"${{ secrets.KEY_PASSWORD }}" \
             --out "$SIGNED_APK" \
-            "$UNSIGNED_APK"
+            "${{ env.APK_PATH }}"
           
-          # Check if signing worked
-          if [ ! -f "$SIGNED_APK" ]; then
-            echo "ERROR: Signing failed, signed APK not created"
-            exit 1
-          fi
-          
-          # Verify the signing
-          echo "Verifying signed APK..."
+          # Verify signing
           "$APKSIGNER" verify --verbose "$SIGNED_APK"
           
-          # Set output variable
+          echo "SIGNED_APK=$SIGNED_APK" >> $GITHUB_ENV
           echo "signedReleaseFile=$SIGNED_APK" >> $GITHUB_OUTPUT
-          
-          echo "==== APK SIGNED SUCCESSFULLY ===="
-          ls -la "$SIGNED_APK"
 
       # Create a Release
       - name: Create Release
@@ -397,27 +189,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ steps.sign_app.outputs.signedReleaseFile }}
-          asset_name: app-release-signed.apk
+          asset_path: ${{ env.SIGNED_APK }}
+          asset_name: runstr-${{ env.VERSION }}.apk
           asset_content_type: application/vnd.android.package-archive
 
       # Setup for Zap.Store publishing
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1.6.5
       
-      - name: Install Apktool
-        run: |
-          wget "https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool"
-          wget "https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar"
-          mv apktool_2.10.0.jar apktool.jar
-          sudo cp apktool /usr/local/bin
-          sudo cp apktool.jar /usr/local/bin
-          sudo chmod +x /usr/local/bin/apktool
-          sudo chmod +x /usr/local/bin/apktool.jar
-      
       - name: Get Zap.Store CLI
         run: |
-          mkdir -p /home/runner/.zapstore
           git clone https://github.com/zapstore/zapstore-cli.git
           cd zapstore-cli
           git fetch --tags
@@ -426,74 +207,18 @@ jobs:
           git checkout $TAG_NAME
           dart pub get
           dart compile exe lib/main.dart -o build
+          chmod +x build
       
       # Publish to Zap.Store
       - name: Publish to Zap.Store
         env:
           NSEC: ${{ secrets.NSEC }}
         run: |
-          echo "==== PREPARING FOR ZAP.STORE PUBLISHING ===="
-          
-          # Ensure we have a signed APK
-          SIGNED_APK="${{ steps.sign_app.outputs.signedReleaseFile }}"
-          if [ ! -f "$SIGNED_APK" ]; then
-            echo "ERROR: Signed APK file not found at: $SIGNED_APK"
-            echo "Looking for any APKs..."
-            find . -name "*.apk" -type f
-            
-            # Try to find any APK as a fallback
-            FALLBACK_APK=$(find . -name "*.apk" -type f | head -n 1)
-            if [ -n "$FALLBACK_APK" ]; then
-              echo "Using fallback APK: $FALLBACK_APK"
-              SIGNED_APK="$FALLBACK_APK"
-            else
-              echo "No APK found to publish. Cannot proceed."
-              exit 1
-            fi
-          fi
-          
-          # Copy the signed APK to a simpler location
-          echo "Copying signed APK to a simple path..."
-          cp "$SIGNED_APK" ./runstr-app.apk
-          
-          # Verify the APK exists and is valid
-          echo "APK details:"
-          ls -la ./runstr-app.apk
-          file ./runstr-app.apk
-          
-          # Navigate to the zapstore-cli directory
-          cd zapstore-cli
-          
-          # Make sure build script is executable
-          chmod +x ./build
-          
-          # Show zapstore-cli help
-          echo "zapstore-cli help:"
-          ./build --help || echo "Could not run help command"
-          
-          # Prepare full paths for parameters
-          APK_PATH="$GITHUB_WORKSPACE/runstr-app.apk"
-          echo "Using APK path: $APK_PATH"
-          
-          # Find the latest build tools version
           BUILD_TOOLS_VERSION=$(ls -1 $ANDROID_SDK_ROOT/build-tools/ | sort -V | tail -n 1)
           APKSIGNER_PATH="$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION/apksigner"
-          echo "Using apksigner path: $APKSIGNER_PATH"
           
-          # Try publishing with explicit paths and error handling
-          echo "==== PUBLISHING TO ZAP.STORE ===="
-          ./build publish "RUNSTR" --apk-path="$APK_PATH" --apksigner-path="$APKSIGNER_PATH" || {
-            echo "Zap.Store publishing failed with exit code $?"
-            echo "Trying alternative command format..."
-            
-            # Try alternative command format
-            ./build publish "RUNSTR" "$APK_PATH" || {
-              echo "Alternative publishing method also failed"
-              echo "APK path verified as: $APK_PATH"
-              echo "APK exists: $([ -f "$APK_PATH" ] && echo "YES" || echo "NO")"
-              echo "Exiting with error"
-              exit 1
-            }
+          cd zapstore-cli
+          ./build publish "RUNSTR" --apk-path="${{ env.SIGNED_APK }}" --apksigner-path="$APKSIGNER_PATH" || {
+            echo "First attempt failed, trying alternative format"
+            ./build publish "RUNSTR" "${{ env.SIGNED_APK }}"
           }
-          
-          echo "==== ZAP.STORE PUBLISHING COMPLETE ===="
