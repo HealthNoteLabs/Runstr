@@ -67,11 +67,22 @@ jobs:
         run: chmod +x ./android/gradlew
 
       # Fix Capacitor Java version
-      - name: Patch Capacitor Java version
+      - name: Patch Java version
         run: |
+          # Fix Capacitor module
           sed -i 's/sourceCompatibility JavaVersion.VERSION_21/sourceCompatibility JavaVersion.VERSION_17/g' node_modules/@capacitor/android/capacitor/build.gradle
           sed -i 's/targetCompatibility JavaVersion.VERSION_21/targetCompatibility JavaVersion.VERSION_17/g' node_modules/@capacitor/android/capacitor/build.gradle
-          echo "Patched Capacitor Java version from 21 to 17"
+          
+          # Fix app module
+          sed -i 's/sourceCompatibility JavaVersion.VERSION_21/sourceCompatibility JavaVersion.VERSION_17/g' android/app/build.gradle
+          sed -i 's/targetCompatibility JavaVersion.VERSION_21/targetCompatibility JavaVersion.VERSION_17/g' android/app/build.gradle
+          sed -i 's/sourceCompatibility = JavaVersion.VERSION_21/sourceCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
+          sed -i 's/targetCompatibility = JavaVersion.VERSION_21/targetCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
+          
+          # Check if there are any other Java 21 references in other modules
+          find android -name "build.gradle" -exec grep -l "VERSION_21" {} \; | xargs -I{} sed -i 's/VERSION_21/VERSION_17/g' {}
+          
+          echo "Patched Java version from 21 to 17 in all modules"
 
       # Generate keystore for signing
       - name: Generate Keystore
