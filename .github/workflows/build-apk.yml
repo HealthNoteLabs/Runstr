@@ -148,12 +148,6 @@ jobs:
           echo "App build.gradle content before modifications:"
           cat android/app/build.gradle || echo "app/build.gradle not found"
           
-          # Configure signing in app/build.gradle
-          if ! grep -q "signingConfigs" android/app/build.gradle; then
-            sed -i '/defaultConfig {/,/}/a\\n    signingConfigs {\n        release {\n            storeFile file("release.keystore")\n            storePassword "'${{ secrets.KEY_STORE_PASSWORD }}'"\n            keyAlias "'${{ secrets.KEY_ALIAS }}'"\n            keyPassword "'${{ secrets.KEY_PASSWORD }}'"\n        }\n    }' android/app/build.gradle
-            sed -i '/release {/,/}/s/}/    signingConfig signingConfigs.release\n}/' android/app/build.gradle
-          fi
-          
           # Fix Java 17 compatibility in build.gradle
           sed -i 's/sourceCompatibility JavaVersion.VERSION_1_8/sourceCompatibility JavaVersion.VERSION_17/' android/app/build.gradle || echo "No Java 8 reference to update"
           sed -i 's/targetCompatibility JavaVersion.VERSION_1_8/targetCompatibility JavaVersion.VERSION_17/' android/app/build.gradle || echo "No Java 8 reference to update"
@@ -168,41 +162,32 @@ jobs:
           # Fix repositories block to handle missing directories
           sed -i 's/flatDir{/flatDir {\n        dirs += ["libs"]\n        dirs += [file("capacitor-cordova-android-plugins\/src\/main\/libs")]\n        /' android/app/build.gradle || echo "No flatDir block found"
           
-          # Create a completely fresh build.gradle without any Google Services or servicesJSON references
-          # We use grep to find all lines that don't contain "servicesJSON" and rewrite the build.gradle file
-          grep -v "servicesJSON" android/app/build.gradle > /tmp/build.gradle.clean
-          grep -v "try\s*{" /tmp/build.gradle.clean > /tmp/build.gradle.clean2
-          grep -v "catch" /tmp/build.gradle.clean2 > android/app/build.gradle
-          
-          # Add our simple Google Services check at the end
-          echo -e "\n// Simple Google Services check" >> android/app/build.gradle
-          echo "if (file('google-services.json').exists()) {" >> android/app/build.gradle
-          echo "    apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
-          echo "}" >> android/app/build.gradle
-          
-          # Double-check for any remaining servicesJSON references
-          if grep -q "servicesJSON" android/app/build.gradle; then
-            echo "WARNING: servicesJSON still found in build.gradle after cleaning"
-            echo "Attempting more aggressive cleanup..."
-            
-            # Create a simplified build.gradle without the problematic sections
-            awk 'BEGIN {skip=0} 
-                 /servicesJSON/ {skip=1; next} 
-                 /try\s*{/ {skip=1; next} 
-                 /catch/ {skip=1; next} 
-                 /}/ && skip==1 {skip=0; next} 
-                 skip==0 {print}' android/app/build.gradle > /tmp/build.gradle.final
-            
-            mv /tmp/build.gradle.final android/app/build.gradle
-            
-            # Add our simple Google Services check at the end again
-            echo -e "\n// Simple Google Services check" >> android/app/build.gradle
-            echo "if (file('google-services.json').exists()) {" >> android/app/build.gradle
-            echo "    apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
-            echo "}" >> android/app/build.gradle
+          # Add signing configuration
+          if ! grep -q "signingConfigs" android/app/build.gradle; then
+            sed -i '/defaultConfig {/,/}/a\\n    signingConfigs {\n        release {\n            storeFile file("release.keystore")\n            storePassword "'${{ secrets.KEY_STORE_PASSWORD }}'"\n            keyAlias "'${{ secrets.KEY_ALIAS }}'"\n            keyPassword "'${{ secrets.KEY_PASSWORD }}'"\n        }\n    }' android/app/build.gradle
+            sed -i '/release {/,/}/s/}/    signingConfig signingConfigs.release\n}/' android/app/build.gradle
           fi
           
-          # Show final build.gradle content for verification
+          # Completely replace the Google Services section by creating a backup of the file
+          # and removing anything related to servicesJSON or Google Services
+          cp android/app/build.gradle /tmp/build.gradle.original
+          
+          # Build a clean file by selecting specific sections we know we want to keep
+          echo "// Extracting all parts of the build.gradle file except the Google Services code"
+          
+          # Use a pattern-based approach to extract and rebuild the file
+          cat /tmp/build.gradle.original | sed -n '1,/try {/p' | sed '/try {/d' > /tmp/build.gradle.new
+          
+          # Add our simple Google Services implementation to the end
+          echo "// Simple Google Services check" >> /tmp/build.gradle.new
+          echo "if (file('google-services.json').exists()) {" >> /tmp/build.gradle.new
+          echo "    apply plugin: 'com.google.gms.google-services'" >> /tmp/build.gradle.new
+          echo "}" >> /tmp/build.gradle.new
+          
+          # Replace the original file with our clean version
+          cp /tmp/build.gradle.new android/app/build.gradle
+          
+          # Verify the file is valid
           echo "Final app/build.gradle content:"
           cat android/app/build.gradle
 
