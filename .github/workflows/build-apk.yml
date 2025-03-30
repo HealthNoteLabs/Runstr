@@ -58,13 +58,18 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # Verify JDK version
+      # Verify JDK version and make sure it's visible
       - name: Verify Java version
         run: |
-          echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
-          echo "Using Java from: $JAVA_HOME"
+          echo "JAVA_HOME=$JAVA_HOME"
+          echo "PATH=$PATH"
+          echo "Java version:"
           java -version
+          echo "Javac version:"
           javac -version
+          echo "All java installations:"
+          which java || echo "No java found"
+          ls -la $JAVA_HOME/bin/ || echo "No JAVA_HOME/bin directory"
 
       # Setup Android SDK
       - name: Set up Android SDK
@@ -74,87 +79,105 @@ jobs:
       - name: Grant execute permission to Gradle wrapper
         run: chmod +x ./android/gradlew
 
-      # Fix Java version - comprehensive approach
-      - name: Patch Java version (comprehensive)
+      # Fix Java version - simplified approach
+      - name: Prepare Java 17 environment
         run: |
-          echo "=== Starting Java version patching ==="
+          echo "=== Setting up Java 17 compatibility ==="
           
-          # Create direct compiler override in app module
-          echo "Creating direct compiler override for app module"
-          mkdir -p android/app/src/main/java
-          cat > android/app/build.gradle.override << EOF
-          // Direct override for Java compilation
-          tasks.withType(JavaCompile) {
-              options.compilerArgs.add('-source')
-              options.compilerArgs.add('17')
-              options.compilerArgs.add('-target')
-              options.compilerArgs.add('17')
-              options.release.set(17)
-              sourceCompatibility = JavaVersion.VERSION_17
-              targetCompatibility = JavaVersion.VERSION_17
-          }
+          # Create gradle.properties with Java 17 settings
+          cat > android/gradle.properties << EOF
+          # Java 17 settings
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --add-opens java.base/java.io=ALL-UNNAMED
+          org.gradle.java.home=${JAVA_HOME}
+          android.useAndroidX=true
+          kotlin.jvm.target.validation.mode=warning
+          # Debug settings
+          org.gradle.logging.level=debug
           EOF
           
-          # Apply the override
-          echo "apply from: 'build.gradle.override'" >> android/app/build.gradle
-          
-          # Check all build.gradle files for Java version references
-          echo "Patching all build.gradle files:"
-          find . -name "build.gradle" -o -name "*.gradle.kts" | while read file; do
-            echo "Checking file: $file"
-            if grep -q "VERSION_21\|Java 21\|JavaVersion.VERSION_21\|jvmTarget = \"21\"" "$file"; then
-              echo "Found Java 21 reference in $file, patching..."
-              sed -i 's/VERSION_21/VERSION_17/g' "$file"
-              sed -i 's/Java 21/Java 17/g' "$file"
-              sed -i 's/JavaVersion.VERSION_21/JavaVersion.VERSION_17/g' "$file"
-              sed -i 's/jvmTarget = "21"/jvmTarget = "17"/g' "$file"
-              sed -i 's/sourceCompatibility = JavaVersion.VERSION_21/sourceCompatibility = JavaVersion.VERSION_17/g' "$file"
-              sed -i 's/targetCompatibility = JavaVersion.VERSION_21/targetCompatibility = JavaVersion.VERSION_17/g' "$file"
-              sed -i 's/sourceCompatibility JavaVersion.VERSION_21/sourceCompatibility JavaVersion.VERSION_17/g' "$file"
-              sed -i 's/targetCompatibility JavaVersion.VERSION_21/targetCompatibility JavaVersion.VERSION_17/g' "$file"
-            fi
-          done
-          
-          # Create or update android/gradle.properties to enforce Java 17
-          echo "Ensuring Java 17 in gradle.properties"
-          if [ -f "android/gradle.properties" ]; then
-            # Remove any existing Java version settings
-            sed -i '/org.gradle.java.home/d' android/gradle.properties
-            # Add our Java 17 setting
-            echo "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --add-opens java.base/java.io=ALL-UNNAMED" >> android/gradle.properties
-            echo "org.gradle.java.home=${JAVA_HOME}" >> android/gradle.properties
-          fi
-          
-          # Create a temporary local.properties to override Java version
-          echo "Creating local.properties override"
-          echo "org.gradle.java.home=${JAVA_HOME}" > android/local.properties
-          
-          # For Kotlin code: make sure we're using JVM 17
-          echo "Patching Kotlin jvmTarget"
-          find . -name "*.gradle" -o -name "*.gradle.kts" | xargs sed -i 's/jvmTarget = "21"/jvmTarget = "17"/g'
-          
-          echo "=== Java version patching complete ==="
+          echo "=== Java setup complete ==="
 
       # Generate keystore for signing
       - name: Generate Keystore
+        id: generate_keystore
         run: |
-          keytool -genkey -v -keystore app-keystore.jks -alias ${{ secrets.KEY_ALIAS }} -keyalg RSA -keysize 2048 -validity 10000 -storepass ${{ secrets.KEY_STORE_PASSWORD }} -keypass ${{ secrets.KEY_PASSWORD }} -dname "cn=Unknown, ou=Unknown, o=Unknown, c=US"
+          # Generate keystore directly for signing
+          echo "${{ secrets.SIGNING_KEY_BASE64 || '' }}" > release.keystore.base64
+          # If we have a key base64, decode it
+          if [ -s release.keystore.base64 ]; then
+            # Platform-independent base64 decode
+            if [ "$(uname)" == "Darwin" ]; then
+              # macOS
+              base64 -D -i release.keystore.base64 -o release.keystore
+            else
+              # Linux and others
+              base64 -d release.keystore.base64 > release.keystore
+            fi
+          else
+            # Generate a new keystore if no base64 key is provided
+            keytool -genkey -v -keystore release.keystore -alias ${{ secrets.KEY_ALIAS }} -keyalg RSA -keysize 2048 -validity 10000 -storepass ${{ secrets.KEY_STORE_PASSWORD }} -keypass ${{ secrets.KEY_PASSWORD }} -dname "cn=Unknown, ou=Unknown, o=Unknown, c=US"
+            # Platform-independent base64 encode
+            if [ "$(uname)" == "Darwin" ]; then
+              # macOS
+              base64 -i release.keystore -o release.keystore.base64
+            else
+              # Linux and others
+              base64 release.keystore > release.keystore.base64
+            fi
+          fi
+          # Set the keystore base64 as an output and remove newlines
+          echo "keystore_base64=$(cat release.keystore.base64 | tr -d '\n')" >> $GITHUB_OUTPUT
+          echo "Keystore size: $(wc -c release.keystore | awk '{print $1}') bytes"
 
       # Build Release APK instead of Debug
       - name: Build Release APK
+        id: build_apk
+        continue-on-error: true  # Allow continuing to see detailed error output
         run: |
           cd android
-          # Explicitly set Java home for Gradle with direct Java 17 flags
-          ./gradlew -Dorg.gradle.java.home="$JAVA_HOME" \
-            -Pjava.home="$JAVA_HOME" \
-            -PcompileJava.source=17 \
-            -PcompileJava.target=17 \
-            -PcompileJava.release=17 \
-            -PcompileJava.sourceCompatibility=17 \
-            -PcompileJava.targetCompatibility=17 \
-            --warning-mode all \
-            assembleRelease \
-            --stacktrace
+          
+          # Print detailed info for debugging
+          echo "==== ENVIRONMENT INFO ===="
+          echo "JAVA_HOME = $JAVA_HOME"
+          echo "Android SDK = $ANDROID_SDK_ROOT"
+          echo "=========================="
+          
+          # Make absolutely sure we're using Java 17
+          echo "export JAVA_HOME=\"$JAVA_HOME\"" > java_home.sh
+          source java_home.sh
+          
+          # Explicitly prevent Java 21 usage
+          echo "==== CHECKING FOR JAVA 21 USAGE ===="
+          grep -r "JavaVersion.VERSION_21\|sourceCompatibility.*21\|targetCompatibility.*21\|JavaVersion.VERSION_1_21" --include="*.gradle" --include="*.gradle.kts" . || echo "No Java 21 references found!"
+          
+          # Try building with detailed output
+          ./gradlew --no-daemon --info --stacktrace \
+            -Dorg.gradle.java.home="$JAVA_HOME" \
+            assembleRelease
+          
+          # Check the build exit code
+          BUILD_RESULT=$?
+          if [ $BUILD_RESULT -ne 0 ]; then
+            echo "::error::Build failed with exit code $BUILD_RESULT"
+            
+            # Print Gradle diagnostics info
+            echo "==== GRADLE DIAGNOSTICS ===="
+            ./gradlew --debug --scan help || true
+            echo "==========================="
+            
+            # Check for Java version issues
+            echo "==== GRADLE PROJECT INFO ===="
+            ./gradlew -q projects || true
+            echo "============================"
+            
+            # Extra diagnostics - what files were generated?
+            echo "==== OUTPUT FILES ===="
+            find . -name "*.apk" | sort
+            echo "======================"
+            
+            # Exit with the original error code
+            exit $BUILD_RESULT
+          fi
 
       # Sign the release APK
       - name: Sign APK
@@ -162,11 +185,12 @@ jobs:
         uses: r0adkll/sign-android-release@v1
         with:
           releaseDirectory: android/app/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.SIGNING_KEY_BASE64 || 'skip' }}
-          keyStoreFile: app-keystore.jks
+          signingKeyBase64: ${{ steps.generate_keystore.outputs.keystore_base64 }}
           alias: ${{ secrets.KEY_ALIAS }}
           keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
           keyPassword: ${{ secrets.KEY_PASSWORD }}
+        env:
+          BUILD_TOOLS_VERSION: "34.0.0"
 
       # Create a Release
       - name: Create Release
