@@ -399,3 +399,48 @@ function calculateRecentDistance(positions) {
 
   return distance;
 }
+
+/**
+ * Encode a route into a polyline string
+ * @param {Array} route - Array of coordinates [{lat, lng}, ...]
+ * @returns {string} Encoded polyline string
+ */
+export function encodePolyline(route) {
+  if (!route || !Array.isArray(route) || route.length === 0) {
+    return '';
+  }
+
+  let encoded = '';
+  let lat = 0;
+  let lng = 0;
+
+  for (const point of route) {
+    const latDiff = Math.round((point.lat - lat) * 1e5);
+    const lngDiff = Math.round((point.lng - lng) * 1e5);
+    
+    lat = point.lat;
+    lng = point.lng;
+    
+    encoded += encodeNumber(latDiff) + encodeNumber(lngDiff);
+  }
+
+  return encoded;
+}
+
+/**
+ * Helper function to encode a number into a polyline string
+ * @param {number} num - Number to encode
+ * @returns {string} Encoded number string
+ */
+function encodeNumber(num) {
+  num = num < 0 ? ~(num << 1) : (num << 1);
+  let encoded = '';
+  
+  while (num >= 0x20) {
+    encoded += String.fromCharCode((0x20 | (num & 0x1f)) + 63);
+    num >>= 5;
+  }
+  
+  encoded += String.fromCharCode(num + 63);
+  return encoded;
+}

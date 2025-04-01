@@ -3,7 +3,7 @@ import { Platform } from '../utils/react-native-shim';
 import AmberAuth from '../services/AmberAuth';
 // Import nostr-tools implementation for fallback
 import { createAndPublishEvent as publishWithNostrTools } from './nostrClient';
-import { formatTime, formatDistance } from './formatters';
+import { formatTime, displayDistance } from './formatters';
 import { encodePolyline } from './runCalculations';
 
 // Optimized relay list based on testing results
@@ -870,11 +870,11 @@ export const createWorkoutRecordEvent = (runData, userNotes = "") => {
   // Build the base event
   const event = {
     kind: 1301,
-    content: userNotes || `Completed a ${formatDistance(runData.distance, runData.preferredUnit)} run.`,
+    content: userNotes || `Completed a ${displayDistance(runData.distance, runData.preferredUnit)} run.`,
     created_at: endTime,
     tags: [
       ["d", workoutId],
-      ["title", `${formatDistance(runData.distance, runData.preferredUnit)} Run`],
+      ["title", `${displayDistance(runData.distance, runData.preferredUnit)} Run`],
       ["type", "cardio"],
       ["start", startTime.toString()],
       ["end", endTime.toString()],
@@ -891,64 +891,5 @@ export const createWorkoutRecordEvent = (runData, userNotes = "") => {
     ]
   };
   
-  // Add splits data if available
-  if (runData.splits && runData.splits.length > 0) {
-    runData.splits.forEach((split, index) => {
-      const splitTag = formatSplitTag(split, index + 1, runData.preferredUnit);
-      event.tags.push(splitTag);
-    });
-  }
-  
-  // Add optional data if available
-  if (runData.avgHeartRate) {
-    event.tags.push(["heart_rate_avg", Math.round(runData.avgHeartRate).toString(), "bpm"]);
-  }
-  
-  if (runData.cadence) {
-    event.tags.push(["cadence_avg", Math.round(runData.cadence).toString(), "spm"]);
-  }
-  
-  // Add weather data if available
-  if (runData.weather) {
-    if (runData.weather.temperature) {
-      event.tags.push(["weather_temp", Math.round(runData.weather.temperature).toString(), "c"]);
-    }
-    if (runData.weather.humidity) {
-      event.tags.push(["weather_humidity", Math.round(runData.weather.humidity).toString(), "%"]);
-    }
-    if (runData.weather.condition) {
-      event.tags.push(["weather_condition", runData.weather.condition]);
-    }
-  }
-  
   return event;
-};
-
-/**
- * Publish a workout record to Nostr
- * @param {Object} runData - Run data object
- * @param {string} userNotes - Optional user notes
- * @returns {Promise<Object>} Result of publish attempt
- */
-export const publishWorkoutRecord = async (runData, userNotes = "") => {
-  try {
-    // Create the workout record event
-    const workoutEvent = createWorkoutRecordEvent(runData, userNotes);
-    
-    // Publish using existing infrastructure
-    const result = await createAndPublishEvent(workoutEvent);
-    
-    return {
-      success: true,
-      eventId: result.id,
-      publishedTo: result.publishedTo || 0,
-      totalRelays: RELAYS.length
-    };
-  } catch (error) {
-    console.error('Failed to publish workout record:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
 };
