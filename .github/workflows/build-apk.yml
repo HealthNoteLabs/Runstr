@@ -1,566 +1,94 @@
-name: Build, Sign and Release to Zap.Store
+name: Build and Release Simple-updates Debug Apk
 
 on:
   push:
     branches:
       - Simple-updates
-      - updates1
-  workflow_dispatch:
+      - updates1 # Added feed branch to automatically trigger the workflow
+  workflow_dispatch:  # Allows manual triggering
 
 jobs:
   build:
-    name: Build, Sign and Release APK
+    name: Build and Release Debug Apk
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
-      # Setup Java 17 specifically for Zap.Store compatibility
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
+        uses: actions/checkout@v3
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
           node-version: 20
 
-      - name: Verify Java version
-        run: |
-          echo "JAVA_HOME=$JAVA_HOME"
-          java -version
-          javac -version
-
       - name: Install dependencies
-        run: |
-          npm ci
-          # Install Capacitor CLI globally
-          npm install -g @capacitor/cli
-          # Install specific capacitor packages
-          npm install @capacitor/android @capacitor/core
-          # List installed packages to verify Capacitor installation
-          npm list --depth=1 | grep -i capacitor
+        run: npm ci
 
-      # Extract version and generate release tag
-      - name: Configure version information
-        id: version_info
-        run: |
-          echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
-          echo "DATE=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_ENV
-          echo "RELEASE_TAG=feed-${{ env.VERSION }}-${{ env.DATE }}" >> $GITHUB_ENV
+      # Extract version from package.json
+      - name: Get Version from package.json
+        id: package_version
+        run: echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
+
+      # Generate timestamp for uniqueness
+      - name: Generate Timestamp
+        id: timestamp
+        run: echo "DATE=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_ENV
+
+      # Generate release tag dynamically
+      - name: Generate Release Tag
+        id: release_tag
+        run: echo "RELEASE_TAG=feed-${{ env.VERSION }}-${{ env.DATE }}" >> $GITHUB_ENV
 
       # Build the React app
       - name: Build React app
         run: npm run build
 
-      # Generate keystore for signing
-      - name: Generate Keystore
-        id: generate_keystore
-        run: |
-          # Check if KEY_ALIAS, KEY_STORE_PASSWORD, and KEY_PASSWORD are set
-          if [ -z "${{ secrets.KEY_ALIAS }}" ] || [ -z "${{ secrets.KEY_STORE_PASSWORD }}" ] || [ -z "${{ secrets.KEY_PASSWORD }}" ]; then
-            echo "Error: Required secrets (KEY_ALIAS, KEY_STORE_PASSWORD, KEY_PASSWORD) are not set"
-            exit 1
-          fi
-          
-          keytool -genkey -v -keystore release.keystore \
-            -alias ${{ secrets.KEY_ALIAS }} \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass ${{ secrets.KEY_STORE_PASSWORD }} \
-            -keypass ${{ secrets.KEY_PASSWORD }} \
-            -dname "cn=Unknown, ou=Unknown, o=Unknown, c=US"
-          
-          # Make a copy of the keystore in android/app/ directory
-          mkdir -p android/app/
-          cp release.keystore android/app/release.keystore
+      # Install Capacitor CLI if not installed globally
+      - name: Install Capacitor CLI
+        run: npm install -g @capacitor/cli
+
+      # Sync React build with Android platform
+      - name: Sync Capacitor with Android
+        run: npx cap sync android
+
+      # Setup Java for Android build
+      - name: Set up JDK 21
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '21'
 
       # Setup Android SDK
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # Debug project structure
-      - name: Debug project structure
-        run: |
-          echo "Current directory structure:"
-          ls -la
-          echo "Package.json content:"
-          cat package.json
-          echo "Capacitor config:"
-          cat capacitor.config.ts || cat capacitor.config.js || cat capacitor.config.json || echo "No capacitor config found"
-          echo "node_modules structure:"
-          ls -la node_modules/@capacitor || echo "No @capacitor in node_modules"
-
-      # Proper Capacitor setup with clean structure
-      - name: Setup Capacitor Android platform
-        run: |
-          # Remove any existing Android platform
-          rm -rf android || true
-          
-          # Create fresh capacitor config if needed
-          if [ ! -f "capacitor.config.ts" ] && [ ! -f "capacitor.config.js" ] && [ ! -f "capacitor.config.json" ]; then
-            echo "Creating basic capacitor config"
-            echo "import { CapacitorConfig } from '@capacitor/cli';" > capacitor.config.ts
-            echo "" >> capacitor.config.ts
-            echo "const config: CapacitorConfig = {" >> capacitor.config.ts
-            echo "  appId: 'com.runstr.app'," >> capacitor.config.ts
-            echo "  appName: 'Runstr'," >> capacitor.config.ts
-            echo "  webDir: 'build'," >> capacitor.config.ts
-            echo "  bundledWebRuntime: false" >> capacitor.config.ts
-            echo "};" >> capacitor.config.ts
-            echo "" >> capacitor.config.ts
-            echo "export default config;" >> capacitor.config.ts
-          fi
-          
-          # Install specific version of cordova-android that works with Capacitor
-          npm install cordova-android@10.1.2
-          
-          # Add Android platform
-          npx cap add android
-          
-          # Copy web assets to Android
-          npx cap copy android
-          
-          # Make sure the cordova plugin directory exists
-          mkdir -p android/capacitor-cordova-android-plugins/src/main/libs
-          
-          # Make sure the app directory structure is correct
-          mkdir -p android/app/libs
-          
-          # Check if Android platform was created successfully
-          ls -la android || (echo "Android directory not created" && exit 1)
-          
-          # Show detailed Android structure for debugging
-          find android -type d | sort
-
-      # Prepare Android project for Java 17 compatibility
-      - name: Configure Android project for Java 17
-        run: |
-          # Create gradle.properties with Java 17 settings
-          echo "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED" > android/gradle.properties
-          echo "org.gradle.java.home=${JAVA_HOME}" >> android/gradle.properties
-          echo "android.useAndroidX=true" >> android/gradle.properties
-          echo "android.enableJetifier=true" >> android/gradle.properties
-          echo "kotlin.jvm.target.validation.mode=warning" >> android/gradle.properties
-          echo "org.gradle.caching=true" >> android/gradle.properties
-          echo "org.gradle.parallel=true" >> android/gradle.properties
-          
-          # Create a project-wide build.gradle that matches successful Zap.Store apps
-          echo "buildscript {" > android/build.gradle
-          echo "    ext {" >> android/build.gradle
-          echo "        minSdkVersion = 22" >> android/build.gradle
-          echo "        compileSdkVersion = 33" >> android/build.gradle
-          echo "        targetSdkVersion = 33" >> android/build.gradle
-          echo "        androidxActivityVersion = '1.4.0'" >> android/build.gradle
-          echo "        androidxAppCompatVersion = '1.4.2'" >> android/build.gradle
-          echo "        androidxCoordinatorLayoutVersion = '1.2.0'" >> android/build.gradle
-          echo "        androidxCoreVersion = '1.8.0'" >> android/build.gradle
-          echo "        androidxFragmentVersion = '1.4.1'" >> android/build.gradle
-          echo "        coreSplashScreenVersion = '1.0.0'" >> android/build.gradle
-          echo "        androidxWebkitVersion = '1.4.0'" >> android/build.gradle
-          echo "        junitVersion = '4.13.2'" >> android/build.gradle
-          echo "        androidxJunitVersion = '1.1.3'" >> android/build.gradle
-          echo "        androidxEspressoCoreVersion = '3.4.0'" >> android/build.gradle
-          echo "        cordovaAndroidVersion = '10.1.1'" >> android/build.gradle
-          echo "    }" >> android/build.gradle
-          echo "" >> android/build.gradle
-          echo "    repositories {" >> android/build.gradle
-          echo "        google()" >> android/build.gradle
-          echo "        mavenCentral()" >> android/build.gradle
-          echo "    }" >> android/build.gradle
-          echo "" >> android/build.gradle
-          echo "    dependencies {" >> android/build.gradle
-          echo "        classpath 'com.android.tools.build:gradle:7.3.1'" >> android/build.gradle
-          echo "        classpath 'com.google.gms:google-services:4.3.14'" >> android/build.gradle
-          echo "    }" >> android/build.gradle
-          echo "}" >> android/build.gradle
-          echo "" >> android/build.gradle
-          echo "allprojects {" >> android/build.gradle
-          echo "    repositories {" >> android/build.gradle
-          echo "        google()" >> android/build.gradle
-          echo "        mavenCentral()" >> android/build.gradle
-          echo "    }" >> android/build.gradle
-          echo "}" >> android/build.gradle
-          echo "" >> android/build.gradle
-          echo "task clean(type: Delete) {" >> android/build.gradle
-          echo "    delete rootProject.buildDir" >> android/build.gradle
-          echo "}" >> android/build.gradle
-          
-          # Create app/build.gradle based on successful Zap.Store apps
-          echo "apply plugin: 'com.android.application'" > android/app/build.gradle
-          echo "" >> android/app/build.gradle
-          echo "android {" >> android/app/build.gradle
-          echo "    compileSdkVersion rootProject.ext.compileSdkVersion" >> android/app/build.gradle
-          echo "    defaultConfig {" >> android/app/build.gradle
-          echo "        applicationId \"com.runstr.app\"" >> android/app/build.gradle
-          echo "        minSdkVersion rootProject.ext.minSdkVersion" >> android/app/build.gradle
-          echo "        targetSdkVersion rootProject.ext.targetSdkVersion" >> android/app/build.gradle
-          echo "        versionCode 1" >> android/app/build.gradle
-          echo "        versionName \"1.0\"" >> android/app/build.gradle
-          echo "        testInstrumentationRunner \"androidx.test.runner.AndroidJUnitRunner\"" >> android/app/build.gradle
-          echo "        aaptOptions {" >> android/app/build.gradle
-          echo "            cruncherEnabled false" >> android/app/build.gradle
-          echo "        }" >> android/app/build.gradle
-          echo "    }" >> android/app/build.gradle
-          echo "" >> android/app/build.gradle
-          echo "    signingConfigs {" >> android/app/build.gradle
-          echo "        release {" >> android/app/build.gradle
-          echo "            storeFile file(\"release.keystore\")" >> android/app/build.gradle
-          echo "            storePassword \"${{ secrets.KEY_STORE_PASSWORD }}\"" >> android/app/build.gradle
-          echo "            keyAlias \"${{ secrets.KEY_ALIAS }}\"" >> android/app/build.gradle
-          echo "            keyPassword \"${{ secrets.KEY_PASSWORD }}\"" >> android/app/build.gradle
-          echo "        }" >> android/app/build.gradle
-          echo "    }" >> android/app/build.gradle
-          echo "" >> android/app/build.gradle
-          echo "    buildTypes {" >> android/app/build.gradle
-          echo "        release {" >> android/app/build.gradle
-          echo "            minifyEnabled false" >> android/app/build.gradle
-          echo "            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'" >> android/app/build.gradle
-          echo "            signingConfig signingConfigs.release" >> android/app/build.gradle
-          echo "        }" >> android/app/build.gradle
-          echo "    }" >> android/app/build.gradle
-          echo "" >> android/app/build.gradle
-          echo "    compileOptions {" >> android/app/build.gradle
-          echo "        sourceCompatibility JavaVersion.VERSION_17" >> android/app/build.gradle
-          echo "        targetCompatibility JavaVersion.VERSION_17" >> android/app/build.gradle
-          echo "    }" >> android/app/build.gradle
-          echo "" >> android/app/build.gradle
-          echo "    dependenciesInfo {" >> android/app/build.gradle
-          echo "        // Disables dependency metadata when building APKs." >> android/app/build.gradle
-          echo "        includeInApk = false" >> android/app/build.gradle
-          echo "        // Disables dependency metadata when building Android App Bundles." >> android/app/build.gradle
-          echo "        includeInBundle = false" >> android/app/build.gradle
-          echo "    }" >> android/app/build.gradle
-          echo "}" >> android/app/build.gradle
-          echo "" >> android/app/build.gradle
-          echo "repositories {" >> android/app/build.gradle
-          echo "    google()" >> android/app/build.gradle
-          echo "    mavenCentral()" >> android/app/build.gradle
-          echo "    flatDir {" >> android/app/build.gradle
-          echo "        dirs 'libs'" >> android/app/build.gradle
-          echo "        dirs 'capacitor-cordova-android-plugins/src/main/libs'" >> android/app/build.gradle
-          echo "    }" >> android/app/build.gradle
-          echo "}" >> android/app/build.gradle
-          echo "" >> android/app/build.gradle
-          echo "dependencies {" >> android/app/build.gradle
-          echo "    implementation fileTree(include: ['*.jar'], dir: 'libs')" >> android/app/build.gradle
-          echo "    implementation \"androidx.appcompat:appcompat:\$androidxAppCompatVersion\"" >> android/app/build.gradle
-          echo "    implementation \"androidx.coordinatorlayout:coordinatorlayout:\$androidxCoordinatorLayoutVersion\"" >> android/app/build.gradle
-          echo "    implementation \"androidx.core:core-splashscreen:\$coreSplashScreenVersion\"" >> android/app/build.gradle
-          echo "    implementation project(':capacitor-android')" >> android/app/build.gradle
-          echo "    testImplementation \"junit:junit:\$junitVersion\"" >> android/app/build.gradle
-          echo "    androidTestImplementation \"androidx.test.ext:junit:\$androidxJunitVersion\"" >> android/app/build.gradle
-          echo "    androidTestImplementation \"androidx.test.espresso:espresso-core:\$androidxEspressoCoreVersion\"" >> android/app/build.gradle
-          echo "    implementation project(':capacitor-cordova-android-plugins')" >> android/app/build.gradle
-          echo "}" >> android/app/build.gradle
-          echo "" >> android/app/build.gradle
-          echo "apply from: 'capacitor.build.gradle'" >> android/app/build.gradle
-          echo "" >> android/app/build.gradle
-          echo "// Simple Google Services check" >> android/app/build.gradle
-          echo "if (file('google-services.json').exists()) {" >> android/app/build.gradle
-          echo "    apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
-          echo "}" >> android/app/build.gradle
-
       # Grant execute permissions for Gradle wrapper
       - name: Grant execute permission to Gradle wrapper
         run: chmod +x ./android/gradlew
 
-      # Configure Gradle for better Zap.Store compatibility
-      - name: Configure Gradle settings 
-        run: |
-          # Create gradle-wrapper.properties file with known working Gradle version
-          mkdir -p android/gradle/wrapper
-          echo "distributionBase=GRADLE_USER_HOME" > android/gradle/wrapper/gradle-wrapper.properties
-          echo "distributionPath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
-          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-7.5.1-all.zip" >> android/gradle/wrapper/gradle-wrapper.properties
-          echo "zipStoreBase=GRADLE_USER_HOME" >> android/gradle/wrapper/gradle-wrapper.properties
-          echo "zipStorePath=wrapper/dists" >> android/gradle/wrapper/gradle-wrapper.properties
-          
-          # Add enhanced Gradle settings.gradle with error handling for missing modules
-          echo "include ':app'" > android/settings.gradle
-          echo "include ':capacitor-android'" >> android/settings.gradle
-          echo "project(':capacitor-android').projectDir = new File('../node_modules/@capacitor/android/capacitor')" >> android/settings.gradle
-          echo "include ':capacitor-cordova-android-plugins'" >> android/settings.gradle
-          echo "project(':capacitor-cordova-android-plugins').projectDir = new File('../capacitor-cordova-android-plugins/')" >> android/settings.gradle
-          
-          # Add a helper function to handle missing plugins gracefully
-          echo "" >> android/settings.gradle
-          echo "// Helper function to include capacitor plugins safely" >> android/settings.gradle
-          echo "def includeSafely(String pluginPath, String projectName) {" >> android/settings.gradle
-          echo "    File pluginDir = new File(pluginPath)" >> android/settings.gradle
-          echo "    if (pluginDir.exists()) {" >> android/settings.gradle
-          echo "        include projectName" >> android/settings.gradle
-          echo "        project(projectName).projectDir = pluginDir" >> android/settings.gradle
-          echo "        return true" >> android/settings.gradle
-          echo "    } else {" >> android/settings.gradle
-          echo "        println \"Warning: Plugin directory \${pluginPath} not found. Skipping \${projectName}.\"" >> android/settings.gradle
-          echo "        return false" >> android/settings.gradle
-          echo "    }" >> android/settings.gradle
-          echo "}" >> android/settings.gradle
-          echo "" >> android/settings.gradle
-          echo "// Optional - try to include background geolocation plugin if it exists" >> android/settings.gradle
-          echo "includeSafely('../node_modules/@capacitor-community/background-geolocation/android', ':capacitor-community-background-geolocation')" >> android/settings.gradle
-          
-          # Fix the capacitor.build.gradle Java version - will be created by npx cap add android
-          if [ -f "android/app/capacitor.build.gradle" ]; then
-            echo "Checking capacitor.build.gradle for invalid Java version constants..."
-            # Replace VERSION_21 with VERSION_17
-            sed -i 's/JavaVersion.VERSION_21/JavaVersion.VERSION_17/g' android/app/capacitor.build.gradle
-            # Also check for other invalid versions that might be used
-            sed -i 's/JavaVersion.VERSION_1_8/JavaVersion.VERSION_17/g' android/app/capacitor.build.gradle
-            sed -i 's/JavaVersion.VERSION_11/JavaVersion.VERSION_17/g' android/app/capacitor.build.gradle
-            sed -i 's/JavaVersion.VERSION_15/JavaVersion.VERSION_17/g' android/app/capacitor.build.gradle
-            cat android/app/capacitor.build.gradle
-          else
-            echo "capacitor.build.gradle not found yet, will check again later"
-          fi
-
-      # Build Release APK
-      - name: Build Release APK
-        id: build_apk
-        run: |
-          # Final check for capacitor.build.gradle Java version
-          if [ -f "android/app/capacitor.build.gradle" ]; then
-            echo "Performing final check of capacitor.build.gradle for Java version"
-            if grep -q "VERSION_21" android/app/capacitor.build.gradle; then
-              echo "Found JavaVersion.VERSION_21 in capacitor.build.gradle, fixing..."
-              sed -i 's/JavaVersion.VERSION_21/JavaVersion.VERSION_17/g' android/app/capacitor.build.gradle
-            fi
-            echo "capacitor.build.gradle content:"
-            cat android/app/capacitor.build.gradle
-          else
-            # Create a fallback capacitor.build.gradle if it doesn't exist
-            echo "capacitor.build.gradle not found, creating a fallback version"
-            echo "// DO NOT EDIT - Generated by Capacitor" > android/app/capacitor.build.gradle
-            echo "ext {" >> android/app/capacitor.build.gradle
-            echo "    cdvMinSdkVersion = project.hasProperty('minSdkVersion') ? project.minSdkVersion : 22" >> android/app/capacitor.build.gradle
-            echo "    // Due to AndroidX, this needs to be 19 or higher" >> android/app/capacitor.build.gradle
-            echo "    cdvCompileSdkVersion = project.hasProperty('compileSdkVersion') ? project.compileSdkVersion : 33" >> android/app/capacitor.build.gradle
-            echo "    cdvVersionCode = project.hasProperty('versionCode') ? project.versionCode : 1" >> android/app/capacitor.build.gradle
-            echo "    cdvVersionName = project.hasProperty('versionName') ? project.versionName : \"1.0\"" >> android/app/capacitor.build.gradle
-            echo "    cdvBuildToolsVersion = project.hasProperty('buildToolsVersion') ? project.buildToolsVersion : '33.0.0'" >> android/app/capacitor.build.gradle
-            echo "    cdvCompileOptions = [" >> android/app/capacitor.build.gradle
-            echo "        sourceCompatibility: JavaVersion.VERSION_17," >> android/app/capacitor.build.gradle
-            echo "        targetCompatibility: JavaVersion.VERSION_17" >> android/app/capacitor.build.gradle
-            echo "    ]" >> android/app/capacitor.build.gradle
-            echo "}" >> android/app/capacitor.build.gradle
-            echo "File created:"
-            cat android/app/capacitor.build.gradle
-          fi
-          
-          # Fix Java version in all gradle files
-          echo "Checking all Gradle files for Java version issues..."
-          find android -name "*.gradle" -type f -exec sed -i 's/JavaVersion.VERSION_21/JavaVersion.VERSION_17/g' {} \;
-          find android -name "*.gradle" -type f -exec sed -i 's/JavaVersion.VERSION_20/JavaVersion.VERSION_17/g' {} \;
-          find android -name "*.gradle" -type f -exec sed -i 's/JavaVersion.VERSION_1_8/JavaVersion.VERSION_17/g' {} \;
-          find android -name "*.gradle" -type f -exec sed -i 's/JavaVersion.VERSION_11/JavaVersion.VERSION_17/g' {} \;
-          find android -name "*.gradle" -type f -exec sed -i 's/JavaVersion.VERSION_15/JavaVersion.VERSION_17/g' {} \;
-          
-          # Fix missing cordova plugins in capacitor.build.gradle
-          echo "Checking for missing plugin dependencies in capacitor.build.gradle..."
-          
-          # First, create a backup of the original file
-          cp android/app/capacitor.build.gradle android/app/capacitor.build.gradle.bak
-          
-          # Specific fix for known problematic plugin
-          if grep -q "capacitor-community-background-geolocation" android/app/capacitor.build.gradle; then
-            echo "Removing reference to missing plugin capacitor-community-background-geolocation"
-            # Use sed to remove the dependency line for this plugin
-            sed -i '/implementation project.*capacitor-community-background-geolocation/d' android/app/capacitor.build.gradle
-          fi
-          
-          # More general approach - create a safer capacitor.build.gradle that won't fail on missing modules
-          echo "// DO NOT EDIT THIS FILE! IT IS GENERATED EACH TIME \"capacitor update\" IS RUN" > android/app/capacitor.build.gradle
-          echo "" >> android/app/capacitor.build.gradle
-          echo "android {" >> android/app/capacitor.build.gradle
-          echo "  compileOptions {" >> android/app/capacitor.build.gradle
-          echo "      sourceCompatibility JavaVersion.VERSION_17" >> android/app/capacitor.build.gradle
-          echo "      targetCompatibility JavaVersion.VERSION_17" >> android/app/capacitor.build.gradle
-          echo "  }" >> android/app/capacitor.build.gradle
-          echo "}" >> android/app/capacitor.build.gradle
-          echo "" >> android/app/capacitor.build.gradle
-          
-          # Check if cordova.variables.gradle exists and create it if needed
-          if [ ! -f "android/capacitor-cordova-android-plugins/cordova.variables.gradle" ]; then
-            echo "cordova.variables.gradle not found, creating it..."
-            mkdir -p android/capacitor-cordova-android-plugins
-            echo "// Variables shared between plugins" > android/capacitor-cordova-android-plugins/cordova.variables.gradle
-            echo "ext {" >> android/capacitor-cordova-android-plugins/cordova.variables.gradle
-            echo "    // Variables shared by plugins" >> android/capacitor-cordova-android-plugins/cordova.variables.gradle
-            echo "}" >> android/capacitor-cordova-android-plugins/cordova.variables.gradle
-          fi
-          
-          echo "apply from: \"../capacitor-cordova-android-plugins/cordova.variables.gradle\"" >> android/app/capacitor.build.gradle
-          
-          echo "" >> android/app/capacitor.build.gradle
-          echo "// Make sure we have the variables available" >> android/app/capacitor.build.gradle
-          echo "if (hasProperty('postBuildExtras')) {" >> android/app/capacitor.build.gradle
-          echo "  postBuildExtras()" >> android/app/capacitor.build.gradle
-          echo "}" >> android/app/capacitor.build.gradle
-          
-          echo "Updated capacitor.build.gradle content:"
-          cat android/app/capacitor.build.gradle
-          
-          # Check for cordova-related files that might have the wrong Java version
-          find android -path "*cordova*" -name "*.java" | xargs grep -l "VERSION_" || echo "No Java files with VERSION_ found"
-          find android -path "*cordova*" -name "*.gradle" | xargs grep -l "VERSION_" || echo "No gradle files with VERSION_ found"
-          
-          cd android
-          
-          # Clean project
-          ./gradlew clean
-          
-          # List all available tasks for debugging
-          ./gradlew tasks
-          
-          # Try to build debug APK with more memory and detailed logging
-          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g" assembleDebug --stacktrace --info || {
-            echo "Debug build failed, checking project structure"
-            ls -la
-            cat app/build.gradle || echo "app/build.gradle not found"
-            exit 1
-          }
-          
-          # Create a resource fix 
-          # This helps with resource processing issues seen in successful Zap.Store apps
-          mkdir -p app/src/main/res/xml/
-          echo '<?xml version="1.0" encoding="utf-8"?>' > app/src/main/res/xml/network_security_config.xml
-          echo '<network-security-config>' >> app/src/main/res/xml/network_security_config.xml
-          echo '    <base-config cleartextTrafficPermitted="true" />' >> app/src/main/res/xml/network_security_config.xml
-          echo '</network-security-config>' >> app/src/main/res/xml/network_security_config.xml
-          
-          # Update AndroidManifest if network_security_config not referenced
-          if ! grep -q "android:networkSecurityConfig" app/src/main/AndroidManifest.xml; then
-            sed -i '/<application/a\        android:networkSecurityConfig="@xml/network_security_config"' app/src/main/AndroidManifest.xml
-          fi
-          
-          # Add app icons if missing (common issue in Zap.Store apps)
-          if [ ! -f "app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" ]; then
-            echo "Creating default app icons"
-            mkdir -p app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}
-            # Use a simple command to generate placeholder icons
-            convert -size 48x48 xc:skyblue -gravity center -pointsize 20 -annotate 0 "R" app/src/main/res/mipmap-mdpi/ic_launcher.png || echo "Icon creation skipped - ImageMagick not available"
-            convert -size 72x72 xc:skyblue -gravity center -pointsize 30 -annotate 0 "R" app/src/main/res/mipmap-hdpi/ic_launcher.png || echo "Icon creation skipped"
-            convert -size 96x96 xc:skyblue -gravity center -pointsize 40 -annotate 0 "R" app/src/main/res/mipmap-xhdpi/ic_launcher.png || echo "Icon creation skipped"
-            convert -size 144x144 xc:skyblue -gravity center -pointsize 60 -annotate 0 "R" app/src/main/res/mipmap-xxhdpi/ic_launcher.png || echo "Icon creation skipped"
-            convert -size 192x192 xc:skyblue -gravity center -pointsize 80 -annotate 0 "R" app/src/main/res/mipmap-xxxhdpi/ic_launcher.png || echo "Icon creation skipped"
-          fi
-          
-          # Only attempt release build if debug was successful
-          ./gradlew --no-daemon -Dorg.gradle.jvmargs="-Xmx4g" assembleRelease --info || {
-            echo "Release build failed, using debug APK as fallback"
-            # If debug build succeeded, use it as our release APK
-            if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
-              mkdir -p app/build/outputs/apk/release
-              cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release-unsigned.apk
-              echo "Using debug APK as release APK"
-            else
-              echo "Both release and debug builds failed"
-              exit 1
-            fi
-          }
-
-      # Locate the APK file
-      - name: Locate APK file
-        id: locate_apk
-        run: |
-          APK_PATH=$(find android -name "app-release-unsigned.apk" -o -name "app-release.apk" | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            APK_PATH=$(find android -name "app-debug.apk" | head -n 1)
-          fi
-          if [ -z "$APK_PATH" ]; then
-            echo "No APK found"
-            exit 1
-          fi
-          echo "APK found at: $APK_PATH"
-          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
-
-      # Sign APK with apksigner
-      - name: Sign APK with apksigner
-        id: sign_app
-        run: |
-          # Find the latest build tools version
-          BUILD_TOOLS_VERSION=$(ls -1 $ANDROID_SDK_ROOT/build-tools/ | sort -V | tail -n 1)
-          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION/apksigner"
-          
-          mkdir -p android/app/build/outputs/apk/release/signed
-          SIGNED_APK="android/app/build/outputs/apk/release/signed/app-release-signed.apk"
-          
-          "$APKSIGNER" sign --verbose \
-            --ks release.keystore \
-            --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
-            --ks-pass pass:"${{ secrets.KEY_STORE_PASSWORD }}" \
-            --key-pass pass:"${{ secrets.KEY_PASSWORD }}" \
-            --out "$SIGNED_APK" \
-            "${{ env.APK_PATH }}"
-          
-          # Verify signing
-          "$APKSIGNER" verify --verbose "$SIGNED_APK"
-          
-          echo "SIGNED_APK=$SIGNED_APK" >> $GITHUB_ENV
-          echo "signedReleaseFile=$SIGNED_APK" >> $GITHUB_OUTPUT
+      # Build Debug APK
+      - name: Build Debug APK
+        run: cd android && ./gradlew assembleDebug
 
       # Create a Release
       - name: Create Release
         id: create_release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: 'Release ${{ env.RELEASE_TAG }}'
-          files: ${{ env.SIGNED_APK }}
-          draft: false
-          prerelease: true
+        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          release_name: 'Feed Fix ${{ env.RELEASE_TAG }}'
+          draft: false
+          prerelease: true
 
-      # Setup for Zap.Store publishing
-      - name: Setup Dart SDK
-        uses: dart-lang/setup-dart@v1.6.5
-      
-      - name: Get Zap.Store CLI
-        run: |
-          git clone https://github.com/zapstore/zapstore-cli.git
-          cd zapstore-cli
-          git fetch --tags
-          LATEST_RELEASE=$(curl -s https://api.github.com/repos/zapstore/zapstore-cli/releases/latest)
-          TAG_NAME=$(echo $LATEST_RELEASE | jq -r .tag_name)
-          git checkout $TAG_NAME
-          dart pub get
-          dart compile exe lib/main.dart -o build
-          chmod +x build
-      
-      # Publish to Zap.Store
-      - name: Publish to Zap.Store
+      # Upload Debug APK to Release
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
         env:
-          NSEC: ${{ secrets.NSEC }}
-        run: |
-          # Check if NSEC secret is set
-          if [ -z "$NSEC" ]; then
-            echo "Error: NSEC secret is not set"
-            exit 1
-          fi
-          
-          BUILD_TOOLS_VERSION=$(ls -1 $ANDROID_SDK_ROOT/build-tools/ | sort -V | tail -n 1)
-          APKSIGNER_PATH="$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION/apksigner"
-          
-          cd zapstore-cli
-          
-          # Try multiple publishing approaches (based on successful publishing patterns)
-          echo "Attempting to publish to Zap.Store using method 1..."
-          ./build publish "RUNSTR" --apk-path="${{ env.SIGNED_APK }}" --apksigner-path="$APKSIGNER_PATH" || {
-            echo "Method 1 failed, trying method 2..."
-            ./build publish "RUNSTR" "${{ env.SIGNED_APK }}" || {
-              echo "Method 2 failed, trying method 3..."
-              ./build publish --app-id="RUNSTR" --apk-path="${{ env.SIGNED_APK }}" || {
-                echo "Method 3 failed, trying method 4..."
-                ./build publish --app="RUNSTR" --apk="${{ env.SIGNED_APK }}" --apksigner="$APKSIGNER_PATH" || {
-                  echo "All publishing methods failed. Please check the Zap.Store CLI documentation."
-                  exit 1
-                }
-              }
-            }
-          }
-          
-          echo "Successfully published to Zap.Store!"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: android/app/build/outputs/apk/debug/app-debug.apk
+          asset_name: app-debug.apk
+          asset_content_type: application/vnd.android.package-archive

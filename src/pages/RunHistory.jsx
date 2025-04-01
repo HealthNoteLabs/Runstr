@@ -1,177 +1,128 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useDistanceUnit } from '../contexts/DistanceUnitContext';
+import { displayDistance, formatTime, formatElevation, formatDate } from '../utils/formatters';
 import { createAndPublishEvent } from '../utils/nostr';
 import { useRunStats } from '../hooks/useRunStats';
 import { useRunProfile } from '../hooks/useRunProfile';
-import { formatTime, displayDistance, formatElevation, formatDate } from '../utils/formatters';
 import runDataService from '../services/RunDataService';
+import DeleteConfirmationDialog from '../components/DeleteConfirmationDialog';
+import '../styles/components/DeleteConfirmationDialog.css';
+import '../styles/components/Toast.css';
+import '../styles/components/RunHistory.css';
 
 export const RunHistory = () => {
   const navigate = useNavigate();
-  // State for run history
+  const { distanceUnit } = useDistanceUnit();
   const [runHistory, setRunHistory] = useState([]);
+  const [showModal, setShowModal] = useState(false);
   const [selectedRun, setSelectedRun] = useState(null);
   const [additionalContent, setAdditionalContent] = useState('');
-  const [showModal, setShowModal] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
-  const [distanceUnit, setDistanceUnit] = useState(() => localStorage.getItem('distanceUnit') || 'km');
-  const [npub, setNpub] = useState(() => localStorage.getItem('currentNpub'));
-  const [publishEnabled, setPublishEnabled] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [runToDelete, setRunToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Get user profile and distance unit from custom hooks
-  const { userProfile: profile } = useRunProfile();
-
-  const {
-    stats,
-    calculateStats,
-    calculateCaloriesBurned
-  } = useRunStats(runHistory, profile);
+  const { profile } = useRunProfile();
+  const { stats, calculateStats } = useRunStats(runHistory, profile);
 
   // Load run history on component mount and listen for updates
   useEffect(() => {
-    loadRunHistory();
-    
-    // Add event listener for run history updates
-    const handleRunHistoryUpdate = () => {
-      console.log("Run history update event received");
-      loadRunHistory();
-    };
-    
-    document.addEventListener('runHistoryUpdated', handleRunHistoryUpdate);
-    document.addEventListener('runCompleted', handleRunHistoryUpdate);
-    
-    return () => {
-      document.removeEventListener('runHistoryUpdated', handleRunHistoryUpdate);
-      document.removeEventListener('runCompleted', handleRunHistoryUpdate);
-    };
-  }, []);
-
-  // Listen for changes to the distance unit in localStorage
-  useEffect(() => {
-    const handleStorageChange = () => {
-      const newUnit = localStorage.getItem('distanceUnit') || 'km';
-      if (newUnit !== distanceUnit) {
-        setDistanceUnit(newUnit);
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Using a shorter interval for Android optimization
-    const checkInterval = setInterval(() => {
-      // Check for unit changes
-      const currentUnit = localStorage.getItem('distanceUnit') || 'km';
-      if (currentUnit !== distanceUnit) {
-        setDistanceUnit(currentUnit);
-      }
-      
-      // Check for run history changes
-      const storedRuns = localStorage.getItem('runHistory');
-      if (storedRuns) {
+    const storedRuns = localStorage.getItem('runHistory');
+    if (storedRuns) {
+      try {
         const parsedRuns = JSON.parse(storedRuns);
-        if (parsedRuns.length !== runHistory.length) {
-          loadRunHistory();
+        setRunHistory(parsedRuns);
+        calculateStats(parsedRuns);
+      } catch (error) {
+        console.error('Error loading run history:', error);
+      }
+    }
+
+    // Listen for run completed events
+    const handleRunCompleted = () => {
+      const updatedRuns = localStorage.getItem('runHistory');
+      if (updatedRuns) {
+        try {
+          const parsedRuns = JSON.parse(updatedRuns);
+          setRunHistory(parsedRuns);
+          calculateStats(parsedRuns);
+        } catch (error) {
+          console.error('Error loading run history:', error);
         }
       }
-    }, 1500); // Increased from 1000ms to 1500ms to reduce battery usage
+    };
+
+    // Listen for run deleted events
+    const handleRunDeleted = (event) => {
+      const { updatedRuns } = event.detail;
+      setRunHistory(updatedRuns);
+      calculateStats(updatedRuns);
+    };
+
+    document.addEventListener('runCompleted', handleRunCompleted);
+    document.addEventListener('runDeleted', handleRunDeleted);
 
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      clearInterval(checkInterval);
+      document.removeEventListener('runCompleted', handleRunCompleted);
+      document.removeEventListener('runDeleted', handleRunDeleted);
     };
-  }, [distanceUnit, runHistory.length, setDistanceUnit]);
+  }, [calculateStats]);
 
-  // Load and process run history from localStorage
-  const loadRunHistory = () => {
+  const handleDeleteRequest = (run) => {
+    setRunToDelete(run);
+    setShowDeleteDialog(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!runToDelete) return;
+    
+    setIsDeleting(true);
+    
     try {
-      // Use RunDataService to get runs instead of directly from localStorage
-      const parsedRuns = runDataService.getAllRuns();
+      // Delete the run using RunDataService
+      const success = runDataService.deleteRun(runToDelete.id);
       
-      // Create a map to store unique runs by their date and metrics
-      const uniqueRunsMap = new Map();
-      const seenIds = new Set();
-      const now = new Date();
-      
-      // First pass: identify unique runs and fix missing IDs, future dates, and unrealistic values
-      const fixedRuns = parsedRuns.reduce((acc, run) => {
-        // Fix future dates - replace with current date
-        let runDate = new Date(run.date);
-        if (isNaN(runDate.getTime()) || runDate > now) {
-          run.date = now.toLocaleDateString();
-          // Update the run using the service
-          runDataService.updateRun(run.id, { date: run.date });
-        }
+      if (success) {
+        // Update local state
+        const updatedRuns = runHistory.filter(run => run.id !== runToDelete.id);
+        setRunHistory(updatedRuns);
         
-        // Fix unrealistic distance values (>100 km is extremely unlikely for normal runs)
-        const MAX_REALISTIC_DISTANCE = 100 * 1000; // 100 km in meters
-        if (isNaN(run.distance) || run.distance < 0) {
-          run.distance = 5000; // Default to 5 km for invalid distances
-          // Update the run using the service
-          runDataService.updateRun(run.id, { distance: run.distance });
-        } else if (run.distance > MAX_REALISTIC_DISTANCE) {
-          run.distance = Math.min(run.distance, MAX_REALISTIC_DISTANCE);
-          // Update the run using the service
-          runDataService.updateRun(run.id, { distance: run.distance });
-        }
+        // Recalculate stats
+        calculateStats(updatedRuns);
         
-        // Fix unrealistic durations (>24 hours is extremely unlikely)
-        const MAX_DURATION = 24 * 60 * 60; // 24 hours in seconds
-        if (isNaN(run.duration) || run.duration <= 0) {
-          run.duration = 30 * 60; // Default to 30 minutes for invalid durations
-          // Update the run using the service
-          runDataService.updateRun(run.id, { duration: run.duration });
-        } else if (run.duration > MAX_DURATION) {
-          run.duration = Math.min(run.duration, MAX_DURATION);
-          // Update the run using the service
-          runDataService.updateRun(run.id, { duration: run.duration });
-        }
-        
-        // Skip the rest of the checks if this run doesn't have an ID
-        if (!run.id) {
-          run.id = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-          // Update the run using the service
-          runDataService.updateRun(run.id, { id: run.id });
-        }
-        
-        // Create a signature for each run based on key properties
-        const runSignature = `${run.date}-${run.distance}-${run.duration}`;
-        
-        // If this is a duplicate entry (same date, distance, duration)
-        // and we've already seen it, skip it
-        if (uniqueRunsMap.has(runSignature)) {
-          return acc;
-        }
-
-        // Otherwise, this is a unique run, add it to the map and output
-        if (!seenIds.has(run.id)) {
-          uniqueRunsMap.set(runSignature, run);
-          seenIds.add(run.id);
-          acc.push(run);
-        }
-        
-        return acc;
-      }, []);
-
-      // Sort runs by date (newest first)
-      fixedRuns.sort((a, b) => {
-        const dateA = new Date(a.date);
-        const dateB = new Date(b.date);
-        return dateB - dateA;
-      });
-
-      setRunHistory(fixedRuns);
+        // Show success message
+        showToast('Run successfully deleted');
+      } else {
+        showToast('Failed to delete run', 'error');
+      }
     } catch (error) {
-      console.error('Error loading run history:', error);
-      setRunHistory([]);
+      console.error('Error deleting run:', error);
+      showToast('Error deleting run', 'error');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+      setRunToDelete(null);
     }
   };
 
-  const handleDeleteRun = (runId) => {
-    if (window.confirm('Are you sure you want to delete this run?')) {
-      const updatedRuns = runHistory.filter((run) => run.id !== runId);
-      localStorage.setItem('runHistory', JSON.stringify(updatedRuns));
-      setRunHistory(updatedRuns);
-    }
+  const handleDeleteCancel = () => {
+    setShowDeleteDialog(false);
+    setRunToDelete(null);
+  };
+
+  const showToast = (message, type = 'success') => {
+    // Create and show a toast notification
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // Remove toast after 3 seconds
+    setTimeout(() => {
+      toast.remove();
+    }, 3000);
   };
 
   const handlePostToNostr = (run) => {
@@ -187,7 +138,7 @@ export const RunHistory = () => {
     
     try {
       const run = selectedRun;
-      const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration);
+      const caloriesBurned = calculateStats(run.distance, run.duration);
       
       const content = `
 Just completed a run with Runstr! 🏃‍♂️💨
@@ -241,33 +192,10 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     }
   };
 
-  // Toggle distance unit function
-  const toggleDistanceUnit = () => {
-    const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
-    setDistanceUnit(newUnit);
-    localStorage.setItem('distanceUnit', newUnit);
-  };
-
   return (
     <div className="run-history">
       <div className="stats-overview">
         <h2>STATS</h2>
-        <div className="flex justify-center my-4">
-          <div className="flex rounded-full bg-[#1a222e] p-1">
-            <button 
-              className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-              onClick={() => distanceUnit !== 'km' && toggleDistanceUnit()}
-            >
-              Kilometers
-            </button>
-            <button 
-              className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-              onClick={() => distanceUnit !== 'mi' && toggleDistanceUnit()}
-            >
-              Miles
-            </button>
-          </div>
-        </div>
         <button 
           className="profile-btn" 
           onClick={() => navigate('/profile')}
@@ -408,24 +336,26 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       </div>
 
       <h2>Run History</h2>
-      {runHistory.length === 0 ? (
-        <p>No runs recorded yet</p>
-      ) : (
+      {runHistory.length > 0 ? (
         <ul className="history-list">
           {runHistory.map((run) => {
-            const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration);
+            const caloriesBurned = calculateStats(run.distance, run.duration);
+            const activityMode = run.activityMode || 'run';
             
             // Calculate pace with the consistent service method
-            const pace = runDataService.calculatePace(run.distance, run.duration, distanceUnit).toFixed(2);
+            const pace = runDataService.calculatePace(run.distance, run.duration, distanceUnit);
             
             return (
-              <li key={run.id} className="history-item">
+              <li 
+                key={run.id} 
+                className={`history-item ${isDeleting && run.id === runToDelete?.id ? 'deleting' : ''}`}
+              >
                 <div className="run-date">{formatDate(run.date)}</div>
                 <div className="run-details">
                   <span>Duration: {formatTime(run.duration)}</span>
                   <span>Distance: {displayDistance(run.distance, distanceUnit)}</span>
                   <span>
-                    Pace: {pace} min/{distanceUnit}
+                    {activityMode === 'walk' ? 'Speed' : 'Pace'}: {runDataService.formatPace(pace, distanceUnit, activityMode)}
                   </span>
                   <span>Calories: {caloriesBurned} kcal</span>
                   {run.elevation && (
@@ -443,12 +373,14 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                   <button
                     onClick={() => handlePostToNostr(run)}
                     className="share-btn"
+                    disabled={isDeleting}
                   >
                     Share to Nostr
                   </button>
                   <button
-                    onClick={() => handleDeleteRun(run.id)}
+                    onClick={() => handleDeleteRequest(run)}
                     className="delete-btn"
+                    disabled={isDeleting}
                   >
                     Delete
                   </button>
@@ -457,6 +389,8 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             );
           })}
         </ul>
+      ) : (
+        <p className="no-runs">No runs recorded yet</p>
       )}
 
       {showModal && (
@@ -481,6 +415,15 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        isOpen={showDeleteDialog}
+        run={runToDelete}
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+        distanceUnit={distanceUnit}
+      />
     </div>
   );
 };

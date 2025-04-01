@@ -212,9 +212,44 @@ describe('RunTracker Service', () => {
     
     // Should record first split
     expect(runTracker.splits.length).toBe(1);
-    expect(runTracker.splits[0].km).toBe(1);
-    expect(runTracker.splits[0].time).toBe(runTracker.duration);
+    expect(runTracker.splits[0].distance).toBe(1);
+    expect(runTracker.splits[0].elapsedTime).toBe(runTracker.duration);
+    expect(runTracker.splits[0].splitTime).toBe(runTracker.duration); // First split time equals elapsed time
+    expect(runTracker.splits[0].unit).toBe('km');
     expect(splitRecordedSpy).toHaveBeenCalled();
+  });
+
+  it('should calculate split times correctly', () => {
+    // Set up event listener for split recording
+    const splitRecordedSpy = vi.fn();
+    runTracker.on('splitRecorded', splitRecordedSpy);
+    
+    // Start tracking
+    runTracker.isTracking = true;
+    runTracker.startTime = Date.now();
+    
+    // Simulate running 2km with different paces
+    runTracker.distance = 1000; // 1km
+    runTracker.duration = 360; // 6 minutes for first km
+    runTracker.addPosition({ latitude: 40.7128, longitude: -74.0060 });
+    
+    // Second km at a different pace
+    runTracker.distance = 2000; // 2km
+    runTracker.duration = 780; // 13 minutes total (7 minutes for second km)
+    runTracker.addPosition({ latitude: 40.7130, longitude: -74.0070 });
+    
+    // Should have two splits
+    expect(runTracker.splits.length).toBe(2);
+    
+    // First split
+    expect(runTracker.splits[0].distance).toBe(1);
+    expect(runTracker.splits[0].elapsedTime).toBe(360);
+    expect(runTracker.splits[0].splitTime).toBe(360);
+    
+    // Second split
+    expect(runTracker.splits[1].distance).toBe(2);
+    expect(runTracker.splits[1].elapsedTime).toBe(780);
+    expect(runTracker.splits[1].splitTime).toBe(420); // 780 - 360 = 420 seconds for second km
   });
 
   it('should clean up resources when stopped', async () => {
@@ -265,11 +300,11 @@ describe('RunTracker Service', () => {
       duration: 1800,
       pace: 0.36,
       splits: [
-        { km: 1, time: 360, pace: 0.36 },
-        { km: 2, time: 720, pace: 0.36 },
-        { km: 3, time: 1080, pace: 0.36 },
-        { km: 4, time: 1440, pace: 0.36 },
-        { km: 5, time: 1800, pace: 0.36 },
+        { distance: 1, elapsedTime: 360, splitTime: 360, splitPace: 0.36, unit: 'km' },
+        { distance: 2, elapsedTime: 720, splitTime: 360, splitPace: 0.36, unit: 'km' },
+        { distance: 3, elapsedTime: 1080, splitTime: 360, splitPace: 0.36, unit: 'km' },
+        { distance: 4, elapsedTime: 1440, splitTime: 360, splitPace: 0.36, unit: 'km' },
+        { distance: 5, elapsedTime: 1800, splitTime: 360, splitPace: 0.36, unit: 'km' },
       ],
       elevation: { gain: 50, loss: 40, current: 150, lastAltitude: 150 },
       timestamp: Date.now() - 10000 // 10 seconds ago

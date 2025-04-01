@@ -1,63 +1,69 @@
-import { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter as Router } from 'react-router-dom';
-import { NostrProvider } from './contexts/NostrProvider';
-import { AuthProvider } from './components/AuthProvider';
-import { AudioPlayerProvider } from './contexts/AudioPlayerProvider';
 import { RunTrackerProvider } from './contexts/RunTrackerContext';
+import { DistanceUnitProvider } from './contexts/DistanceUnitContext';
+import { RunClubProvider } from './contexts/RunClubContext';
+import { ChatProvider } from './contexts/ChatContext';
+import { EventProvider } from './contexts/EventContext';
 import { MenuBar } from './components/MenuBar';
-import { initializeNostr } from './utils/nostr';
-import './App.css';
+import { AppRoutes } from './AppRoutes';
+import { useEffect } from 'react';
 
-// Lazy load components
-const AppRoutes = lazy(() => import('./AppRoutes').then(module => ({ default: module.AppRoutes })));
-
-// Loading fallback
-const LoadingFallback = () => (
-  <div className="loading-spinner"></div>
-);
-
-const App = () => {
-  // Initialize Nostr connection as soon as the app launches
+export const App = () => {
+  // Set up viewport height for mobile browsers
   useEffect(() => {
-    const preloadNostr = async () => {
-      console.log('Preloading Nostr connection on app launch');
-      await initializeNostr();
-      
-      // Prefetch run feed data using dynamic import to avoid circular dependencies
-      try {
-        const { fetchRunningPosts } = await import('./utils/nostr');
-        console.log('Preloading feed data in background');
-        fetchRunningPosts(10).catch(err => 
-          console.error('Error preloading feed data:', err)
-        );
-      } catch (error) {
-        console.error('Error importing feed functions:', error);
-      }
+    const setVH = () => {
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
     };
-    
-    preloadNostr();
+
+    setVH();
+    window.addEventListener('resize', setVH);
+    window.addEventListener('orientationchange', setVH);
+
+    // Set status bar to transparent on Android
+    if (window.StatusBar) {
+      window.StatusBar.overlaysWebView(true);
+      window.StatusBar.backgroundColorByHexString('#1a2237');
+      window.StatusBar.styleLightContent();
+    }
+
+    return () => {
+      window.removeEventListener('resize', setVH);
+      window.removeEventListener('orientationchange', setVH);
+    };
   }, []);
-  
+
   return (
     <Router>
-      <NostrProvider>
-        <AuthProvider>
-          <AudioPlayerProvider>
-            <RunTrackerProvider>
-              <div className="relative w-full h-full bg-[#111827] text-white">
-                <MenuBar />
-                <main className="pb-24 max-w-[375px] mx-auto">
-                  <Suspense fallback={<LoadingFallback />}>
+      <RunTrackerProvider>
+        <DistanceUnitProvider>
+          <RunClubProvider>
+            <ChatProvider>
+              <EventProvider>
+                <div className="min-h-screen bg-[#1a2237] text-white flex flex-col">
+                  {/* Status bar spacer for iOS */}
+                  <div 
+                    className="w-full bg-[#1a2237]" 
+                    style={{ height: 'var(--safe-area-inset-top)' }} 
+                  />
+                  
+                  <MenuBar />
+                  
+                  <main className="flex-1 w-full max-w-[100vw] overflow-x-hidden">
                     <AppRoutes />
-                  </Suspense>
-                </main>
-              </div>
-            </RunTrackerProvider>
-          </AudioPlayerProvider>
-        </AuthProvider>
-      </NostrProvider>
+                  </main>
+                  
+                  {/* Bottom safe area spacer */}
+                  <div 
+                    className="w-full bg-[#1a2237]" 
+                    style={{ height: 'var(--safe-area-inset-bottom)' }} 
+                  />
+                </div>
+              </EventProvider>
+            </ChatProvider>
+          </RunClubProvider>
+        </DistanceUnitProvider>
+      </RunTrackerProvider>
     </Router>
   );
 };
-
-export default App;

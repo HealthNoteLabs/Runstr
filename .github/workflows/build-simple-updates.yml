@@ -27,6 +27,46 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
+      # Decode keystore from secrets
+      - name: Decode Keystore
+        id: decode_keystore
+        run: |
+          # Check if KEYSTORE_BASE64 is set
+          if [ -z "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "Error: KEYSTORE_BASE64 secret is not set"
+            exit 1
+          fi
+          
+          # Create directory for keystore
+          mkdir -p android/app/
+          
+          # Decode the base64 keystore to a file
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+          
+          # Verify the keystore was created
+          if [ ! -f "android/app/release.keystore" ]; then
+            echo "Error: Failed to create keystore file"
+            exit 1
+          fi
+          
+          echo "Keystore successfully decoded and saved to android/app/release.keystore"
+      
+      # Set up keystore properties file
+      - name: Set up keystore properties
+        run: |
+          # Check if KEY_ALIAS, KEY_STORE_PASSWORD, and KEY_PASSWORD are set
+          if [ -z "${{ secrets.KEY_ALIAS }}" ] || [ -z "${{ secrets.KEY_STORE_PASSWORD }}" ] || [ -z "${{ secrets.KEY_PASSWORD }}" ]; then
+            echo "Error: Required secrets (KEY_ALIAS, KEY_STORE_PASSWORD, KEY_PASSWORD) are not set"
+            exit 1
+          fi
+          
+          # Create keystore.properties file
+          mkdir -p android/
+          echo "storeFile=app/release.keystore" > android/keystore.properties
+          echo "storePassword=${{ secrets.KEY_STORE_PASSWORD }}" >> android/keystore.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/keystore.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/keystore.properties
+      
       - name: Build project
         run: npm run build
       

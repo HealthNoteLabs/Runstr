@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { FloatingMusicPlayer } from './FloatingMusicPlayer';
+import { useDistanceUnit } from '../contexts/DistanceUnitContext';
 
 export const MenuBar = () => {
-  const location = useLocation();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { distanceUnit, toggleDistanceUnit } = useDistanceUnit();
 
   const menuItems = [
     { 
@@ -50,34 +53,109 @@ export const MenuBar = () => {
   };
 
   return (
-    <div className="w-full">
+    <>
       {/* Header with Settings */}
-      <header className="flex justify-between items-center p-4 w-full max-w-[375px] mx-auto">
-        <Link to="/" className="text-xl font-bold">#RUNSTR</Link>
-        <div className="min-w-[120px]">
-          <FloatingMusicPlayer />
+      <header className="w-full bg-[#1a2237] z-50 relative">
+        <div className="flex justify-between items-center p-4 w-full max-w-[375px] mx-auto">
+          <Link to="/" className="text-xl font-bold text-white">#RUNSTR</Link>
+          <div className="min-w-[120px]">
+            <FloatingMusicPlayer />
+          </div>
+          <button 
+            className="text-gray-400 w-10 h-10 flex items-center justify-center" 
+            onClick={toggleSettings}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
         </div>
-        <button className="text-gray-400" onClick={toggleSettings}>
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </button>
+
+        {/* Bottom Navigation */}
+        <nav className="fixed bottom-0 left-0 right-0 bg-[#1a2237] border-t border-[#2a3548] pb-[var(--safe-area-inset-bottom)] z-50">
+          <div className="flex justify-around items-center h-16 max-w-[375px] mx-auto">
+            {menuItems.map((item) => (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`flex flex-col items-center justify-center w-full h-full text-sm ${
+                  location.pathname === item.path
+                    ? 'text-indigo-500'
+                    : 'text-gray-400'
+                }`}
+              >
+                {item.icon}
+                <span className="mt-1">{item.name}</span>
+              </Link>
+            ))}
+          </div>
+        </nav>
       </header>
 
       {/* Settings Modal */}
       {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black bg-opacity-70">
-          <div className="bg-[#1a222e] rounded-t-xl sm:rounded-xl w-full max-w-md p-6 shadow-lg">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-semibold">Settings</h3>
-              <button onClick={toggleSettings} className="text-gray-400">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="flex flex-col space-y-4">
+        <>
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 z-50"
+            onClick={toggleSettings}
+          />
+          <div className="fixed top-[var(--safe-area-inset-top)] right-0 bottom-0 w-[80%] max-w-[300px] bg-[#1a2237] p-6 z-50 overflow-y-auto">
+            <div className="flex flex-col gap-4">
+              {/* Distance Unit Toggle */}
+              <div className="flex items-center justify-between p-3 bg-[#111827] rounded-lg">
+                <div className="flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-3 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  </svg>
+                  <span>Distance Unit</span>
+                </div>
+                <div className="flex rounded-full bg-[#1a222e] p-1">
+                  <button 
+                    className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+                    onClick={() => distanceUnit !== 'mi' && toggleDistanceUnit()}
+                  >
+                    Miles
+                  </button>
+                  <button 
+                    className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+                    onClick={() => distanceUnit !== 'km' && toggleDistanceUnit()}
+                  >
+                    Kilometers
+                  </button>
+                </div>
+              </div>
+
+              {/* Activity Mode Toggle */}
+              <div className="flex items-center justify-between p-3 bg-[#111827] rounded-lg">
+                <div className="flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-3 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span>Activity Mode</span>
+                </div>
+                <div className="flex rounded-full bg-[#1a222e] p-1">
+                  <button 
+                    className={`px-6 py-2 rounded-full text-sm ${localStorage.getItem('activityMode') === 'run' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+                    onClick={() => {
+                      localStorage.setItem('activityMode', 'run');
+                      window.location.reload();
+                    }}
+                  >
+                    Run
+                  </button>
+                  <button 
+                    className={`px-6 py-2 rounded-full text-sm ${localStorage.getItem('activityMode') === 'walk' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+                    onClick={() => {
+                      localStorage.setItem('activityMode', 'walk');
+                      window.location.reload();
+                    }}
+                  >
+                    Walk
+                  </button>
+                </div>
+              </div>
+
               <Link 
                 to="/nwc" 
                 className="flex items-center p-3 bg-[#111827] rounded-lg text-white"
@@ -100,22 +178,8 @@ export const MenuBar = () => {
               </Link>
             </div>
           </div>
-        </div>
+        </>
       )}
-
-      {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 flex justify-around items-center bg-[#111827] border-t border-gray-800 py-4 max-w-[375px] mx-auto z-30">
-        {menuItems.map((item) => (
-          <Link 
-            key={item.name} 
-            to={item.path} 
-            className={`flex flex-col items-center text-xs ${location.pathname === item.path ? 'text-gray-300' : 'text-gray-500'}`}
-          >
-            {item.icon}
-            <span>{item.name}</span>
-          </Link>
-        ))}
-      </nav>
-    </div>
+    </>
   );
 };

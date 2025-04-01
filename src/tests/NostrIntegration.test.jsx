@@ -109,7 +109,13 @@ vi.mock('../services/RunTracker', () => {
         this.emit('durationChange', this.duration);
         this.emit('paceChange', this.pace);
         if (this.splits.length > 0) {
-          this.emit('splitRecorded', this.splits);
+          this.emit('splitRecorded', this.splits.map(split => ({
+            distance: split.distance || split.km,
+            elapsedTime: split.elapsedTime || split.time,
+            splitTime: split.splitTime || (split.time - (this.splits.length > 1 ? this.splits[this.splits.length - 2].time : 0)),
+            splitPace: split.splitPace || split.pace,
+            unit: split.unit || 'km'
+          })));
         }
         this.emit('elevationChange', this.elevation);
       }

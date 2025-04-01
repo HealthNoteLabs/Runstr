@@ -11,9 +11,10 @@ class RunTracker extends EventEmitter {
     this.distance = 0; // in meters
     this.duration = 0; // in seconds
     this.pace = 0; // in seconds per meter
-    this.splits = []; // Array to store split objects { km, time, pace }
+    this.splits = []; // Array to store split objects { distance, elapsedTime, splitTime, splitPace, unit }
     this.positions = [];
     this.distanceUnit = localStorage.getItem('distanceUnit') || 'km'; // Get user's preferred unit
+    this.activityMode = localStorage.getItem('activityMode') || 'run'; // Get activity mode (run/walk)
     
     // Add elevation tracking data
     this.elevation = {
@@ -33,6 +34,22 @@ class RunTracker extends EventEmitter {
     this.watchId = null; // For geolocation watch id
     this.timerInterval = null; // For updating duration every second
     this.paceInterval = null; // For calculating pace at regular intervals
+
+    // Activity mode specific settings
+    this.settings = {
+      run: {
+        movementThreshold: 1.5, // meters
+        splitDistance: 1000, // 1km in meters
+        gpsUpdateInterval: 1000, // 1 second
+        paceUpdateInterval: 5000 // 5 seconds
+      },
+      walk: {
+        movementThreshold: 0.5, // meters (lower threshold for walking)
+        splitDistance: 500, // 500m in meters (shorter splits for walking)
+        gpsUpdateInterval: 2000, // 2 seconds (less frequent updates for walking)
+        paceUpdateInterval: 10000 // 10 seconds (less frequent pace updates for walking)
+      }
+    };
   }
 
   toRadians(degrees) {
@@ -108,10 +125,9 @@ class RunTracker extends EventEmitter {
         newPosition.longitude
       );
       
-      // Add a minimum threshold to filter out GPS noise (e.g., 3 meters)
-      // Only count movement if it's above the threshold
-      const MOVEMENT_THRESHOLD = 1.5; // 1.5 meters (reduced from 3m)
-      if (distanceIncrement >= MOVEMENT_THRESHOLD) {
+      // Use activity mode specific movement threshold
+      const movementThreshold = this.settings[this.activityMode].movementThreshold;
+      if (distanceIncrement >= movementThreshold) {
         this.distance += distanceIncrement;
         this.emit('distanceChange', this.distance); // Emit distance change
       } else {
@@ -124,8 +140,8 @@ class RunTracker extends EventEmitter {
         this.updateElevation(newPosition.altitude);
       }
 
-      // Define the split distance in meters based on selected unit
-      const splitDistance = this.distanceUnit === 'km' ? 1000 : 1609.344; // 1km or 1mile in meters
+      // Use activity mode specific split distance
+      const splitDistance = this.settings[this.activityMode].splitDistance;
       
       // Get the current distance in the selected unit (either km or miles)
       const currentDistanceInUnits = this.distanceUnit === 'km' 
@@ -137,32 +153,32 @@ class RunTracker extends EventEmitter {
         ? this.lastSplitDistance / 1000
         : this.lastSplitDistance / 1609.344;
       
-      // Check if a new full unit (km or mile) has been completed
-      // Using Math.floor ensures we only trigger when a whole unit is completed
+      // Check if a new split has been completed
       if (Math.floor(currentDistanceInUnits) > Math.floor(lastSplitDistanceInUnits)) {
         // Calculate the current split number (1, 2, 3, etc.)
         const currentSplitNumber = Math.floor(currentDistanceInUnits);
 
         // Determine the elapsed time at the previous split (or 0 at start)
         const previousSplitTime = this.splits.length
-          ? this.splits[this.splits.length - 1].time
+          ? this.splits[this.splits.length - 1].elapsedTime
           : 0;
         
         // Calculate the duration for this split (time difference)
         const splitDuration = this.duration - previousSplitTime;
         
-        // Calculate pace for this split - pace is in time per distance unit
-        // Pace should be in seconds per meter for proper formatting later
-        const splitPace = splitDuration / splitDistance; 
+        // Calculate pace for this split
+        const splitPace = splitDuration / splitDistance;
         
         console.log(`Recording split at ${currentSplitNumber} ${this.distanceUnit}s with pace ${splitPace}`);
 
-        // Record the split with the unit count, cumulative time, and split pace
+        // Record the split with the new data structure
         this.splits.push({
-          km: currentSplitNumber, // We keep using 'km' field name for compatibility, but it represents the unit number (mile or km)
-          time: this.duration,
-          pace: splitPace,
-          isPartial: false // This is a whole unit split
+          distance: currentSplitNumber,
+          elapsedTime: this.duration,
+          splitTime: splitDuration,
+          splitPace: splitPace,
+          unit: this.distanceUnit,
+          activityMode: this.activityMode
         });
         
         // Update lastSplitDistance to the whole unit completed (in meters)
@@ -192,50 +208,33 @@ class RunTracker extends EventEmitter {
         this.pace = this.calculatePace(this.distance, this.duration);
         this.emit('paceChange', this.pace); // Emit pace change
       }
-    }, 5000); // Update pace every 5 seconds
+    }, this.settings[this.activityMode].paceUpdateInterval); // Use activity mode specific interval
   }
 
   async startTracking() {
     try {
-      // We should have already requested permissions by this point
-      const permissionsGranted = localStorage.getItem('permissionsGranted') === 'true';
-      
-      if (!permissionsGranted) {
-        console.warn('Attempting to start tracking without permissions. This should not happen.');
-        return;
-      }
-      
-      // First, ensure any existing watchers are cleaned up
-      await this.cleanupWatchers();
-      
-      this.watchId = await BackgroundGeolocation.addWatcher(
-        {
-          backgroundMessage: 'Tracking your run...',
-          backgroundTitle: 'Runstr',
-          // Never request permissions here - we've already done it in the permission dialog
-          requestPermissions: false, 
-          distanceFilter: 10,
-          // Add high accuracy mode for better GPS precision
-          highAccuracy: true,
-          // Increase stale location threshold to get fresher GPS data
-          staleLocationThreshold: 30000 // 30 seconds
-        },
-        (location, error) => {
-          if (error) {
-            if (error.code === 'NOT_AUTHORIZED') {
-              // Permissions were revoked after being initially granted
-              localStorage.setItem('permissionsGranted', 'false');
-              alert('Location permission is required for tracking. Please enable it in your device settings.');
-              BackgroundGeolocation.openSettings();
-            }
-            return console.error(error);
-          }
+      const options = {
+        backgroundMessage: 'Tracking your activity...',
+        backgroundTitle: 'Activity Tracking',
+        backgroundTask: true,
+        desiredAccuracy: 10,
+        distanceFilter: 1,
+        stopOnTerminate: false,
+        startForeground: true,
+        interval: this.settings[this.activityMode].gpsUpdateInterval, // Use activity mode specific interval
+        fastestInterval: this.settings[this.activityMode].gpsUpdateInterval
+      };
 
-          this.addPosition(location);
+      this.watchId = await BackgroundGeolocation.addWatcher(options, (position, error) => {
+        if (error) {
+          console.error('Error getting position:', error);
+          return;
         }
-      );
+        this.addPosition(position);
+      });
     } catch (error) {
-      console.error('Error starting background tracking:', error);
+      console.error('Error starting tracking:', error);
+      throw error;
     }
   }
 
@@ -339,7 +338,8 @@ class RunTracker extends EventEmitter {
         gain: this.elevation.gain,
         loss: this.elevation.loss
       },
-      unit: this.distanceUnit
+      unit: this.distanceUnit,
+      activityMode: this.activityMode // Add activity mode to saved data
     };
     
     // Save to run history using RunDataService instead of directly to localStorage

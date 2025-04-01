@@ -3,6 +3,8 @@ import { Platform } from '../utils/react-native-shim';
 import AmberAuth from '../services/AmberAuth';
 // Import nostr-tools implementation for fallback
 import { createAndPublishEvent as publishWithNostrTools } from './nostrClient';
+import { formatTime, formatDistance } from './formatters';
+import { encodePolyline } from './runCalculations';
 
 // Optimized relay list based on testing results
 export const RELAYS = [
@@ -784,3 +786,169 @@ if (typeof window !== 'undefined') {
 }
 
 export { ndk };
+
+/**
+ * Format split data for NIP-101e
+ * @param {Object} split - Split data object
+ * @param {number} index - Split index
+ * @param {string} preferredUnit - User's preferred distance unit
+ * @returns {Array} Formatted split tag
+ */
+const formatSplitTag = (split, index, preferredUnit) => {
+  const distance = preferredUnit === 'miles' ? 1609.34 : 1000; // 1 mile or 1 km in meters
+  const unitLabel = preferredUnit === 'miles' ? 'mi' : 'm';
+  
+  // Format: ["split", index, distance, unit, time, optional heart rate, "bpm"]
+  const splitTag = ["split", index.toString(), distance.toString(), unitLabel, formatTime(split.splitTime)];
+  
+  // Add heart rate data if available
+  if (split.heartRate) {
+    splitTag.push(Math.round(split.heartRate).toString());
+    splitTag.push("bpm");
+  }
+  
+  return splitTag;
+};
+
+/**
+ * Format pace for Nostr (MM:SS format)
+ * @param {number} pace - Pace in seconds per unit
+ * @returns {string} Formatted pace string
+ */
+const formatPaceForNostr = (pace) => {
+  const minutes = Math.floor(pace / 60);
+  const seconds = Math.floor(pace % 60);
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+};
+
+/**
+ * Format raw distance value based on preferred unit
+ * @param {number} distance - Distance in miles
+ * @param {string} unit - Preferred unit
+ * @returns {number} Distance in preferred unit
+ */
+const formatDistanceRaw = (distance, unit) => {
+  if (unit === 'miles') {
+    return distance;
+  } else {
+    return distance * 1.60934; // Convert miles to km
+  }
+};
+
+/**
+ * Create a NIP-101e compliant workout record event
+ * @param {Object} runData - Run data object
+ * @param {string} userNotes - Optional user notes
+ * @returns {Object} Nostr event object
+ */
+export const createWorkoutRecordEvent = (runData, userNotes = "") => {
+  // Generate a unique identifier for this workout
+  const workoutId = crypto.randomUUID();
+  
+  // Calculate start and end timestamps
+  const endTime = Math.floor(runData.endTime.getTime() / 1000);
+  const startTime = Math.floor(runData.startTime.getTime() / 1000);
+  
+  // Format duration in seconds
+  const durationSeconds = Math.floor(runData.duration / 1000);
+  
+  // Format pace as MM:SS string
+  const paceString = formatPaceForNostr(runData.pace);
+  
+  // Encode GPS data as polyline if available
+  const polylineData = runData.route ? encodePolyline(runData.route) : "";
+  
+  // Format elevation gain in meters
+  const elevationGain = runData.elevation ? Math.round(runData.elevation.gain) : 0;
+  
+  // Get user's public key
+  const pubkey = localStorage.getItem('userPublicKey');
+  if (!pubkey) {
+    throw new Error('No public key available. Please log in first.');
+  }
+  
+  // Build the base event
+  const event = {
+    kind: 1301,
+    content: userNotes || `Completed a ${formatDistance(runData.distance, runData.preferredUnit)} run.`,
+    created_at: endTime,
+    tags: [
+      ["d", workoutId],
+      ["title", `${formatDistance(runData.distance, runData.preferredUnit)} Run`],
+      ["type", "cardio"],
+      ["start", startTime.toString()],
+      ["end", endTime.toString()],
+      // Main exercise data with distance, duration, pace, route, elevation
+      ["exercise", `33401:${pubkey}:running`, "", 
+        formatDistanceRaw(runData.distance, runData.preferredUnit).toString(), 
+        durationSeconds.toString(), 
+        paceString,
+        polylineData,
+        elevationGain.toString()
+      ],
+      ["completed", "true"],
+      ["t", "running"]
+    ]
+  };
+  
+  // Add splits data if available
+  if (runData.splits && runData.splits.length > 0) {
+    runData.splits.forEach((split, index) => {
+      const splitTag = formatSplitTag(split, index + 1, runData.preferredUnit);
+      event.tags.push(splitTag);
+    });
+  }
+  
+  // Add optional data if available
+  if (runData.avgHeartRate) {
+    event.tags.push(["heart_rate_avg", Math.round(runData.avgHeartRate).toString(), "bpm"]);
+  }
+  
+  if (runData.cadence) {
+    event.tags.push(["cadence_avg", Math.round(runData.cadence).toString(), "spm"]);
+  }
+  
+  // Add weather data if available
+  if (runData.weather) {
+    if (runData.weather.temperature) {
+      event.tags.push(["weather_temp", Math.round(runData.weather.temperature).toString(), "c"]);
+    }
+    if (runData.weather.humidity) {
+      event.tags.push(["weather_humidity", Math.round(runData.weather.humidity).toString(), "%"]);
+    }
+    if (runData.weather.condition) {
+      event.tags.push(["weather_condition", runData.weather.condition]);
+    }
+  }
+  
+  return event;
+};
+
+/**
+ * Publish a workout record to Nostr
+ * @param {Object} runData - Run data object
+ * @param {string} userNotes - Optional user notes
+ * @returns {Promise<Object>} Result of publish attempt
+ */
+export const publishWorkoutRecord = async (runData, userNotes = "") => {
+  try {
+    // Create the workout record event
+    const workoutEvent = createWorkoutRecordEvent(runData, userNotes);
+    
+    // Publish using existing infrastructure
+    const result = await createAndPublishEvent(workoutEvent);
+    
+    return {
+      success: true,
+      eventId: result.id,
+      publishedTo: result.publishedTo || 0,
+      totalRelays: RELAYS.length
+    };
+  } catch (error) {
+    console.error('Failed to publish workout record:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};

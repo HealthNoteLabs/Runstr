@@ -37,6 +37,7 @@ class RunDataService {
         id: runData.id || Date.now() + '-' + Math.random().toString(36).substr(2, 9),
         date: runData.date || new Date().toLocaleDateString(),
         timestamp: runData.timestamp || Date.now(),
+        activityMode: runData.activityMode || 'run',
         ...runData
       };
       
@@ -89,14 +90,27 @@ class RunDataService {
   deleteRun(runId) {
     try {
       const runs = this.getAllRuns();
+      const runToDelete = runs.find(run => run.id === runId);
+      
+      if (!runToDelete) return false;
+      
+      // Remove the run from the array
       const updatedRuns = runs.filter(run => run.id !== runId);
       
-      if (updatedRuns.length === runs.length) return false;
-      
+      // Update storage
       localStorage.setItem(this.storageKey, JSON.stringify(updatedRuns));
       
       // Notify listeners
       this.notifyListeners(updatedRuns);
+      
+      // Dispatch a custom event for run deletion
+      const event = new CustomEvent('runDeleted', {
+        detail: {
+          deletedRun: runToDelete,
+          updatedRuns
+        }
+      });
+      document.dispatchEvent(event);
       
       return true;
     } catch (error) {
@@ -106,37 +120,37 @@ class RunDataService {
   }
 
   /**
-   * Calculate pace consistently
+   * Calculate pace for a run
    * @param {number} distance - Distance in meters
    * @param {number} duration - Duration in seconds
-   * @param {string} unit - Distance unit (km or mi)
+   * @param {string} unit - Distance unit ('km' or 'mi')
    * @returns {number} Pace in minutes per unit
    */
   calculatePace(distance, duration, unit = 'km') {
-    if (distance <= 0 || duration <= 0) return 0;
+    if (!distance || !duration) return 0;
     
-    // Convert distance to km or miles
     const distanceInUnit = unit === 'km' ? distance / 1000 : distance / 1609.344;
-    
-    // Calculate minutes per unit (km or mile)
-    return duration / 60 / distanceInUnit;
+    return (duration / 60) / distanceInUnit;
   }
 
   /**
-   * Format pace consistently across the app
+   * Format pace for display
    * @param {number} pace - Pace in minutes per unit
-   * @param {string} unit - Distance unit (km or mi)
-   * @returns {string} Formatted pace string (e.g., "5:30 min/km")
+   * @param {string} unit - Distance unit ('km' or 'mi')
+   * @param {string} activityMode - Activity mode ('run' or 'walk')
+   * @returns {string} Formatted pace string
    */
-  formatPace(pace, unit = 'km') {
-    if (!pace || pace === 0 || pace === Infinity) {
-      return `-- min/${unit}`;
-    }
+  formatPace(pace, unit = 'km', activityMode = 'run') {
+    if (!pace) return '--:--';
     
     const minutes = Math.floor(pace);
     const seconds = Math.round((pace - minutes) * 60);
     
-    return `${minutes}:${seconds.toString().padStart(2, '0')} min/${unit}`;
+    if (activityMode === 'walk') {
+      return `${pace.toFixed(1)} ${unit}/h`;
+    }
+    
+    return `${minutes}:${seconds.toString().padStart(2, '0')} /${unit}`;
   }
 
   /**
@@ -194,38 +208,27 @@ class RunDataService {
 
   /**
    * Add a listener for run data changes
-   * @param {Function} listener - Callback function
+   * @param {Function} callback - Callback function to be called when data changes
    */
-  addListener(listener) {
-    if (typeof listener === 'function' && !this.listeners.includes(listener)) {
-      this.listeners.push(listener);
-    }
+  addListener(callback) {
+    this.listeners.push(callback);
   }
 
   /**
    * Remove a listener
-   * @param {Function} listener - Callback function to remove
+   * @param {Function} callback - Callback function to remove
    */
-  removeListener(listener) {
-    this.listeners = this.listeners.filter(l => l !== listener);
+  removeListener(callback) {
+    this.listeners = this.listeners.filter(listener => listener !== callback);
   }
 
   /**
-   * Notify all listeners of changes
-   * @param {Array} runs - Updated runs array
+   * Notify all listeners of data changes
+   * @param {Array} updatedRuns - Updated runs array
    */
-  notifyListeners(runs) {
-    this.listeners.forEach(listener => {
-      try {
-        listener(runs);
-      } catch (error) {
-        console.error('Error in run data listener:', error);
-      }
-    });
+  notifyListeners(updatedRuns) {
+    this.listeners.forEach(callback => callback(updatedRuns));
   }
 }
 
-// Create singleton instance
-const runDataService = new RunDataService();
-
-export default runDataService; 
+export default new RunDataService(); 
