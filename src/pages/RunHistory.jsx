@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createAndPublishEvent } from '../utils/nostr';
+import { 
+  createAndPublishEvent, 
+  formatRunEvent, 
+  formatEnhancedRunEvent, 
+  formatHealthProfileEvent, 
+  formatHealthRecordEvent 
+} from '../utils/nostr';
 import { useRunStats } from '../hooks/useRunStats';
 import { useRunProfile } from '../hooks/useRunProfile';
 import { formatTime, displayDistance, formatElevation, formatDate } from '../utils/formatters';
@@ -10,13 +16,8 @@ export const RunHistory = () => {
   const navigate = useNavigate();
   // State for run history
   const [runHistory, setRunHistory] = useState([]);
-  const [selectedRun, setSelectedRun] = useState(null);
-  const [additionalContent, setAdditionalContent] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [isPosting, setIsPosting] = useState(false);
   const [distanceUnit, setDistanceUnit] = useState(() => localStorage.getItem('distanceUnit') || 'km');
-  const [npub, setNpub] = useState(() => localStorage.getItem('currentNpub'));
-  const [publishEnabled, setPublishEnabled] = useState(false);
 
   // Get user profile and distance unit from custom hooks
   const { userProfile: profile } = useRunProfile();
@@ -97,7 +98,6 @@ export const RunHistory = () => {
       setRunHistory(sortedRuns);
       
       // Recalculate stats
-      const newStats = runDataService.calculateStats();
       calculateStats(sortedRuns, profile);
     } catch (error) {
       console.error('Error loading run history:', error);
@@ -134,70 +134,110 @@ export const RunHistory = () => {
     }
   };
 
-  const handlePostToNostr = (run) => {
-    setSelectedRun(run);
-    setAdditionalContent('');
-    setShowModal(true);
-  };
-
-  const handlePostSubmit = async () => {
-    if (!selectedRun) return;
-    
-    setIsPosting(true);
-    
+  const handlePostToNostr = async (run) => {
     try {
-      const run = selectedRun;
-      const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration);
-      
       const content = `
 Just completed a run with Runstr! 🏃‍♂️💨
 
 ⏱️ Duration: ${formatTime(run.duration)}
 📏 Distance: ${displayDistance(run.distance, distanceUnit)}
 ⚡ Pace: ${(run.duration / 60 / (distanceUnit === 'km' ? run.distance/1000 : run.distance/1609.344)).toFixed(2)} min/${distanceUnit}
-🔥 Calories: ${caloriesBurned} kcal
+🔥 Calories: ${calculateCaloriesBurned(run.distance, run.duration)} kcal
 ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gain, distanceUnit)}\n📉 Elevation Loss: ${formatElevation(run.elevation.loss, distanceUnit)}` : ''}
-${additionalContent ? `\n${additionalContent}` : ''}
 #Runstr #Running
 `.trim();
 
-      // Create the event template for nostr-tools
       const eventTemplate = {
         kind: 1,
-        created_at: Math.floor(Date.now() / 1000),
+        content: content,
         tags: [
           ['t', 'Runstr'],
           ['t', 'Running']
-        ],
-        content: content
+        ]
       };
 
-      // Use the new createAndPublishEvent function from nostr-tools
       await createAndPublishEvent(eventTemplate);
       
-      setShowModal(false);
-      setAdditionalContent('');
-      
-      // Use a toast notification instead of alert for Android
-      console.log('Successfully posted to Nostr!');
-      // Show Android toast
+      // Show success message
       if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Successfully posted to Nostr!');
+        window.Android.showToast('Successfully shared run to Nostr!');
       } else {
-        alert('Successfully posted to Nostr!');
+        alert('Successfully shared run to Nostr!');
+      }
+      
+      setShowModal(false);
+    } catch (error) {
+      console.error('Error sharing run to Nostr:', error);
+      
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Failed to share run to Nostr: ' + error.message);
+      } else {
+        alert('Failed to share run to Nostr: ' + error.message);
+      }
+    }
+  };
+
+  const handleSaveToNostr = async (run) => {
+    try {
+      const runEvent = formatRunEvent(run, distanceUnit);
+      await createAndPublishEvent(runEvent);
+      
+      // Show success message
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Successfully saved run to Nostr!');
+      } else {
+        alert('Successfully saved run to Nostr!');
       }
     } catch (error) {
-      console.error('Error posting to Nostr:', error);
+      console.error('Error saving run to Nostr:', error);
       
-      // Use a toast notification instead of alert for Android
       if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Failed to post to Nostr: ' + error.message);
+        window.Android.showToast('Failed to save run to Nostr: ' + error.message);
       } else {
-        alert('Failed to post to Nostr: ' + error.message);
+        alert('Failed to save run to Nostr: ' + error.message);
       }
-    } finally {
-      setIsPosting(false);
-      setShowModal(false);
+    }
+  };
+
+  const handleSaveHealthData = async (run) => {
+    try {
+      // Calculate calories burned
+      const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration);
+      
+      // Create enhanced workout record with calories
+      const workoutEvent = formatEnhancedRunEvent(run, caloriesBurned, distanceUnit);
+      const workoutResult = await createAndPublishEvent(workoutEvent);
+      
+      // Get user profile data
+      const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
+      if (userProfile.weight && userProfile.height && userProfile.gender) {
+        const healthProfileEvent = formatHealthProfileEvent(userProfile);
+        await createAndPublishEvent(healthProfileEvent);
+      }
+      
+      // Create health record
+      const healthData = {
+        weight: userProfile.weight || 0,
+        restingCalories: Math.round(caloriesBurned * 0.2) // Simplified calculation
+      };
+      
+      const healthRecordEvent = formatHealthRecordEvent(healthData, workoutResult.id);
+      await createAndPublishEvent(healthRecordEvent);
+      
+      // Show success message
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Successfully saved health data to Nostr!');
+      } else {
+        alert('Successfully saved health data to Nostr!');
+      }
+    } catch (error) {
+      console.error('Error saving health data to Nostr:', error);
+      
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Failed to save health data to Nostr: ' + error.message);
+      } else {
+        alert('Failed to save health data to Nostr: ' + error.message);
+      }
     }
   };
 
@@ -371,7 +411,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       {runHistory.length === 0 ? (
         <p>No runs recorded yet</p>
       ) : (
-        <ul className="history-list">
+        <ul className="history-list space-y-4 px-4">
           {runHistory.map((run) => {
             const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration);
             
@@ -379,9 +419,9 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             const pace = runDataService.calculatePace(run.distance, run.duration, distanceUnit).toFixed(2);
             
             return (
-              <li key={run.id} className="history-item">
-                <div className="run-date">{formatDate(run.date)}</div>
-                <div className="run-details">
+              <li key={run.id} className="history-item bg-[#1a222e] rounded-lg p-4">
+                <div className="run-date text-lg font-semibold text-indigo-400 mb-2">{formatDate(run.date)}</div>
+                <div className="run-details grid grid-cols-2 gap-2 mb-4 text-sm text-gray-300">
                   <span>Duration: {formatTime(run.duration)}</span>
                   <span>Distance: {displayDistance(run.distance, distanceUnit)}</span>
                   <span>
@@ -399,17 +439,41 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                     </>
                   )}
                 </div>
-                <div className="run-actions">
+                <div className="run-actions flex flex-wrap gap-2 justify-end">
                   <button
                     onClick={() => handlePostToNostr(run)}
-                    className="share-btn"
+                    className="text-xs text-indigo-400 flex items-center hover:text-indigo-300 transition-colors"
                   >
-                    Share to Nostr
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                    </svg>
+                    Share
+                  </button>
+                  <button
+                    onClick={() => handleSaveToNostr(run)}
+                    className="text-xs text-indigo-400 flex items-center hover:text-indigo-300 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                    </svg>
+                    Save to Nostr
+                  </button>
+                  <button
+                    onClick={() => handleSaveHealthData(run)}
+                    className="text-xs text-indigo-400 flex items-center hover:text-indigo-300 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                    </svg>
+                    Save Health Data
                   </button>
                   <button
                     onClick={() => handleDeleteRun(run.id)}
-                    className="delete-btn"
+                    className="text-xs text-red-400 flex items-center hover:text-red-300 transition-colors"
                   >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
                     Delete
                   </button>
                 </div>
@@ -424,17 +488,14 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           <div className="modal-content">
             <h3>Post Run to Nostr</h3>
             <textarea
-              value={additionalContent}
-              onChange={(e) => setAdditionalContent(e.target.value)}
               placeholder="Add any additional comments or hashtags..."
               rows={4}
-              disabled={isPosting}
             />
             <div className="modal-buttons">
-              <button onClick={handlePostSubmit} disabled={isPosting}>
-                {isPosting ? 'Posting...' : 'Post'}
+              <button>
+                Post
               </button>
-              <button onClick={() => setShowModal(false)} disabled={isPosting}>
+              <button onClick={() => setShowModal(false)}>
                 Cancel
               </button>
             </div>
