@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- Theme colors for browsers -->
+    <meta name="theme-color" content="#242424" />
+    <meta name="msapplication-navbutton-color" content="#242424" />
+    <!-- Android app optimizations -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="Runstr" />
+    <!-- iOS optimizations -->
+    <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Runstr" />
+    <title>Runstr</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- DNS Prefetch and Preconnect -->
+    <link rel="dns-prefetch" href="https://nostr.band">
+    <link rel="preconnect" href="https://nostr.band" crossorigin>
+    <link rel="dns-prefetch" href="https://wavlake.com">
+    <link rel="preconnect" href="https://wavlake.com" crossorigin>
+    
+    <!-- Preload critical assets -->
+    <link rel="preload" href="/src/App.css" as="style">
+    <link rel="preload" href="/src/index.css" as="style">
+    
+    <!-- Critical CSS for initial render -->
+    <style>
+      /* Inline critical CSS for faster initial render */
+      :root {
+        --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+      }
+      
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent; /* Remove tap highlight on Android */
+      }
+      
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        max-width: 100vw;
+        overflow-x: hidden;
+      }
+      
+      body {
+        margin: 0;
+        background-color: #242424;
+        color: white;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+        overscroll-behavior: none; /* Prevent pull-to-refresh on Android */
+        -webkit-tap-highlight-color: transparent; /* Remove tap highlight on Android */
+        touch-action: manipulation; /* Optimize touch actions */
+        -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+        position: relative;
+      }
+      
+      #root {
+        width: 100%;
+        max-width: 100%;
+        margin: 0 auto;
+        height: 100%;
+        padding-bottom: var(--safe-area-inset-bottom);
+        overflow-x: hidden;
+        position: relative;
+      }
+      
+      /* Ensure buttons and interactive elements are touch-friendly */
+      button, a, input, select {
+        min-height: 44px; /* Google's recommended touch target size */
+        min-width: 44px;
+        touch-action: manipulation;
+      }
+      
+      /* Prevent text selection where not needed */
+      .no-select {
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      
+      .loading-spinner {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        width: 100%;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #242424;
+        z-index: 1000;
+      }
+      
+      .loading-spinner::after {
+        content: "";
+        width: 40px;
+        height: 40px;
+        border: 5px solid #646cff;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      /* Fix for Android Chrome */
+      @media screen and (-webkit-min-device-pixel-ratio: 0) {
+        body, html, #root {
+          width: 100%;
+          max-width: 100vw;
+          overflow-x: hidden;
+        }
+      }
+    </style>
+    
+    <script 
+      defer
+      src='https://www.unpkg.com/nostr-login@latest/dist/unpkg.js' 
+      data-perms="get_public_key,sign_event:0" 
+      data-theme="purple"
+      data-title="RUNSTR"
+      data-description="Track your runs and connect with runners on Nostr"
+    ></script>
+  </head>
+  <body>
+    <div id="root">
+      <div class="loading-spinner"></div>
+    </div>
+    <script type="module" src="/src/main.jsx"></script>
+    <script>
+      // Optimize service worker for better Android performance
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js', { 
+            scope: '/',
+            updateViaCache: 'none' // Always check for updates
+          })
+          .then(registration => {
+            // Check for updates on page load
+            registration.update();
+            console.log('SW registered:', registration);
+          })
+          .catch(error => {
+            console.log('SW registration failed:', error);
+          });
+          
+          // Periodically check for updates
+          setInterval(() => {
+            navigator.serviceWorker.ready.then(registration => registration.update());
+          }, 3600000); // Check every hour
+        });
+      }
+      
+      // Fix for Android viewport issues
+      function fixViewportHeight() {
+        let vh = window.innerHeight * 0.01;
+        document.documentElement.style.setProperty('--vh', `${vh}px`);
+      }
+      
+      // Run on page load
+      fixViewportHeight();
+      
+      // Run on resize and orientation change
+      window.addEventListener('resize', fixViewportHeight);
+      window.addEventListener('orientationchange', fixViewportHeight);
+    </script>
+  </body>
+</html>
