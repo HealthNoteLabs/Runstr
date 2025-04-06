@@ -6,7 +6,6 @@ import android.util.Log;
 
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.Plugin;
-import com.example.app.pedometer.StepCounterPlugin;
 
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "RunstrApp";
@@ -21,7 +20,14 @@ public class MainActivity extends BridgeActivity {
         // Log app startup for debugging
         Log.d(TAG, "Runstr application starting...");
         
-        // Register our plugins
-        registerPlugin(StepCounterPlugin.class);
+        // Register our plugins with error handling
+        try {
+            Class<?> stepCounterClass = Class.forName("com.example.app.pedometer.StepCounterPlugin");
+            registerPlugin(stepCounterClass);
+            Log.d(TAG, "Successfully registered StepCounter plugin");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to register StepCounter plugin", e);
+            // Continue without the plugin - app will still work
+        }
     }
 }

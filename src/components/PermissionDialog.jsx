@@ -4,8 +4,30 @@ import { NostrContext } from '../contexts/NostrContext';
 import { useActivityType } from '../contexts/ActivityTypeContext';
 import { registerPlugin } from '@capacitor/core';
 
-const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
-const StepCounter = registerPlugin('StepCounter');
+// Register plugins with error handling
+let BackgroundGeolocation;
+let StepCounter;
+
+try {
+  BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
+} catch (error) {
+  console.error('Failed to register BackgroundGeolocation plugin:', error);
+  // Create fallback
+  BackgroundGeolocation = {
+    requestPermissions: async () => true
+  };
+}
+
+try {
+  StepCounter = registerPlugin('StepCounter');
+} catch (error) {
+  console.error('Failed to register StepCounter plugin:', error);
+  // Create fallback
+  StepCounter = {
+    startTracking: async () => ({}),
+    stopTracking: async () => ({})
+  };
+}
 
 export const PermissionDialog = ({ onContinue, onCancel }) => {
   const [isVisible, setIsVisible] = useState(true);
@@ -42,11 +64,10 @@ export const PermissionDialog = ({ onContinue, onCancel }) => {
         await BackgroundGeolocation.requestPermissions();
       } catch (error) {
         console.error('Error requesting location permissions:', error);
-        setIsProcessing(false);
-        return; // Don't proceed if location permission is denied
+        // Continue anyway - we'll handle missing permissions later
       }
       
-      // All permissions granted, proceed
+      // All permissions requested, proceed
       setIsVisible(false);
       if (onContinue) onContinue();
     } catch (error) {

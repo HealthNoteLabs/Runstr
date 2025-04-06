@@ -96,14 +96,27 @@ export const RunTracker = () => {
     if (!splits) return;
     
     const handleStepsChange = (steps) => {
-      setSteps(steps);
+      try {
+        setSteps(steps || 0);
+      } catch (error) {
+        console.error('Error handling step change:', error);
+      }
     };
     
-    splits.on('stepsChange', handleStepsChange);
-    
-    return () => {
-      splits.off('stepsChange', handleStepsChange);
-    };
+    try {
+      splits.on('stepsChange', handleStepsChange);
+      
+      return () => {
+        try {
+          splits.off('stepsChange', handleStepsChange);
+        } catch (error) {
+          console.error('Error removing step listener:', error);
+        }
+      };
+    } catch (error) {
+      console.error('Error setting up step counter listener:', error);
+      return () => {};
+    }
   }, [splits]);
 
   // Set walk mode based on activity type

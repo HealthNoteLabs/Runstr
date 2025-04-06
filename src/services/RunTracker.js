@@ -3,7 +3,19 @@ import { EventEmitter } from 'tseep';
 import runDataService from './RunDataService';
 import stepCounterService from './StepCounterService';
 
-const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
+// Register the plugin with error handling
+let BackgroundGeolocation;
+try {
+  BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
+} catch (error) {
+  console.error('Failed to register BackgroundGeolocation plugin:', error);
+  // Create a fallback that won't crash
+  BackgroundGeolocation = {
+    addWatcher: async () => ({ id: 'dummy' }),
+    removeWatcher: async () => {},
+    openSettings: async () => {}
+  };
+}
 
 class RunTracker extends EventEmitter {
   constructor() {
@@ -27,6 +39,7 @@ class RunTracker extends EventEmitter {
     // Add step counter data
     this.steps = 0;
     this.useStepCounter = false; // Will be set based on activity type
+    this.stepListenerBound = false;
 
     this.isTracking = false;
     this.isPaused = false;
@@ -40,26 +53,39 @@ class RunTracker extends EventEmitter {
     this.timerInterval = null; // For updating duration every second
     this.paceInterval = null; // For calculating pace at regular intervals
 
-    // Listen for step counter updates
-    stepCounterService.on('stepsChange', (steps) => {
-      if (this.isTracking && !this.isPaused && this.useStepCounter) {
-        this.steps = steps;
-        this.emit('stepsChange', steps);
-        
-        // Estimate distance based on steps (rough estimate)
-        // Average step length is about 0.75m
-        const estimatedDistance = steps * 0.75;
-        
-        if (estimatedDistance > this.distance) {
-          this.distance = estimatedDistance;
-          this.emit('distanceChange', this.distance);
+    // Try to listen for step counter updates - with error handling
+    this.setupStepCounterListener();
+  }
+
+  setupStepCounterListener() {
+    try {
+      // Listen for step counter updates
+      this.stepChangeHandler = (steps) => {
+        if (this.isTracking && !this.isPaused && this.useStepCounter) {
+          this.steps = steps;
+          this.emit('stepsChange', steps);
           
-          // Update pace based on new distance
-          this.pace = this.calculatePace(this.distance, this.duration);
-          this.emit('paceChange', this.pace);
+          // Estimate distance based on steps (rough estimate)
+          // Average step length is about 0.75m
+          const estimatedDistance = steps * 0.75;
+          
+          if (estimatedDistance > this.distance) {
+            this.distance = estimatedDistance;
+            this.emit('distanceChange', this.distance);
+            
+            // Update pace based on new distance
+            this.pace = this.calculatePace(this.distance, this.duration);
+            this.emit('paceChange', this.pace);
+          }
         }
-      }
-    });
+      };
+      
+      stepCounterService.on('stepsChange', this.stepChangeHandler);
+      this.stepListenerBound = true;
+    } catch (error) {
+      console.error('Failed to setup step counter listener:', error);
+      this.stepListenerBound = false;
+    }
   }
 
   toRadians(degrees) {
@@ -303,10 +329,13 @@ class RunTracker extends EventEmitter {
           this.emit('stepsChange', this.steps);
         } catch (error) {
           console.error('Error starting step counter:', error);
+          // Continue anyway, tracking will work without step counter
         }
       }
     } catch (error) {
-      console.error('Error starting background tracking:', error);
+      console.error('Error in startTracking:', error);
+      // Attempt to clean up if error occurs
+      this.cleanupResources();
     }
   }
 
@@ -326,51 +355,69 @@ class RunTracker extends EventEmitter {
           await stepCounterService.stopTracking();
         } catch (error) {
           console.error('Error stopping step counter:', error);
+          // Continue with cleanup even if this fails
         }
       }
     } catch (error) {
-      console.error('Error cleaning up watchers:', error);
+      console.error('Error in cleanupWatchers:', error);
+      // Try to do basic cleanup even if there's an error
+      this.watchId = null;
     }
   }
 
   async start() {
-    if (this.isTracking && !this.isPaused) return;
+    try {
+      if (this.isTracking && !this.isPaused) return;
 
-    // Get current activity type
-    const activityType = localStorage.getItem('activityType') || 'run';
-    // Use step counter for walk mode
-    this.useStepCounter = (activityType === 'walk');
+      // Get current activity type
+      const activityType = localStorage.getItem('activityType') || 'run';
+      // Use step counter for walk mode
+      this.useStepCounter = (activityType === 'walk');
 
-    // Update distanceUnit from localStorage in case it changed
-    this.distanceUnit = localStorage.getItem('distanceUnit') || 'km';
-    
-    this.isTracking = true;
-    this.isPaused = false;
-    this.startTime = Date.now();
-    this.pausedTime = 0; // Reset paused time
-    this.positions = [];
-    this.distance = 0;
-    this.duration = 0;
-    this.pace = 0;
-    this.splits = [];
-    this.steps = 0; // Reset step count
-    this.lastSplitDistance = 0;
-    this.lastPartialUpdateDistance = 0;
-    
-    // Reset elevation data
-    this.elevation = {
-      current: null,
-      gain: 0,
-      loss: 0,
-      lastAltitude: null
-    };
+      // Update distanceUnit from localStorage in case it changed
+      this.distanceUnit = localStorage.getItem('distanceUnit') || 'km';
+      
+      this.isTracking = true;
+      this.isPaused = false;
+      this.startTime = Date.now();
+      this.pausedTime = 0; // Reset paused time
+      this.positions = [];
+      this.distance = 0;
+      this.duration = 0;
+      this.pace = 0;
+      this.splits = [];
+      this.steps = 0; // Reset step count
+      this.lastSplitDistance = 0;
+      this.lastPartialUpdateDistance = 0;
+      
+      // Reset elevation data
+      this.elevation = {
+        current: null,
+        gain: 0,
+        loss: 0,
+        lastAltitude: null
+      };
 
-    this.startTracking();
-    this.startTimer(); // Start the timer
-    this.startPaceCalculator(); // Start the pace calculator
-    
-    // Emit status change event
-    this.emit('statusChange', { isTracking: this.isTracking, isPaused: this.isPaused });
+      // Check if step counter listener is set up
+      if (this.useStepCounter && !this.stepListenerBound) {
+        this.setupStepCounterListener();
+      }
+
+      this.startTracking();
+      this.startTimer(); // Start the timer
+      this.startPaceCalculator(); // Start the pace calculator
+      
+      // Emit status change event
+      this.emit('statusChange', { isTracking: this.isTracking, isPaused: this.isPaused });
+    } catch (error) {
+      console.error('Error in start:', error);
+      // Clean up if start fails
+      this.cleanupResources();
+      this.isTracking = false;
+      this.isPaused = false;
+      this.emit('statusChange', { isTracking: false, isPaused: false });
+      throw error; // Re-throw so UI can show error
+    }
   }
 
   async pause() {
@@ -405,53 +452,69 @@ class RunTracker extends EventEmitter {
   async stop() {
     if (!this.isTracking) return;
 
-    this.isTracking = false;
-    this.isPaused = false;
-    
-    // Final calculations
-    this.duration = Math.floor((Date.now() - this.startTime - this.pausedTime) / 1000);
-    
-    // Calculate speed and pace one last time
-    if (this.distance > 0 && this.duration > 0) {
-      this.pace = runDataService.calculatePace(this.distance, this.duration, this.distanceUnit);
+    try {
+      this.isTracking = false;
+      this.isPaused = false;
+      
+      // Final calculations
+      this.duration = Math.floor((Date.now() - this.startTime - this.pausedTime) / 1000);
+      
+      // Calculate speed and pace one last time
+      if (this.distance > 0 && this.duration > 0) {
+        this.pace = runDataService.calculatePace(this.distance, this.duration, this.distanceUnit);
+      }
+      
+      // Get the current activity type
+      const activityType = localStorage.getItem('activityType') || 'run';
+      
+      // Create the final run data object
+      const finalResults = {
+        distance: this.distance,
+        duration: this.duration,
+        pace: this.pace,
+        splits: this.splits,
+        elevation: { 
+          gain: this.elevation.gain,
+          loss: this.elevation.loss
+        },
+        unit: this.distanceUnit,
+        activityType: activityType,
+        steps: this.useStepCounter ? this.steps : 0 // Include step count if step counter was used
+      };
+      
+      // Save to run history using RunDataService instead of directly to localStorage
+      try {
+        runDataService.saveRun(finalResults);
+      } catch (error) {
+        console.error('Error saving run data:', error);
+      }
+      
+      // Clean up resources
+      this.cleanupResources();
+      
+      // If using step counter, reset it
+      if (this.useStepCounter) {
+        try {
+          stepCounterService.resetSteps();
+        } catch (error) {
+          console.error('Error resetting step counter:', error);
+        }
+      }
+      
+      // Emit status change and completed event
+      this.emit('statusChange', { isTracking: false, isPaused: false });
+      this.emit('runCompleted', finalResults);
+      
+      return finalResults;
+    } catch (error) {
+      console.error('Error in stop:', error);
+      // Make sure we clean up even if there's an error
+      this.cleanupResources();
+      this.isTracking = false;
+      this.isPaused = false;
+      this.emit('statusChange', { isTracking: false, isPaused: false });
+      return { distance: this.distance, duration: this.duration, error: true };
     }
-    
-    // Get the current activity type
-    const activityType = localStorage.getItem('activityType') || 'run';
-    
-    // Create the final run data object
-    const finalResults = {
-      distance: this.distance,
-      duration: this.duration,
-      pace: this.pace,
-      splits: this.splits,
-      elevation: { 
-        gain: this.elevation.gain,
-        loss: this.elevation.loss
-      },
-      unit: this.distanceUnit,
-      activityType: activityType,
-      steps: this.useStepCounter ? this.steps : 0 // Include step count if step counter was used
-    };
-    
-    // Save to run history using RunDataService instead of directly to localStorage
-    runDataService.saveRun(finalResults);
-    
-    // Clean up resources
-    this.stopTracking();
-    this.stopTimer();
-    this.stopPaceCalculator();
-    
-    // If using step counter, reset it
-    if (this.useStepCounter) {
-      stepCounterService.resetSteps();
-    }
-    
-    // Emit status change and completed event
-    this.emit('statusChange', { isTracking: false, isPaused: false });
-    this.emit('runCompleted', finalResults);
-    
-    return finalResults;
   }
 
   // Restore an active tracking session that was not paused
@@ -533,6 +596,43 @@ class RunTracker extends EventEmitter {
     this.emit('paceChange', this.pace);
     this.emit('splitRecorded', this.splits);
     this.emit('elevationChange', {...this.elevation});
+  }
+
+  // Clean up all resources to prevent memory leaks
+  cleanupResources() {
+    try {
+      if (this.watchId) {
+        try {
+          BackgroundGeolocation.removeWatcher({
+            id: this.watchId
+          });
+        } catch (e) {
+          console.error('Error removing watcher:', e);
+        }
+        this.watchId = null;
+      }
+      
+      if (this.timerInterval) {
+        clearInterval(this.timerInterval);
+        this.timerInterval = null;
+      }
+      
+      if (this.paceInterval) {
+        clearInterval(this.paceInterval);
+        this.paceInterval = null;
+      }
+      
+      // Also stop step counter if needed
+      if (this.useStepCounter) {
+        try {
+          stepCounterService.stopTracking();
+        } catch (e) {
+          console.error('Error stopping step counter:', e);
+        }
+      }
+    } catch (error) {
+      console.error('Error in cleanupResources:', error);
+    }
   }
 
   // Make sure the off method is properly documented
