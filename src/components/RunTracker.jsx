@@ -2,13 +2,12 @@ import { useEffect, useState } from 'react';
 import { useRunTracker } from '../contexts/RunTrackerContext';
 import { useActivityType } from '../contexts/ActivityTypeContext';
 import runDataService from '../services/RunDataService';
-import PermissionDialog from './PermissionDialog';
+import { PermissionDialog } from './PermissionDialog';
 import { formatPaceWithUnit, formatElevation, convertDistance, displayDistance } from '../utils/formatters';
 import SplitsList from './SplitsList';
 import { 
   createAndPublishEvent, 
   formatRunData, 
-  publishEvent,
   formatHealthRecordEvent 
 } from '../utils/nostr';
 
