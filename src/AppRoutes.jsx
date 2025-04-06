@@ -4,7 +4,6 @@ import { Routes, Route } from 'react-router-dom';
 // Lazy load all route components
 const RunTracker = lazy(() => import('./components/RunTracker').then(module => ({ default: module.RunTracker })));
 const RunHistory = lazy(() => import('./pages/RunHistory').then(module => ({ default: module.RunHistory })));
-const RunClub = lazy(() => import('./pages/RunClub').then(module => ({ default: module.RunClub })));
 const Wallet = lazy(() => import('./pages/Wallet').then(module => ({ default: module.Wallet })));
 const Music = lazy(() => import('./pages/Music').then(module => ({ default: module.Music })));
 const NWC = lazy(() => import('./pages/NWC').then(module => ({ default: module.NWC })));
@@ -26,8 +25,6 @@ export const AppRoutes = () => {
       <Routes>
         <Route path="/history" element={<RunHistory />} />
         <Route path="/profile" element={<Profile />} />
-        <Route path="/club" element={<RunClub />} />
-        <Route path="/club/join/:teamId" element={<RunClub />} />
         <Route path="/club/*" element={<Club />} />
         <Route path="/team" element={<Team />} />
         <Route path="/team/profile/:teamId" element={<Team />} />

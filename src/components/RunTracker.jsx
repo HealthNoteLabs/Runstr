@@ -406,28 +406,61 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         </div>
       </div>
       
-      {/* Unit Toggle */}
-      <div className="flex justify-center my-4">
-        <div className="inline-flex items-center bg-[#1a222e] rounded-full p-1">
+      {/* Start/Pause/Resume/Stop Button Group */}
+      <div className="px-4 my-4">
+        {!isTracking ? (
+          // Start Button when not tracking
           <button 
-            className={`px-4 py-2 text-sm rounded-full ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-            onClick={() => {
-              localStorage.setItem('distanceUnit', 'mi');
-              setDistanceUnit('mi');
-            }}
+            onClick={initiateRun} 
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl text-lg font-semibold shadow-lg flex items-center justify-center"
           >
-            Miles
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Start {activityLabel}
           </button>
-          <button 
-            className={`px-4 py-2 text-sm rounded-full ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-            onClick={() => {
-              localStorage.setItem('distanceUnit', 'km');
-              setDistanceUnit('km');
-            }}
-          >
-            Kilometers
-          </button>
-        </div>
+        ) : (
+          // Button Group when tracking
+          <div className="flex space-x-4">
+            {isPaused ? (
+              // Resume Button
+              <button 
+                onClick={resumeRun} 
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white py-4 rounded-xl text-lg font-semibold shadow-lg flex items-center justify-center"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Resume
+              </button>
+            ) : (
+              // Pause Button
+              <button 
+                onClick={pauseRun} 
+                className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white py-4 rounded-xl text-lg font-semibold shadow-lg flex items-center justify-center"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Pause
+              </button>
+            )}
+            
+            {/* Stop Button */}
+            <button 
+              onClick={() => startCountdown('stop')} 
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white py-4 rounded-xl text-lg font-semibold shadow-lg flex items-center justify-center"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+              </svg>
+              Stop
+            </button>
+          </div>
+        )}
       </div>
       
       {/* Splits Section - Only show during active tracking */}
@@ -441,7 +474,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       {!isTracking && (
         <button 
           className="mx-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 px-6 rounded-xl shadow-lg flex items-center justify-center text-lg font-semibold mb-4"
-          onClick={() => window.location.href = '/club'}
+          onClick={() => window.location.href = '/club/'}
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -493,65 +526,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           </div>
         </div>
       )}
-      
-      {/* Start/Pause/Resume/Stop Button Group */}
-      <div className="fixed bottom-24 inset-x-0 p-4 z-20">
-        <div className="w-full max-w-screen-sm mx-auto">
-          {!isTracking ? (
-            // Start Button when not tracking
-            <button 
-              onClick={initiateRun} 
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-full text-lg font-semibold shadow-lg flex items-center justify-center"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              Start {activityLabel}
-            </button>
-          ) : (
-            // Button Group when tracking
-            <div className="flex space-x-4">
-              {isPaused ? (
-                // Resume Button
-                <button 
-                  onClick={resumeRun} 
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white py-4 rounded-full text-lg font-semibold shadow-lg flex items-center justify-center"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Resume
-                </button>
-              ) : (
-                // Pause Button
-                <button 
-                  onClick={pauseRun} 
-                  className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white py-4 rounded-full text-lg font-semibold shadow-lg flex items-center justify-center"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Pause
-                </button>
-              )}
-              
-              {/* Stop Button */}
-              <button 
-                onClick={() => startCountdown('stop')} 
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-4 rounded-full text-lg font-semibold shadow-lg flex items-center justify-center"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
-                </svg>
-                Stop
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
       
       {/* Display permission dialog if needed */}
       {showPermissionDialog && (

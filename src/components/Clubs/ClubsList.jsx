@@ -44,6 +44,12 @@ export const ClubsList = () => {
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Running Clubs</h2>
         <div className="flex space-x-2">
+          <Link to="/club/feed" className="px-3 py-1 rounded-lg bg-gray-700 text-white text-sm flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+            </svg>
+            View Feed
+          </Link>
           <button
             onClick={refreshClubs}
             className="px-3 py-1 rounded-lg bg-gray-700 text-white text-sm flex items-center"
