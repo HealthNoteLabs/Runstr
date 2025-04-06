@@ -24,8 +24,14 @@ public class StepCounterPlugin extends Plugin implements SensorEventListener {
 
     @Override
     public void load() {
-        sensorManager = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
-        stepCounterSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
+        super.load();
+        try {
+            sensorManager = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
+            stepCounterSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
+            Log.d(TAG, "StepCounter plugin loaded");
+        } catch (Exception e) {
+            Log.e(TAG, "Error initializing step counter", e);
+        }
     }
 
     @PluginMethod
@@ -95,5 +101,14 @@ public class StepCounterPlugin extends Plugin implements SensorEventListener {
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
         // Not used
+    }
+    
+    @Override
+    protected void handleOnDestroy() {
+        if (isTracking && sensorManager != null) {
+            sensorManager.unregisterListener(this);
+            isTracking = false;
+        }
+        super.handleOnDestroy();
     }
 } 

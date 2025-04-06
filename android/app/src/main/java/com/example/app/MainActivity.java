@@ -22,9 +22,15 @@ public class MainActivity extends BridgeActivity {
         
         // Register our plugins with error handling
         try {
-            Class<?> stepCounterClass = Class.forName("com.example.app.pedometer.StepCounterPlugin");
-            registerPlugin(stepCounterClass);
-            Log.d(TAG, "Successfully registered StepCounter plugin");
+            Class<?> clazz = Class.forName("com.example.app.pedometer.StepCounterPlugin");
+            if (Plugin.class.isAssignableFrom(clazz)) {
+                @SuppressWarnings("unchecked")
+                Class<? extends Plugin> pluginClass = (Class<? extends Plugin>) clazz;
+                registerPlugin(pluginClass);
+                Log.d(TAG, "Successfully registered StepCounter plugin");
+            } else {
+                Log.e(TAG, "StepCounterPlugin is not a valid Plugin class");
+            }
         } catch (Exception e) {
             Log.e(TAG, "Failed to register StepCounter plugin", e);
             // Continue without the plugin - app will still work
