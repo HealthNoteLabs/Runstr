@@ -1,5 +1,4 @@
 import PropTypes from 'prop-types';
-import { formatTime } from '../utils/formatters';
 
 const SplitsList = ({ splits, distanceUnit = 'km', className = '' }) => {
   if (!splits || splits.length === 0) {

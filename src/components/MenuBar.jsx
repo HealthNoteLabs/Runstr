@@ -74,7 +74,7 @@ export const MenuBar = () => {
   return (
     <div className="w-full">
       {/* Header with Settings */}
-      <header className="flex justify-between items-center p-4 w-full max-w-[375px] mx-auto">
+      <header className="flex justify-between items-center p-4 w-full max-w-screen-sm mx-auto">
         <Link to="/" className="text-xl font-bold">{getAppName()}</Link>
         <div className="min-w-[120px]">
           <FloatingMusicPlayer />
@@ -188,17 +188,19 @@ export const MenuBar = () => {
       )}
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 flex justify-around items-center bg-[#111827] border-t border-gray-800 py-4 max-w-[375px] mx-auto z-30">
-        {menuItems.map((item) => (
-          <Link 
-            key={item.name} 
-            to={item.path} 
-            className={`flex flex-col items-center text-xs ${location.pathname === item.path ? 'text-gray-300' : 'text-gray-500'}`}
-          >
-            {item.icon}
-            <span>{item.name}</span>
-          </Link>
-        ))}
+      <nav className="fixed bottom-0 left-0 right-0 flex justify-around items-center bg-[#111827] border-t border-gray-800 py-4 z-30">
+        <div className="w-full max-w-screen-sm mx-auto flex justify-around">
+          {menuItems.map((item) => (
+            <Link 
+              key={item.name} 
+              to={item.path} 
+              className={`flex flex-col items-center text-xs ${location.pathname === item.path ? 'text-gray-300' : 'text-gray-500'}`}
+            >
+              {item.icon}
+              <span>{item.name}</span>
+            </Link>
+          ))}
+        </div>
       </nav>
     </div>
   );

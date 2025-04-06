@@ -1,18 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRunTracker } from '../contexts/RunTrackerContext';
 import { useActivityType } from '../contexts/ActivityTypeContext';
-import { convertDistance, formatPaceWithUnit, formatElevation } from '../utils/formatters';
-import { PermissionDialog } from './PermissionDialog';
+import runDataService from '../services/RunDataService';
+import PermissionDialog from './PermissionDialog';
+import { formatPaceWithUnit, formatElevation, convertDistance, displayDistance } from '../utils/formatters';
+import SplitsList from './SplitsList';
 import { 
   createAndPublishEvent, 
-  formatRunEvent, 
-  formatEnhancedRunEvent, 
-  formatHealthProfileEvent, 
+  formatRunData, 
+  publishEvent,
   formatHealthRecordEvent 
 } from '../utils/nostr';
-import { displayDistance } from '../utils/unitConversions';
-import runDataService from '../services/RunDataService';
-import SplitsList from './SplitsList';
 
 export const RunTracker = () => {
   const { 
@@ -170,7 +168,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     setIsSavingToNostr(true);
     
     try {
-      const runEvent = formatRunEvent(recentRun, distanceUnit);
+      const runEvent = formatRunData(recentRun, distanceUnit);
       await createAndPublishEvent(runEvent);
       setIsSavedToNostr(true);
       
@@ -203,29 +201,13 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       // Calculate calories burned
       const caloriesBurned = Math.round(recentRun.distance * 0.06);
       
-      // Create enhanced workout record with calories
-      const workoutEvent = formatEnhancedRunEvent(recentRun, caloriesBurned, distanceUnit);
-      const workoutResult = await createAndPublishEvent(workoutEvent);
-      
-      // Check if we need to update health profile
-      const today = new Date().toISOString().split('T')[0];
-      if (!lastHealthProfileUpdate || lastHealthProfileUpdate !== today) {
-        // Get user profile data
-        const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
-        if (userProfile.weight && userProfile.height && userProfile.gender) {
-          const healthProfileEvent = formatHealthProfileEvent(userProfile);
-          await createAndPublishEvent(healthProfileEvent);
-          setLastHealthProfileUpdate(today);
-        }
-      }
-      
       // Create health record
       const healthData = {
         weight: recentRun.weight || 0,
         restingCalories: Math.round(caloriesBurned * 0.2) // Simplified calculation
       };
       
-      const healthRecordEvent = formatHealthRecordEvent(healthData, workoutResult.id);
+      const healthRecordEvent = formatHealthRecordEvent(healthData);
       await createAndPublishEvent(healthRecordEvent);
       
       setIsHealthDataSaved(true);
@@ -413,15 +395,39 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         {/* Elevation Card */}
         <div className="bg-gradient-to-br from-[#111827] to-[#1a222e] p-4 rounded-xl shadow-lg flex flex-col">
           <div className="flex items-center mb-2">
-            <div className="w-7 h-7 rounded-full bg-[#F97316]/20 flex items-center justify-center mr-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#F97316]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            <div className="w-7 h-7 rounded-full bg-[#EC4899]/20 flex items-center justify-center mr-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#EC4899]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
               </svg>
             </div>
             <span className="text-sm text-gray-400">Elevation</span>
           </div>
-          <div className="text-3xl font-bold">{elevation ? formatElevation(elevation.gain, distanceUnit) : '0'}</div>
-          <div className="text-sm text-gray-400">{distanceUnit === 'mi' ? 'ft' : 'm'}</div>
+          <div className="text-3xl font-bold">{formatElevation(elevation ? elevation.gain : 0, distanceUnit).split(' ')[0]}</div>
+          <div className="text-sm text-gray-400">{formatElevation(elevation ? elevation.gain : 0, distanceUnit).split(' ')[1]}</div>
+        </div>
+      </div>
+      
+      {/* Unit Toggle */}
+      <div className="flex justify-center my-4">
+        <div className="inline-flex items-center bg-[#1a222e] rounded-full p-1">
+          <button 
+            className={`px-4 py-2 text-sm rounded-full ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+            onClick={() => {
+              localStorage.setItem('distanceUnit', 'mi');
+              setDistanceUnit('mi');
+            }}
+          >
+            Miles
+          </button>
+          <button 
+            className={`px-4 py-2 text-sm rounded-full ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+            onClick={() => {
+              localStorage.setItem('distanceUnit', 'km');
+              setDistanceUnit('km');
+            }}
+          >
+            Kilometers
+          </button>
         </div>
       </div>
       
@@ -431,9 +437,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           <SplitsList splits={splits} distanceUnit={distanceUnit} className="mt-2" />
         </div>
       )}
-      
-      {/* Unit Toggle */}
-      {/* Removed miles/km toggle as it's now in the settings menu */}
       
       {/* Join Club Button */}
       {!isTracking && (
@@ -446,44 +449,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           </svg>
           Join Club
         </button>
-      )}
-      
-      {/* Start Run Button */}
-      {!isTracking ? (
-        <button 
-          className="mx-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 px-6 rounded-xl shadow-lg flex items-center justify-center text-lg font-semibold my-4"
-          onClick={initiateRun}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          Start {activityLabel}
-        </button>
-      ) : (
-        <div className="flex justify-between px-4 my-4">
-          {isPaused ? (
-            <button 
-              className="bg-green-600 text-white py-3 px-6 rounded-xl shadow-lg flex-1 mr-2 font-semibold"
-              onClick={resumeRun}
-            >
-              Resume
-            </button>
-          ) : (
-            <button 
-              className="bg-yellow-600 text-white py-3 px-6 rounded-xl shadow-lg flex-1 mr-2 font-semibold"
-              onClick={pauseRun}
-            >
-              Pause
-            </button>
-          )}
-          <button 
-            className="bg-red-600 text-white py-3 px-6 rounded-xl shadow-lg flex-1 ml-2 font-semibold"
-            onClick={() => startCountdown('stop')}
-          >
-            Stop
-          </button>
-        </div>
       )}
       
       {/* Recent Runs Section */}
@@ -511,24 +476,83 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                   </span>
                 </div>
               </div>
-              <div className="text-right text-gray-400">
-                <span className="block text-lg font-semibold">{runDataService.formatTime(recentRun.duration)}</span>
-                <div className="flex items-center justify-end mt-1">
-                  <button 
-                    onClick={handlePostToNostr}
-                    className="text-xs text-indigo-400 flex items-center"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                    </svg>
-                    Share
-                  </button>
+            </div>
+              
+            <div className="mt-4 flex space-x-2">
+              <button 
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg text-sm"
+                onClick={handlePostToNostr}
+              >
+                <div className="flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                  </svg>
+                  Share
                 </div>
-              </div>
+              </button>
             </div>
           </div>
         </div>
       )}
+      
+      {/* Start/Pause/Resume/Stop Button Group */}
+      <div className="fixed bottom-24 inset-x-0 p-4 z-20">
+        <div className="w-full max-w-screen-sm mx-auto">
+          {!isTracking ? (
+            // Start Button when not tracking
+            <button 
+              onClick={initiateRun} 
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-full text-lg font-semibold shadow-lg flex items-center justify-center"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Start {activityLabel}
+            </button>
+          ) : (
+            // Button Group when tracking
+            <div className="flex space-x-4">
+              {isPaused ? (
+                // Resume Button
+                <button 
+                  onClick={resumeRun} 
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white py-4 rounded-full text-lg font-semibold shadow-lg flex items-center justify-center"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Resume
+                </button>
+              ) : (
+                // Pause Button
+                <button 
+                  onClick={pauseRun} 
+                  className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white py-4 rounded-full text-lg font-semibold shadow-lg flex items-center justify-center"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Pause
+                </button>
+              )}
+              
+              {/* Stop Button */}
+              <button 
+                onClick={() => startCountdown('stop')} 
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-4 rounded-full text-lg font-semibold shadow-lg flex items-center justify-center"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                </svg>
+                Stop
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
       
       {/* Display permission dialog if needed */}
       {showPermissionDialog && (

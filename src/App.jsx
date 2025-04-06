@@ -48,7 +48,7 @@ const App = () => {
               <RunTrackerProvider>
                 <div className="relative w-full h-full bg-[#111827] text-white">
                   <MenuBar />
-                  <main className="pb-24 max-w-[375px] mx-auto">
+                  <main className="pb-24 w-full max-w-screen-sm mx-auto px-4">
                     <Suspense fallback={<LoadingFallback />}>
                       <AppRoutes />
                     </Suspense>
