@@ -5,13 +5,48 @@
 
 import { Platform, Linking } from '../utils/react-native-shim';
 
-// Check if Amber is installed (will only work in native context)
-const isAmberInstalled = async () => {
+// Keep track of authentication attempts
+let authAttempts = 0;
+const MAX_AUTH_ATTEMPTS = 3;
+const AUTH_COOLDOWN_PERIOD = 60 * 1000; // 1 minute
+let lastAuthAttempt = 0;
+
+// Track pending requests
+let pendingRequest = false;
+let pendingRequestTimeout = null;
+
+/**
+ * Reset the auth attempts counter
+ */
+const resetAuthAttempts = () => {
+  authAttempts = 0;
+};
+
+/**
+ * Check if Amber is installed (will only work in native context)
+ * @param {boolean} trustCache - Whether to trust cached results (default: true)
+ * @returns {Promise<boolean>} Whether Amber is installed
+ */
+const isAmberInstalled = async (trustCache = true) => {
   if (Platform.OS !== 'android') return false;
+  
+  // If we've already established Amber isn't available, don't keep checking
+  if (trustCache && localStorage.getItem('amberUnavailable') === 'true') {
+    return false;
+  }
   
   try {
     // This will check if the app can handle the nostrsigner: URI scheme
     const canOpen = await Linking.canOpenURL('nostrsigner:');
+    
+    if (!canOpen && trustCache) {
+      // Cache the result so we don't keep trying
+      localStorage.setItem('amberUnavailable', 'true');
+    } else if (canOpen) {
+      // Reset the cache in case Amber was installed after previous check
+      localStorage.removeItem('amberUnavailable');
+    }
+    
     return canOpen;
   } catch (error) {
     console.error('Error checking if Amber is installed:', error);
@@ -30,7 +65,34 @@ const requestAuthentication = async () => {
     return false;
   }
   
+  // Check if we're in cooldown period after multiple failed attempts
+  const now = Date.now();
+  if (authAttempts >= MAX_AUTH_ATTEMPTS && (now - lastAuthAttempt) < AUTH_COOLDOWN_PERIOD) {
+    console.warn(`Amber auth in cooldown period. Please try again later.`);
+    return false;
+  }
+  
+  // Prevent multiple simultaneous requests
+  if (pendingRequest) {
+    console.warn('Another Amber request is already pending');
+    return false;
+  }
+  
   try {
+    pendingRequest = true;
+    
+    // Update auth attempts tracking
+    authAttempts++;
+    lastAuthAttempt = now;
+    
+    // Double-check if Amber is really available (bypass cache)
+    const isAvailable = await isAmberInstalled(false);
+    if (!isAvailable) {
+      console.error('Amber is not actually available, but we tried to use it');
+      pendingRequest = false;
+      return false;
+    }
+    
     // Create an authentication request event
     const authEvent = {
       kind: 22242, // Auth event kind
@@ -53,6 +115,17 @@ const requestAuthentication = async () => {
     
     console.log('Opening Amber with URI:', amberUri);
     
+    // Set a timeout to release the pending state if no response
+    pendingRequestTimeout = setTimeout(() => {
+      console.warn('Amber authentication timed out');
+      pendingRequest = false;
+      
+      // Show a toast if we're running on Android
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Amber authentication timed out. Please try again.');
+      }
+    }, 30000); // 30 second timeout
+    
     // Open Amber using the URI
     await Linking.openURL(amberUri);
     
@@ -60,8 +133,18 @@ const requestAuthentication = async () => {
     return true;
   } catch (error) {
     console.error('Error authenticating with Amber:', error);
+    
+    // Clear the pending state
+    pendingRequest = false;
+    if (pendingRequestTimeout) {
+      clearTimeout(pendingRequestTimeout);
+      pendingRequestTimeout = null;
+    }
+    
     if (error.message && error.message.includes('Activity not found')) {
       console.error('Amber app not found or not responding');
+      // Mark Amber as unavailable
+      localStorage.setItem('amberUnavailable', 'true');
       return false;
     }
     return false;
@@ -71,7 +154,7 @@ const requestAuthentication = async () => {
 /**
  * Sign an event using Amber
  * @param {Object} event - The event to sign
- * @returns {Promise<boolean>} Success status
+ * @returns {Promise<Object>} Signed event or false if signing failed
  */
 const signEvent = async (event) => {
   if (Platform.OS !== 'android') {
@@ -79,10 +162,19 @@ const signEvent = async (event) => {
     return false;
   }
   
+  // Prevent multiple simultaneous requests
+  if (pendingRequest) {
+    console.warn('Another Amber request is already pending');
+    return false;
+  }
+  
   try {
+    pendingRequest = true;
+    
     // Make sure event has required fields
     if (!event.kind || !event.content) {
       console.error('Invalid event object for signing');
+      pendingRequest = false;
       return false;
     }
     
@@ -101,6 +193,17 @@ const signEvent = async (event) => {
     
     console.log('Opening Amber to sign event');
     
+    // Set a timeout to release the pending state if no response
+    pendingRequestTimeout = setTimeout(() => {
+      console.warn('Amber signing timed out');
+      pendingRequest = false;
+      
+      // Show a toast if we're running on Android
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Amber signing timed out. Please try again.');
+      }
+    }, 30000); // 30 second timeout
+    
     // Open Amber using the URI
     await Linking.openURL(amberUri);
     
@@ -108,8 +211,18 @@ const signEvent = async (event) => {
     return true;
   } catch (error) {
     console.error('Error signing with Amber:', error);
+    
+    // Clear the pending state
+    pendingRequest = false;
+    if (pendingRequestTimeout) {
+      clearTimeout(pendingRequestTimeout);
+      pendingRequestTimeout = null;
+    }
+    
     if (error.message && error.message.includes('Activity not found')) {
       console.error('Amber app not found or not responding');
+      // Mark Amber as unavailable
+      localStorage.setItem('amberUnavailable', 'true');
       return false;
     }
     return false;
@@ -143,6 +256,16 @@ const setupDeepLinkHandling = (callback) => {
             
             console.log('Successfully parsed Amber response');
             
+            // Clear pending state on successful response
+            pendingRequest = false;
+            if (pendingRequestTimeout) {
+              clearTimeout(pendingRequestTimeout);
+              pendingRequestTimeout = null;
+            }
+            
+            // On successful auth, reset the attempts counter
+            resetAuthAttempts();
+            
             // Call the callback with the parsed response
             callback(parsedResponse);
           } catch (error) {
@@ -157,6 +280,13 @@ const setupDeepLinkHandling = (callback) => {
         console.error('Error processing callback URL:', error);
         callback(null);
       }
+      
+      // Clear pending state if it's still set
+      pendingRequest = false;
+      if (pendingRequestTimeout) {
+        clearTimeout(pendingRequestTimeout);
+        pendingRequestTimeout = null;
+      }
     }
   });
   
@@ -166,9 +296,19 @@ const setupDeepLinkHandling = (callback) => {
   };
 };
 
+/**
+ * Check if an Amber authentication is in progress
+ * @returns {boolean} Whether an auth is in progress
+ */
+const isAuthenticationPending = () => {
+  return pendingRequest;
+};
+
 export default {
   isAmberInstalled,
   requestAuthentication,
   signEvent,
-  setupDeepLinkHandling
+  setupDeepLinkHandling,
+  isAuthenticationPending,
+  resetAuthAttempts
 }; 

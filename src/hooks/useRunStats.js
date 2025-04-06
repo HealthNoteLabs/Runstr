@@ -34,33 +34,6 @@ export const useRunStats = (runHistory, userProfile) => {
     }
   });
 
-  // Update stats when run history, user profile, or distance unit changes
-  useEffect(() => {
-    if (runHistory.length > 0) {
-      calculateStats(runHistory, userProfile);
-    }
-  }, [runHistory, userProfile, distanceUnit, calculateStats]);
-
-  // Listen for distance unit changes via custom event
-  useEffect(() => {
-    const handleUnitChange = (event) => {
-      setDistanceUnit(event.detail.unit);
-    };
-    
-    document.addEventListener('distanceUnitChanged', handleUnitChange);
-    
-    return () => {
-      document.removeEventListener('distanceUnitChanged', handleUnitChange);
-    };
-  }, []);
-
-  // Toggle between km and mi units
-  const toggleDistanceUnit = () => {
-    const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
-    setDistanceUnit(newUnit);
-    localStorage.setItem('distanceUnit', newUnit);
-  };
-
   // Calculate calories burned for a run
   const calculateCaloriesBurned = useCallback((distance, duration) => {
     // Default metabolic equivalent (MET) for running
@@ -77,14 +50,56 @@ export const useRunStats = (runHistory, userProfile) => {
   // Calculate all stats from run history
   const calculateStats = useCallback((runs, userProfile = null) => {
     try {
-      if (!runs || runs.length === 0) {
+      // If there are no runs, set default stats and return
+      if (!runs || !Array.isArray(runs) || runs.length === 0) {
+        setStats({
+          totalDistance: 0,
+          totalRuns: 0,
+          averagePace: 0,
+          fastestPace: 0,
+          averageSpeed: 0,
+          topSpeed: 0,
+          longestRun: 0,
+          currentStreak: 0,
+          thisWeekDistance: 0,
+          thisMonthDistance: 0,
+          totalCaloriesBurned: 0,
+          averageCaloriesPerKm: 0,
+          personalBests: {
+            '5k': 0,
+            '10k': 0,
+            'halfMarathon': 0,
+            'marathon': 0
+          }
+        });
         return;
       }
 
       // Filter out runs with zero distance to avoid NaN values
-      const validRuns = runs.filter(run => run.distance > 0);
+      const validRuns = runs.filter(run => run && run.distance > 0);
       
       if (validRuns.length === 0) {
+        // Also set default stats if there are no valid runs
+        setStats({
+          totalDistance: 0,
+          totalRuns: 0,
+          averagePace: 0,
+          fastestPace: 0,
+          averageSpeed: 0,
+          topSpeed: 0,
+          longestRun: 0,
+          currentStreak: 0,
+          thisWeekDistance: 0,
+          thisMonthDistance: 0,
+          totalCaloriesBurned: 0,
+          averageCaloriesPerKm: 0,
+          personalBests: {
+            '5k': 0,
+            '10k': 0,
+            'halfMarathon': 0,
+            'marathon': 0
+          }
+        });
         return;
       }
 
@@ -101,7 +116,7 @@ export const useRunStats = (runHistory, userProfile) => {
       let totalCaloriesBurned = 0;
       
       // Check if we are calculating for cycling activities
-      const isCycling = runs[0]?.activityType === 'cycle';
+      const isCycling = validRuns[0]?.activityType === 'cycle';
 
       // Calculate the streak
       const runDates = validRuns.map(run => {
@@ -262,6 +277,57 @@ export const useRunStats = (runHistory, userProfile) => {
       });
     }
   }, [distanceUnit]);
+
+  // Update stats when run history, user profile, or distance unit changes
+  useEffect(() => {
+    try {
+      // Always call calculateStats, even if runHistory is empty
+      calculateStats(runHistory, userProfile);
+    } catch (error) {
+      console.error('Error in useRunStats effect:', error);
+      // Set default stats if there's an error
+      setStats({
+        totalDistance: 0,
+        totalRuns: 0,
+        averagePace: 0,
+        fastestPace: 0,
+        averageSpeed: 0,
+        topSpeed: 0,
+        longestRun: 0,
+        currentStreak: 0,
+        thisWeekDistance: 0,
+        thisMonthDistance: 0,
+        totalCaloriesBurned: 0,
+        averageCaloriesPerKm: 0,
+        personalBests: {
+          '5k': 0,
+          '10k': 0,
+          'halfMarathon': 0,
+          'marathon': 0
+        }
+      });
+    }
+  }, [runHistory, userProfile, distanceUnit, calculateStats]);
+
+  // Listen for distance unit changes via custom event
+  useEffect(() => {
+    const handleUnitChange = (event) => {
+      setDistanceUnit(event.detail.unit);
+    };
+    
+    document.addEventListener('distanceUnitChanged', handleUnitChange);
+    
+    return () => {
+      document.removeEventListener('distanceUnitChanged', handleUnitChange);
+    };
+  }, []);
+
+  // Toggle between km and mi units
+  const toggleDistanceUnit = () => {
+    const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
+    setDistanceUnit(newUnit);
+    localStorage.setItem('distanceUnit', newUnit);
+  };
 
   return {
     stats,

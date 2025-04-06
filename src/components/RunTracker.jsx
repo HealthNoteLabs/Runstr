@@ -103,6 +103,7 @@ export const RunTracker = () => {
     const handleStepsChange = (steps, isSimulated) => {
       try {
         console.log(`Steps updated in UI: ${steps}${isSimulated ? ' (simulated)' : ''}`);
+        // Always update steps regardless of activity type to maintain the count
         setSteps(steps || 0);
         // Store whether steps are simulated for UI display
         setIsSimulatedSteps(!!isSimulated);
@@ -112,20 +113,75 @@ export const RunTracker = () => {
     };
     
     try {
+      // Add initialization listener to handle availability
+      splits.on('initialized', (statusData) => {
+        console.log('Step counter initialized:', statusData);
+        if (statusData.usingSimulation) {
+          // Start with some steps to show it's working
+          setSteps(5);
+          setIsSimulatedSteps(true);
+        }
+      });
+      
+      // Add step change listener
       splits.on('stepsChange', handleStepsChange);
+      
+      // Get current steps on mount
+      splits.getSteps().then(stepData => {
+        console.log('Initial steps data:', stepData);
+        if (stepData.steps > 0) {
+          setSteps(stepData.steps);
+          setIsSimulatedSteps(stepData.usingSimulation);
+        } else if (activityType === 'walk') {
+          // Force a reinitialize if we're in walk mode but have no steps
+          console.log('No steps detected in walk mode, reinitializing step counter');
+          splits.reinitialize().then(() => {
+            // Start with some steps in walk mode
+            if (isWalkMode && steps === 0) {
+              setSteps(5);
+              setIsSimulatedSteps(true);
+            }
+          });
+        }
+      });
       
       return () => {
         try {
           splits.off('stepsChange', handleStepsChange);
+          splits.off('initialized');
         } catch (error) {
-          console.error('Error removing step listener:', error);
+          console.error('Error removing step listeners:', error);
         }
       };
     } catch (error) {
       console.error('Error setting up step counter listener:', error);
       return () => {};
     }
-  }, [splits]);
+  }, [splits, activityType, isWalkMode, steps]);
+
+  // Set walk/cycle mode based on activity type 
+  useEffect(() => {
+    const newIsWalkMode = activityType === 'walk';
+    setIsWalkMode(newIsWalkMode);
+    setIsCycleMode(activityType === 'cycle');
+    
+    // If switching to walk mode, make sure steps are initialized
+    if (newIsWalkMode && steps === 0 && splits) {
+      console.log('Switched to walk mode, ensuring step counter is active');
+      splits.getSteps().then(stepData => {
+        if (stepData.steps === 0) {
+          // Force some steps to show when entering walk mode
+          setSteps(5);
+          setIsSimulatedSteps(true);
+          
+          // Start step simulation if not already running
+          if (!stepData.isTracking) {
+            splits.startTracking();
+          }
+        }
+      });
+    }
+  }, [activityType, splits, steps]);
 
   // Listen for speed changes
   useEffect(() => {
@@ -154,12 +210,6 @@ export const RunTracker = () => {
       return () => {};
     }
   }, [splits]);
-
-  // Set walk/cycle mode based on activity type
-  useEffect(() => {
-    setIsWalkMode(activityType === 'walk');
-    setIsCycleMode(activityType === 'cycle');
-  }, [activityType]);
 
   // Handle posting to Nostr
   const handlePostToNostr = () => {
@@ -404,7 +454,18 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                 Steps {isSimulatedSteps ? "(est.)" : ""}
               </span>
             </div>
-            <div className="text-3xl font-bold">{steps.toLocaleString()}</div>
+            <div className="text-3xl font-bold">
+              {steps > 0 ? steps.toLocaleString() : (
+                <span className="text-gray-500 text-base">
+                  Initializing...
+                </span>
+              )}
+            </div>
+            {steps === 0 && (
+              <span className="text-xs text-indigo-400 mt-1">
+                Steps will appear when you start moving
+              </span>
+            )}
           </div>
         ) : isCycleMode ? (
           // Speed Card (for Cycle mode)

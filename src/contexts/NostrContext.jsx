@@ -4,7 +4,12 @@ import { createContext } from 'react';
 export const NostrContext = createContext({
   publicKey: null,
   isNostrReady: false,
+  isAmberAvailable: false,
+  isLoading: false,
+  error: null,
   requestNostrPermissions: async () => false,
+  signEvent: async () => {},
   defaultZapAmount: 1000,
-  updateDefaultZapAmount: () => {}
+  updateDefaultZapAmount: () => {},
+  resetError: () => {}
 });

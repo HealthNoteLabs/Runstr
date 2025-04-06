@@ -6,6 +6,7 @@ export const ClubsList = () => {
   const [clubs, setClubs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     const loadClubs = async () => {
@@ -14,9 +15,12 @@ export const ClubsList = () => {
         
         // Set a timeout to prevent infinite loading
         const loadingTimeout = setTimeout(() => {
-          setLoading(false);
-          setError('Loading timed out. Please try again.');
-        }, 15000); // 15 seconds timeout
+          // Only show timeout error if we haven't loaded any clubs yet
+          if (clubs.length === 0) {
+            setLoading(false);
+            setError('Loading timed out. Please try again.');
+          }
+        }, 10000); // 10 seconds timeout
         
         const groups = await fetchRunningGroups();
         
@@ -34,30 +38,37 @@ export const ClubsList = () => {
     };
 
     loadClubs();
+
+    // Listen for club data updates from background fetches
+    const handleClubsDataUpdate = (event) => {
+      if (event.detail && event.detail.clubs) {
+        setClubs(event.detail.clubs);
+        
+        // Show a quick "refreshed" indicator
+        setIsRefreshing(true);
+        setTimeout(() => setIsRefreshing(false), 1500);
+      }
+    };
+
+    document.addEventListener('clubsDataUpdated', handleClubsDataUpdate);
+    
+    return () => {
+      document.removeEventListener('clubsDataUpdated', handleClubsDataUpdate);
+    };
   }, []);
 
   const refreshClubs = async () => {
     try {
-      setLoading(true);
+      setIsRefreshing(true);
       setError(null);
       
-      // Set a timeout to prevent infinite loading
-      const loadingTimeout = setTimeout(() => {
-        setLoading(false);
-        setError('Loading timed out. Please try again.');
-      }, 15000); // 15 seconds timeout
-      
       const groups = await fetchRunningGroups();
-      
-      // Clear the timeout since we got a response
-      clearTimeout(loadingTimeout);
-      
       setClubs(groups);
     } catch (err) {
       console.error('Error refreshing clubs:', err);
       setError('Failed to refresh running clubs');
     } finally {
-      setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -69,12 +80,21 @@ export const ClubsList = () => {
           <button
             onClick={refreshClubs}
             className="px-3 py-1 rounded-lg bg-gray-700 text-white text-sm flex items-center"
-            disabled={loading}
+            disabled={loading || isRefreshing}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Refresh
+            {isRefreshing ? (
+              <>
+                <div className="w-4 h-4 border-2 border-transparent border-t-white rounded-full animate-spin mr-1"></div>
+                Refreshing
+              </>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </>
+            )}
           </button>
           <Link to="/club/create" className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-sm flex items-center">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -85,12 +105,12 @@ export const ClubsList = () => {
         </div>
       </div>
 
-      {loading ? (
+      {loading && clubs.length === 0 ? (
         <div className="flex flex-col justify-center items-center py-8">
           <div className="loading-spinner mb-4"></div>
           <p className="text-gray-400">Loading running clubs...</p>
         </div>
-      ) : error ? (
+      ) : error && clubs.length === 0 ? (
         <div className="bg-red-900/30 border border-red-500 rounded-lg p-4 text-center">
           <p className="text-red-400">{error}</p>
           <button
@@ -112,22 +132,41 @@ export const ClubsList = () => {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4">
-          {clubs.map((club) => (
-            <Link
-              key={club.id}
-              to={`/club/detail/${encodeURIComponent(club.id)}`}
-              className="bg-gray-800 rounded-lg p-4 hover:bg-gray-700 transition-colors"
-            >
-              <h3 className="text-lg font-semibold mb-2">{club.name}</h3>
-              <p className="text-gray-400 text-sm mb-3 line-clamp-2">{club.about}</p>
-              <div className="flex justify-between text-xs text-gray-500">
-                <span>Created: {new Date(club.createdAt * 1000).toLocaleDateString()}</span>
-                <span className="px-2 py-1 bg-gray-700 rounded-full">View Details</span>
+        <>
+          {/* Show a subtle loading indicator when more clubs are being loaded */}
+          {loading && clubs.length > 0 && (
+            <div className="bg-indigo-900/20 border border-indigo-500 rounded-lg p-2 mb-4 text-center text-xs">
+              <div className="flex items-center justify-center">
+                <div className="w-3 h-3 border-2 border-transparent border-t-white rounded-full animate-spin mr-2"></div>
+                <p className="text-indigo-400">Loading more clubs...</p>
               </div>
-            </Link>
-          ))}
-        </div>
+            </div>
+          )}
+          
+          {/* Show a refreshed notification */}
+          {isRefreshing && clubs.length > 0 && !loading && (
+            <div className="bg-green-900/20 border border-green-500 rounded-lg p-2 mb-4 text-center text-xs fade-out">
+              <p className="text-green-400">Club list refreshed</p>
+            </div>
+          )}
+          
+          <div className="grid grid-cols-1 gap-4">
+            {clubs.map((club) => (
+              <Link
+                key={club.id}
+                to={`/club/detail/${encodeURIComponent(club.id)}`}
+                className="bg-gray-800 rounded-lg p-4 hover:bg-gray-700 transition-colors"
+              >
+                <h3 className="text-lg font-semibold mb-2">{club.name}</h3>
+                <p className="text-gray-400 text-sm mb-3 line-clamp-2">{club.about}</p>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>Created: {new Date(club.createdAt * 1000).toLocaleDateString()}</span>
+                  <span className="px-2 py-1 bg-gray-700 rounded-full">View Details</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

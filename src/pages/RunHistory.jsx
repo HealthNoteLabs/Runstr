@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Component } from 'react';
 import { useNavigate } from 'react-router-dom';
+import PropTypes from 'prop-types';
 import { 
   createAndPublishEvent, 
   formatRunEvent, 
@@ -13,6 +14,54 @@ import { useActivityType } from '../contexts/ActivityTypeContext';
 import { formatTime, displayDistance, formatElevation, formatDate } from '../utils/formatters';
 import runDataService from '../services/RunDataService';
 
+// Error boundary component to catch rendering errors
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    this.setState({
+      error,
+      errorInfo
+    });
+    console.error("Stats error boundary caught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="error-container p-4 bg-red-900/30 rounded-lg m-4">
+          <h3 className="text-xl font-bold mb-2">Something went wrong</h3>
+          <p className="mb-4">There was an error loading the stats. Please try refreshing the page.</p>
+          <button 
+            onClick={() => { 
+              this.setState({ hasError: false });
+              if (this.props.onReset) this.props.onReset();
+            }}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-lg"
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Add PropTypes validation
+ErrorBoundary.propTypes = {
+  children: PropTypes.node,
+  onReset: PropTypes.func
+};
+
 export const RunHistory = () => {
   const navigate = useNavigate();
   const { activityType, getActivityTypeLabel } = useActivityType();
@@ -23,6 +72,7 @@ export const RunHistory = () => {
   const [runHistory, setRunHistory] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [distanceUnit, setDistanceUnit] = useState(() => localStorage.getItem('distanceUnit') || 'km');
+  const [statsError, setStatsError] = useState(false);
 
   // Get user profile and distance unit from custom hooks
   const { userProfile: profile } = useRunProfile();
@@ -32,6 +82,12 @@ export const RunHistory = () => {
     calculateStats,
     calculateCaloriesBurned
   } = useRunStats(runHistory, profile);
+
+  // Reset stats error state
+  const resetStatsError = () => {
+    setStatsError(false);
+    loadRunHistory();
+  };
 
   // Load run history on component mount and listen for updates
   useEffect(() => {
@@ -46,9 +102,16 @@ export const RunHistory = () => {
     document.addEventListener('runHistoryUpdated', handleRunHistoryUpdate);
     document.addEventListener('runCompleted', handleRunHistoryUpdate);
     
+    // Make sure to close any active subscriptions when unmounting to prevent interference with Feed
     return () => {
       document.removeEventListener('runHistoryUpdated', handleRunHistoryUpdate);
       document.removeEventListener('runCompleted', handleRunHistoryUpdate);
+      
+      // Inform the app that Stats page is unloaded
+      document.dispatchEvent(new CustomEvent('statsPageUnloaded'));
+      
+      // Reset stats error state on unmount
+      setStatsError(false);
     };
   }, [activityType]); // Reload when activity type changes
 
@@ -107,6 +170,7 @@ export const RunHistory = () => {
     } catch (error) {
       console.error(`Error loading ${activityLabelLower} history:`, error);
       setRunHistory([]);
+      setStatsError(true);
     }
   };
 
@@ -322,191 +386,193 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
 
   return (
     <div className="run-history">
-      <div className="stats-overview">
-        <h2>STATS</h2>
-        <div className="flex justify-center my-4">
-          <div className="flex rounded-full bg-[#1a222e] p-1">
-            <button 
-              className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-              onClick={() => distanceUnit !== 'km' && toggleDistanceUnit()}
-            >
-              Kilometers
-            </button>
-            <button 
-              className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-              onClick={() => distanceUnit !== 'mi' && toggleDistanceUnit()}
-            >
-              Miles
-            </button>
-          </div>
-        </div>
-        <button 
-          className="profile-btn" 
-          onClick={() => navigate('/profile')}
-          title="Update your profile for accurate calorie calculations"
-        >
-          Update Profile
-        </button>
-        <div className="stats-grid">
-          <div className="stat-card">
-            <h3>Total Distance</h3>
-            <p>{!stats ? '0.00 ' + distanceUnit : displayDistance(stats.totalDistance || 0, distanceUnit)}</p>
-          </div>
-          <div className="stat-card">
-            <h3>Total {activityLabel}s</h3>
-            <p>{!stats ? '0' : (stats.totalRuns || 0)}</p>
-          </div>
-          <div className="stat-card">
-            <h3>Current Streak</h3>
-            <p>{!stats ? '0' : (stats.currentStreak || 0)} days</p>
-          </div>
-          
-          {activityType === 'cycle' ? (
-            <div className="stat-card">
-              <h3>Average Speed</h3>
-              <p>
-                {!stats || typeof stats.averageSpeed !== 'number' || stats.averageSpeed <= 0
-                  ? '-' 
-                  : `${stats.averageSpeed.toFixed(1)}`}{' '}
-                {distanceUnit === 'km' ? 'km/h' : 'mph'}
-              </p>
+      <ErrorBoundary onReset={resetStatsError}>
+        <div className="stats-overview">
+          <h2>STATS</h2>
+          <div className="flex justify-center my-4">
+            <div className="flex rounded-full bg-[#1a222e] p-1">
+              <button 
+                className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+                onClick={() => distanceUnit !== 'km' && toggleDistanceUnit()}
+              >
+                Kilometers
+              </button>
+              <button 
+                className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+                onClick={() => distanceUnit !== 'mi' && toggleDistanceUnit()}
+              >
+                Miles
+              </button>
             </div>
-          ) : (
-            <div className="stat-card">
-              <h3>Average Pace</h3>
-              <p>
-                {!stats || typeof stats.averagePace !== 'number' || stats.averagePace <= 0
-                  ? '-' 
-                  : `${Math.floor(stats.averagePace)}:${Math.round(stats.averagePace % 1 * 60).toString().padStart(2, '0')}`}{' '}
-                min/{distanceUnit}
-              </p>
-            </div>
-          )}
-          
-          {activityType === 'cycle' ? (
-            <div className="stat-card">
-              <h3>Top Speed</h3>
-              <p>
-                {!stats || typeof stats.topSpeed !== 'number' || stats.topSpeed <= 0
-                  ? '-'
-                  : `${stats.topSpeed.toFixed(1)}`}{' '}
-                {distanceUnit === 'km' ? 'km/h' : 'mph'}
-              </p>
-            </div>
-          ) : (
-            <div className="stat-card">
-              <h3>Fastest Pace</h3>
-              <p>
-                {!stats || typeof stats.fastestPace !== 'number' || stats.fastestPace <= 0
-                  ? '-'
-                  : `${Math.floor(stats.fastestPace)}:${Math.round(stats.fastestPace % 1 * 60).toString().padStart(2, '0')}`}{' '}
-                min/{distanceUnit}
-              </p>
-            </div>
-          )}
-          
-          <div className="stat-card">
-            <h3>Longest {activityLabel}</h3>
-            <p>{!stats ? '0.00 ' + distanceUnit : displayDistance(stats.longestRun || 0, distanceUnit)}</p>
           </div>
-        </div>
-
-        <div className="calorie-stats">
-          <h3>Calorie Tracking</h3>
+          <button 
+            className="profile-btn" 
+            onClick={() => navigate('/profile')}
+            title="Update your profile for accurate calorie calculations"
+          >
+            Update Profile
+          </button>
           <div className="stats-grid">
             <div className="stat-card">
-              <h4>Total Calories Burned</h4>
-              <p>{!stats ? '0' : (stats.totalCaloriesBurned || 0).toLocaleString()} kcal</p>
+              <h3>Total Distance</h3>
+              <p>{!stats ? '0.00 ' + distanceUnit : displayDistance(stats.totalDistance || 0, distanceUnit)}</p>
             </div>
             <div className="stat-card">
-              <h4>Avg. Calories per {distanceUnit.toUpperCase()}</h4>
-              <p>{!stats ? '0' : Math.round(stats.averageCaloriesPerKm || 0)} kcal</p>
+              <h3>Total {activityLabel}s</h3>
+              <p>{!stats ? '0' : (stats.totalRuns || 0)}</p>
+            </div>
+            <div className="stat-card">
+              <h3>Current Streak</h3>
+              <p>{!stats ? '0' : (stats.currentStreak || 0)} days</p>
+            </div>
+            
+            {activityType === 'cycle' ? (
+              <div className="stat-card">
+                <h3>Average Speed</h3>
+                <p>
+                  {!stats || typeof stats.averageSpeed !== 'number' || stats.averageSpeed <= 0
+                    ? '-' 
+                    : `${stats.averageSpeed.toFixed(1)}`}{' '}
+                  {distanceUnit === 'km' ? 'km/h' : 'mph'}
+                </p>
+              </div>
+            ) : (
+              <div className="stat-card">
+                <h3>Average Pace</h3>
+                <p>
+                  {!stats || typeof stats.averagePace !== 'number' || stats.averagePace <= 0
+                    ? '-' 
+                    : `${Math.floor(stats.averagePace)}:${Math.round(stats.averagePace % 1 * 60).toString().padStart(2, '0')}`}{' '}
+                  min/{distanceUnit}
+                </p>
+              </div>
+            )}
+            
+            {activityType === 'cycle' ? (
+              <div className="stat-card">
+                <h3>Top Speed</h3>
+                <p>
+                  {!stats || typeof stats.topSpeed !== 'number' || stats.topSpeed <= 0
+                    ? '-'
+                    : `${stats.topSpeed.toFixed(1)}`}{' '}
+                  {distanceUnit === 'km' ? 'km/h' : 'mph'}
+                </p>
+              </div>
+            ) : (
+              <div className="stat-card">
+                <h3>Fastest Pace</h3>
+                <p>
+                  {!stats || typeof stats.fastestPace !== 'number' || stats.fastestPace <= 0
+                    ? '-'
+                    : `${Math.floor(stats.fastestPace)}:${Math.round(stats.fastestPace % 1 * 60).toString().padStart(2, '0')}`}{' '}
+                  min/{distanceUnit}
+                </p>
+              </div>
+            )}
+            
+            <div className="stat-card">
+              <h3>Longest {activityLabel}</h3>
+              <p>{!stats ? '0.00 ' + distanceUnit : displayDistance(stats.longestRun || 0, distanceUnit)}</p>
             </div>
           </div>
-        </div>
 
-        <div className="recent-stats">
-          <h3>Recent Activity</h3>
-          <div className="stats-grid">
-            <div className="stat-card">
-              <h4>This Week</h4>
-              <p>{!stats ? '0.00 ' + distanceUnit : displayDistance(stats.thisWeekDistance || 0, distanceUnit)}</p>
-            </div>
-            <div className="stat-card">
-              <h4>This Month</h4>
-              <p>{!stats ? '0.00 ' + distanceUnit : displayDistance(stats.thisMonthDistance || 0, distanceUnit)}</p>
+          <div className="calorie-stats">
+            <h3>Calorie Tracking</h3>
+            <div className="stats-grid">
+              <div className="stat-card">
+                <h4>Total Calories Burned</h4>
+                <p>{!stats ? '0' : (stats.totalCaloriesBurned || 0).toLocaleString()} kcal</p>
+              </div>
+              <div className="stat-card">
+                <h4>Avg. Calories per {distanceUnit.toUpperCase()}</h4>
+                <p>{!stats ? '0' : Math.round(stats.averageCaloriesPerKm || 0)} kcal</p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="personal-bests">
-          <h3>Personal Bests</h3>
-          <div className="stats-grid">
-            <div className="stat-card">
-              <h4>5K</h4>
-              <p>
-                {!stats || !stats.personalBests || stats.personalBests['5k'] === 0 || typeof stats.personalBests['5k'] !== 'number'
-                  ? '-'
-                  : `${Math.floor(stats.personalBests['5k'])}:${Math.round((stats.personalBests['5k'] % 1) * 60).toString().padStart(2, '0')}`}{' '}
-                min/{distanceUnit}
-              </p>
-            </div>
-            <div className="stat-card">
-              <h4>10K</h4>
-              <p>
-                {!stats || !stats.personalBests || stats.personalBests['10k'] === 0 || typeof stats.personalBests['10k'] !== 'number'
-                  ? '-'
-                  : `${Math.floor(stats.personalBests['10k'])}:${Math.round((stats.personalBests['10k'] % 1) * 60).toString().padStart(2, '0')}`}{' '}
-                min/{distanceUnit}
-              </p>
-            </div>
-            <div className="stat-card">
-              <h4>Half Marathon</h4>
-              <p>
-                {!stats || !stats.personalBests || stats.personalBests['halfMarathon'] === 0 || typeof stats.personalBests['halfMarathon'] !== 'number'
-                  ? '-'
-                  : `${Math.floor(stats.personalBests['halfMarathon'])}:${Math.round((stats.personalBests['halfMarathon'] % 1) * 60).toString().padStart(2, '0')}`}{' '}
-                min/{distanceUnit}
-              </p>
-            </div>
-            <div className="stat-card">
-              <h4>Marathon</h4>
-              <p>
-                {!stats || !stats.personalBests || stats.personalBests['marathon'] === 0 || typeof stats.personalBests['marathon'] !== 'number'
-                  ? '-'
-                  : `${Math.floor(stats.personalBests['marathon'])}:${Math.round((stats.personalBests['marathon'] % 1) * 60).toString().padStart(2, '0')}`}{' '}
-                min/{distanceUnit}
-              </p>
+          <div className="recent-stats">
+            <h3>Recent Activity</h3>
+            <div className="stats-grid">
+              <div className="stat-card">
+                <h4>This Week</h4>
+                <p>{!stats ? '0.00 ' + distanceUnit : displayDistance(stats.thisWeekDistance || 0, distanceUnit)}</p>
+              </div>
+              <div className="stat-card">
+                <h4>This Month</h4>
+                <p>{!stats ? '0.00 ' + distanceUnit : displayDistance(stats.thisMonthDistance || 0, distanceUnit)}</p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="elevation-stats-overview">
-          <h3>Elevation Data</h3>
-          <div className="stats-grid">
-            <div className="stat-card">
-              <h4>Total Elevation Gain</h4>
-              <p>
-                {formatElevation(
-                  !runHistory || !Array.isArray(runHistory) ? 0 : 
-                  runHistory.reduce((sum, run) => sum + ((run?.elevation?.gain) || 0), 0),
-                  distanceUnit
-                )}
-              </p>
+          <div className="personal-bests">
+            <h3>Personal Bests</h3>
+            <div className="stats-grid">
+              <div className="stat-card">
+                <h4>5K</h4>
+                <p>
+                  {!stats || !stats.personalBests || stats.personalBests['5k'] === 0 || typeof stats.personalBests['5k'] !== 'number'
+                    ? '-'
+                    : `${Math.floor(stats.personalBests['5k'])}:${Math.round((stats.personalBests['5k'] % 1) * 60).toString().padStart(2, '0')}`}{' '}
+                  min/{distanceUnit}
+                </p>
+              </div>
+              <div className="stat-card">
+                <h4>10K</h4>
+                <p>
+                  {!stats || !stats.personalBests || stats.personalBests['10k'] === 0 || typeof stats.personalBests['10k'] !== 'number'
+                    ? '-'
+                    : `${Math.floor(stats.personalBests['10k'])}:${Math.round((stats.personalBests['10k'] % 1) * 60).toString().padStart(2, '0')}`}{' '}
+                  min/{distanceUnit}
+                </p>
+              </div>
+              <div className="stat-card">
+                <h4>Half Marathon</h4>
+                <p>
+                  {!stats || !stats.personalBests || stats.personalBests['halfMarathon'] === 0 || typeof stats.personalBests['halfMarathon'] !== 'number'
+                    ? '-'
+                    : `${Math.floor(stats.personalBests['halfMarathon'])}:${Math.round((stats.personalBests['halfMarathon'] % 1) * 60).toString().padStart(2, '0')}`}{' '}
+                  min/{distanceUnit}
+                </p>
+              </div>
+              <div className="stat-card">
+                <h4>Marathon</h4>
+                <p>
+                  {!stats || !stats.personalBests || stats.personalBests['marathon'] === 0 || typeof stats.personalBests['marathon'] !== 'number'
+                    ? '-'
+                    : `${Math.floor(stats.personalBests['marathon'])}:${Math.round((stats.personalBests['marathon'] % 1) * 60).toString().padStart(2, '0')}`}{' '}
+                  min/{distanceUnit}
+                </p>
+              </div>
             </div>
-            <div className="stat-card">
-              <h4>Total Elevation Loss</h4>
-              <p>
-                {formatElevation(
-                  !runHistory || !Array.isArray(runHistory) ? 0 : 
-                  runHistory.reduce((sum, run) => sum + ((run?.elevation?.loss) || 0), 0),
-                  distanceUnit
-                )}
-              </p>
+          </div>
+
+          <div className="elevation-stats-overview">
+            <h3>Elevation Data</h3>
+            <div className="stats-grid">
+              <div className="stat-card">
+                <h4>Total Elevation Gain</h4>
+                <p>
+                  {formatElevation(
+                    !runHistory || !Array.isArray(runHistory) ? 0 : 
+                    runHistory.reduce((sum, run) => sum + ((run?.elevation?.gain) || 0), 0),
+                    distanceUnit
+                  )}
+                </p>
+              </div>
+              <div className="stat-card">
+                <h4>Total Elevation Loss</h4>
+                <p>
+                  {formatElevation(
+                    !runHistory || !Array.isArray(runHistory) ? 0 : 
+                    runHistory.reduce((sum, run) => sum + ((run?.elevation?.loss) || 0), 0),
+                    distanceUnit
+                  )}
+                </p>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </ErrorBoundary>
 
       <h2>{activityLabel} History</h2>
       <div className="run-list">

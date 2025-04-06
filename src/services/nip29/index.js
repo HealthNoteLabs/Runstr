@@ -3,21 +3,26 @@ import { RELAYS } from '../../utils/nostr';
 import { Platform } from '../../utils/react-native-shim';
 import AmberAuth from '../../services/AmberAuth';
 
-// Add some relays known to support NIP29
+// Use a smaller set of relays specifically for groups to reduce connection overhead
+// This helps avoid conflicts with the main feed's relay connections
 const GROUP_RELAYS = [
-  'wss://relay.0xchat.com', // Added as recommended
-  'wss://relay.nostr.band',
-  'wss://nos.lol',
-  'wss://relay.damus.io',
-  'wss://nostr.wine',
-  'wss://eden.nostr.land',
-  'wss://groups.nostr.com'
+  'wss://relay.0xchat.com',  // Primary for groups
+  'wss://relay.damus.io',    // Good secondary
+  'wss://nos.lol'            // Good tertiary
 ];
 
-// Initialize NDK instance for group operations
+// Create a separate NDK instance specifically for group operations
+// This avoids conflicts with the main feed's NDK instance
 const groupNdk = new NDK({
-  explicitRelayUrls: [...RELAYS, ...GROUP_RELAYS]
+  explicitRelayUrls: GROUP_RELAYS
 });
+
+// Track connection state
+let isConnected = false;
+let connectionAttempts = 0;
+const MAX_CONNECTION_ATTEMPTS = 3;
+let lastConnectionTime = 0;
+const CONNECTION_COOLDOWN = 30000; // 30 seconds between connection attempts
 
 // Helper to generate proper NIP29 group ID
 export function createGroupId(relayUrl, randomId) {
@@ -43,6 +48,16 @@ export function getRelayFromGroupId(groupId) {
 
 // Ensure connection to group relays
 export async function connectToGroupRelays() {
+  // Check if we recently tried to connect to avoid hammering relays
+  const now = Date.now();
+  if (isConnected || (now - lastConnectionTime < CONNECTION_COOLDOWN && connectionAttempts > 0)) {
+    return isConnected;
+  }
+  
+  // Update connection tracking
+  lastConnectionTime = now;
+  connectionAttempts++;
+  
   try {
     // Create a timeout promise that rejects after 5 seconds
     const timeoutPromise = new Promise((_, reject) => {
@@ -55,15 +70,33 @@ export async function connectToGroupRelays() {
     // Race the connection against the timeout
     await Promise.race([connectionPromise, timeoutPromise]);
     console.log('Connected to group relays');
+    isConnected = true;
     return true;
   } catch (error) {
     console.error('Error connecting to group relays:', error);
+    isConnected = false;
+    
+    // If we've tried too many times, back off more aggressively
+    if (connectionAttempts >= MAX_CONNECTION_ATTEMPTS) {
+      console.warn(`Maximum connection attempts (${MAX_CONNECTION_ATTEMPTS}) reached, backing off`);
+      // Reset attempts after backing off
+      setTimeout(() => {
+        connectionAttempts = 0;
+      }, CONNECTION_COOLDOWN * 2);
+    }
+    
     return false;
   }
 }
 
 // Get pubkey using the appropriate method based on platform
 async function getPubkey() {
+  // First check if we have a cached pubkey to avoid unnecessary auth requests
+  const storedPubkey = localStorage.getItem('nostrPublicKey');
+  if (storedPubkey) {
+    return storedPubkey;
+  }
+  
   // For Android, use Amber if available
   if (Platform.OS === 'android') {
     const isAmberAvailable = await AmberAuth.isAmberInstalled();
@@ -302,139 +335,249 @@ export async function leaveGroup(groupId) {
   }
 }
 
+// Cache for running groups to avoid repeated fetches
+let runningGroupsCache = null;
+let lastFetchTime = 0;
+const CACHE_VALIDITY_PERIOD = 5 * 60 * 1000; // 5 minutes
+
 // Fetch running groups (with #RUNSTR tag)
 export async function fetchRunningGroups() {
   try {
+    // Check cache first
+    const now = Date.now();
+    if (runningGroupsCache && (now - lastFetchTime < CACHE_VALIDITY_PERIOD)) {
+      console.log('Using cached running groups data');
+      return runningGroupsCache;
+    }
+    
+    // Connect to relays with better timeout handling
     await connectToGroupRelays();
+    if (!isConnected) {
+      console.warn('Failed to connect to group relays, using default groups');
+      return getDefaultGroups();
+    }
     
-    // Create a timeout promise that rejects after 10 seconds
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Fetch timeout')), 10000); // 10 second timeout
-    });
-    
-    // Try specific relays that are known to work well with NIP29
-    const specificRelays = [
-      'wss://relay.0xchat.com',
-      'wss://relay.damus.io',
-      'wss://nos.lol',
-      'wss://relay.nostr.band'
-    ];
-    
-    // Create a function to fetch from a specific relay
-    const fetchFromRelay = async (relay) => {
-      console.log(`Trying to fetch groups from ${relay}...`);
+    // Try to get clubs using a sequential approach to avoid overwhelming connections
+    try {
+      // First try the most specific relay that tends to have the most clubs
+      console.log('Fetching clubs from primary relay...');
+      const primaryRelay = 'wss://relay.0xchat.com';
+      const ndk = new NDK({ explicitRelayUrls: [primaryRelay] });
       
+      // Connect with timeout
       try {
-        const ndk = new NDK({ explicitRelayUrls: [relay] });
-        await ndk.connect();
+        await Promise.race([
+          ndk.connect(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timeout')), 5000))
+        ]);
         
-        // Fetch groups with broader filter
+        // Fetch groups
         const filter = {
           kinds: [39000], // Group metadata
-          limit: 100 // Increased limit to find more groups
+          limit: 50 // Reduced from 100 to improve performance
         };
         
-        const events = await ndk.fetchEvents(filter);
-        console.log(`Found ${events.size} groups from ${relay}`);
-        return Array.from(events);
-      } catch (error) {
-        console.error(`Error fetching from ${relay}:`, error);
-        return [];
-      }
-    };
-    
-    // Try fetching from each relay in parallel
-    const allPromises = specificRelays.map(relay => fetchFromRelay(relay));
-    
-    // Wait for all fetches, with timeout
-    const fetchPromise = Promise.all(allPromises);
-    const results = await Promise.race([fetchPromise, timeoutPromise])
-      .catch(error => {
-        console.error('Error or timeout in fetchRunningGroups:', error);
-        return [];
-      });
-    
-    // Flatten and deduplicate events
-    const allEvents = [].concat(...results);
-    const uniqueEvents = new Map();
-    
-    // Process each event
-    for (const event of allEvents) {
-      if (!event || !event.id) continue;
-      
-      uniqueEvents.set(event.id, event);
-    }
-    
-    // Extract the unique events
-    const events = Array.from(uniqueEvents.values());
-    const groups = [];
-    
-    // Process groups and look for #RUNSTR in name, about, or tags
-    for (const event of events) {
-      try {
-        // Extract group details from tags
-        const name = event.tags.find(t => t[0] === 'name')?.[1] || 'Unnamed Group';
-        const about = event.tags.find(t => t[0] === 'about')?.[1] || '';
-        const idTag = event.tags.find(t => t[0] === 'h')?.[1] || event.tags.find(t => t[0] === 'd')?.[1];
+        const events = await Promise.race([
+          ndk.fetchEvents(filter),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Fetch timeout')), 8000))
+        ]);
         
-        if (!idTag) continue; // Skip if no group ID found
-        
-        // Check for #RUNSTR in various places
-        const hasRunstrTag = event.tags.some(t => 
-          (t[0] === 't' && t[1].toUpperCase() === 'RUNSTR') ||
-          (t[0] === 'hashtag' && t[1].toUpperCase() === 'RUNSTR')
-        );
-        
-        // Check content for RUNSTR (some metadata might store it there)
-        const contentHasRunstr = event.content && event.content.toUpperCase().includes('#RUNSTR');
-        
-        // Look for RUNSTR in name or about
-        const nameHasRunstr = name.toUpperCase().includes('#RUNSTR');
-        const aboutHasRunstr = about.toUpperCase().includes('#RUNSTR');
-        
-        // Include group if it has RUNSTR in any of these places
-        if (nameHasRunstr || aboutHasRunstr || hasRunstrTag || contentHasRunstr) {
-          // For groups that don't have a proper display name, use a generic one
-          const displayName = name === 'Unnamed Group' ? 'Running Club #RUNSTR' : name;
+        if (events && events.size > 0) {
+          console.log(`Found ${events.size} groups from primary relay`);
+          const groups = processGroupEvents(Array.from(events));
           
-          groups.push({
-            id: idTag,
-            name: displayName,
-            about: about || 'A club for runners',
-            createdAt: event.created_at || Math.floor(Date.now() / 1000),
-            createdBy: event.pubkey
-          });
+          if (groups.length > 0 && groups[0].id !== 'default') {
+            // We found actual groups, update cache and return
+            runningGroupsCache = groups;
+            lastFetchTime = now;
+            
+            // Continue loading in background for more complete results
+            setTimeout(() => {
+              fetchRemainingRelays(['wss://relay.damus.io', 'wss://nos.lol']);
+            }, 0);
+            
+            return groups;
+          }
         }
       } catch (error) {
-        console.error('Error processing group event:', error);
-        // Continue with next event
+        console.log('Primary relay fetch failed:', error.message);
+        // Continue to fallback
+      }
+      
+      // If primary relay failed, try others sequentially
+      // This is more connection-efficient than parallel requests
+      console.log('Primary relay failed, trying secondary relays sequentially...');
+      const secondaryRelays = ['wss://relay.damus.io', 'wss://nos.lol'];
+      
+      for (const relay of secondaryRelays) {
+        try {
+          console.log(`Trying ${relay}...`);
+          const ndkSecondary = new NDK({ explicitRelayUrls: [relay] });
+          
+          // Connect with timeout
+          await Promise.race([
+            ndkSecondary.connect(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timeout')), 5000))
+          ]);
+          
+          // Fetch groups
+          const filter = {
+            kinds: [39000],
+            limit: 40
+          };
+          
+          const events = await Promise.race([
+            ndkSecondary.fetchEvents(filter),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Fetch timeout')), 8000))
+          ]);
+          
+          if (events && events.size > 0) {
+            console.log(`Found ${events.size} groups from ${relay}`);
+            const groups = processGroupEvents(Array.from(events));
+            
+            if (groups.length > 0 && groups[0].id !== 'default') {
+              // We found actual groups, update cache and return
+              runningGroupsCache = groups;
+              lastFetchTime = now;
+              return groups;
+            }
+          }
+        } catch (error) {
+          console.log(`Relay ${relay} fetch failed:`, error.message);
+          // Continue to next relay
+        }
+      }
+      
+      // If we got here, all relay fetches failed or returned no results
+      // Return default groups
+      return getDefaultGroups();
+    } catch (error) {
+      console.error('Error fetching groups:', error);
+      return getDefaultGroups();
+    }
+  } catch (error) {
+    console.error('Error in fetchRunningGroups:', error);
+    return getDefaultGroups();
+  }
+}
+
+// Helper function to process group events into formatted groups
+function processGroupEvents(events) {
+  // Deduplicate events
+  const uniqueEvents = new Map();
+  
+  // Process each event
+  for (const event of events) {
+    if (!event || !event.id) continue;
+    uniqueEvents.set(event.id, event);
+  }
+  
+  // Extract the unique events
+  const uniqueEventsArray = Array.from(uniqueEvents.values());
+  const groups = [];
+  
+  // Process groups and look for #RUNSTR in name, about, or tags
+  for (const event of uniqueEventsArray) {
+    try {
+      // Extract group details from tags
+      const name = event.tags.find(t => t[0] === 'name')?.[1] || 'Unnamed Group';
+      const about = event.tags.find(t => t[0] === 'about')?.[1] || '';
+      const idTag = event.tags.find(t => t[0] === 'h')?.[1] || event.tags.find(t => t[0] === 'd')?.[1];
+      
+      if (!idTag) continue; // Skip if no group ID found
+      
+      // Check for #RUNSTR in various places
+      const hasRunstrTag = event.tags.some(t => 
+        (t[0] === 't' && t[1].toUpperCase() === 'RUNSTR') ||
+        (t[0] === 'hashtag' && t[1].toUpperCase() === 'RUNSTR')
+      );
+      
+      // Check content for RUNSTR (some metadata might store it there)
+      const contentHasRunstr = event.content && event.content.toUpperCase().includes('#RUNSTR');
+      
+      // Look for RUNSTR in name or about
+      const nameHasRunstr = name.toUpperCase().includes('#RUNSTR');
+      const aboutHasRunstr = about.toUpperCase().includes('#RUNSTR');
+      
+      // Include group if it has RUNSTR in any of these places
+      if (nameHasRunstr || aboutHasRunstr || hasRunstrTag || contentHasRunstr) {
+        // For groups that don't have a proper display name, use a generic one
+        const displayName = name === 'Unnamed Group' ? 'Running Club #RUNSTR' : name;
+        
+        groups.push({
+          id: idTag,
+          name: displayName,
+          about: about || 'A club for runners',
+          createdAt: event.created_at || Math.floor(Date.now() / 1000),
+          createdBy: event.pubkey
+        });
+      }
+    } catch (error) {
+      console.error('Error processing group event:', error);
+      // Continue with next event
+    }
+  }
+  
+  return groups.length > 0 ? groups : getDefaultGroups();
+}
+
+// Background fetch for remaining relays
+async function fetchRemainingRelays(relays) {
+  try {
+    const fetchPromises = relays.map((relay, index) => {
+      return new Promise(async (resolve) => {
+        try {
+          const ndk = new NDK({ explicitRelayUrls: [relay] });
+          await ndk.connect();
+          
+          const filter = {
+            kinds: [39000],
+            limit: 50
+          };
+          
+          const events = await ndk.fetchEvents(filter);
+          console.log(`Background fetch: Found ${events.size} groups from ${relay}`);
+          resolve(Array.from(events));
+        } catch (error) {
+          console.error(`Background fetch error from ${relay}:`, error);
+          resolve([]);
+        }
+      });
+    });
+    
+    const results = await Promise.all(fetchPromises);
+    const allEvents = [].concat(...results);
+    
+    if (allEvents.length > 0) {
+      // Process the new events and update cache
+      const updatedGroups = processGroupEvents(allEvents);
+      
+      // Only update cache if we have better results
+      if (updatedGroups.length > 0 && updatedGroups[0].id !== 'default') {
+        runningGroupsCache = updatedGroups;
+        lastFetchTime = Date.now();
+        console.log('Updated clubs cache with background fetch results');
+        
+        // Dispatch an event to notify components about the updated data
+        document.dispatchEvent(new CustomEvent('clubsDataUpdated', { 
+          detail: { clubs: updatedGroups } 
+        }));
       }
     }
-    
-    // If we couldn't find any groups with explicit RUNSTR, create a default entry
-    if (groups.length === 0) {
-      groups.push({
-        id: 'default',
-        name: 'Alpha Test #RUNSTR',
-        about: 'This is a placeholder running club until real ones are created. Create your own club to get started!',
-        createdAt: Math.floor(Date.now() / 1000),
-        createdBy: ''
-      });
-    }
-    
-    console.log(`Found ${groups.length} running clubs with #RUNSTR`);
-    return groups;
   } catch (error) {
-    console.error('Error fetching running groups:', error);
-    // Return a default group in case of error
-    return [{
-      id: 'default',
-      name: 'Alpha Test #RUNSTR',
-      about: 'This is a placeholder running club until real ones are created. Create your own club to get started!',
-      createdAt: Math.floor(Date.now() / 1000),
-      createdBy: ''
-    }];
+    console.error('Error in background fetch:', error);
   }
+}
+
+// Get default groups for fallback
+function getDefaultGroups() {
+  return [{
+    id: 'default',
+    name: 'Alpha Test #RUNSTR',
+    about: 'This is a placeholder running club until real ones are created. Create your own club to get started!',
+    createdAt: Math.floor(Date.now() / 1000),
+    createdBy: ''
+  }];
 }
 
 // Get group members

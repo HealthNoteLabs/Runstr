@@ -164,6 +164,7 @@ export const useRunFeed = () => {
   // Main function to fetch run posts
   const fetchRunPostsViaSubscription = useCallback(async () => {
     try {
+      console.log('⭐ fetchRunPostsViaSubscription started');
       setLoading(true);
       setError(null);
 
@@ -173,7 +174,9 @@ export const useRunFeed = () => {
       }
 
       // Initialize Nostr first
+      console.log('⭐ Initializing Nostr connection');
       await initializeNostr();
+      console.log('⭐ Nostr connection initialized');
 
       // Check if we have cached posts that are recent enough (less than 5 minutes old)
       const now = Date.now();
@@ -181,7 +184,7 @@ export const useRunFeed = () => {
                         (now - globalState.lastFetchTime < 5 * 60 * 1000);
                         
       if (isCacheValid) {
-        console.log('Using cached posts from global state');
+        console.log('⭐ Using cached posts from global state:', globalState.allPosts.length);
         setAllPosts(globalState.allPosts);
         setPosts(globalState.allPosts.slice(0, displayLimit));
         setLoading(false);
@@ -196,22 +199,25 @@ export const useRunFeed = () => {
       const limit = 21; // Load 21 posts initially (3 pages worth)
 
       // Fetch posts with running hashtags
+      console.log('⭐ Fetching running posts with limit:', limit);
       const runPostsArray = await fetchRunningPosts(limit, since);
       
-      console.log(`Fetched ${runPostsArray.length} running posts`);
+      console.log(`⭐ Fetched ${runPostsArray.length} running posts`);
       
       // If we got no results with tags, try a content search as fallback
       if (runPostsArray.length === 0 && page === 1) {
-        console.log('No tagged running posts found, trying content search');
+        console.log('⭐ No tagged running posts found, trying content search');
         const contentPosts = await searchRunningContent(limit, 72); // 72 hours
         
         if (contentPosts.length > 0) {
-          console.log(`Found ${contentPosts.length} posts through content search`);
+          console.log(`⭐ Found ${contentPosts.length} posts through content search`);
           
           // Load supplementary data in parallel for all posts
+          console.log('⭐ Loading supplementary data for content search posts');
           const supplementaryData = await loadSupplementaryData(contentPosts);
           
           // Process posts with all the data
+          console.log('⭐ Processing posts with supplementary data');
           const processedPosts = await processPostsWithData(contentPosts, supplementaryData);
           
           // Update global cache
@@ -219,6 +225,7 @@ export const useRunFeed = () => {
           globalState.lastFetchTime = now;
           
           // Update state with all processed posts, but only display up to the limit
+          console.log('⭐ Updating state with processed posts:', processedPosts.length);
           setAllPosts(processedPosts);
           setPosts(processedPosts.slice(0, displayLimit));
           
@@ -242,6 +249,7 @@ export const useRunFeed = () => {
       
       // Skip processing if we didn't get any posts
       if (runPostsArray.length === 0) {
+        console.log('⭐ No posts found in either search method');
         if (page === 1) {
           setPosts([]);
           setAllPosts([]);
@@ -252,10 +260,13 @@ export const useRunFeed = () => {
       }
       
       // Load supplementary data in parallel for all posts
+      console.log('⭐ Loading supplementary data for running posts');
       const supplementaryData = await loadSupplementaryData(runPostsArray);
       
       // Process posts with all the data
+      console.log('⭐ Processing posts with supplementary data');
       const processedPosts = await processPostsWithData(runPostsArray, supplementaryData);
+      console.log('⭐ processedPosts length:', processedPosts.length);
       
       // Update global cache
       globalState.allPosts = processedPosts;
@@ -263,10 +274,12 @@ export const useRunFeed = () => {
       
       // Update state with processed posts
       if (page === 1) {
+        console.log('⭐ Setting initial posts, page 1');
         setAllPosts(processedPosts);
         setPosts(processedPosts.slice(0, displayLimit)); // Only display up to the limit
       } else {
         // For pagination, append new posts, removing duplicates
+        console.log('⭐ Appending posts for pagination, page:', page);
         setAllPosts(prevPosts => {
           const existingIds = new Set(prevPosts.map(p => p.id));
           const newPosts = processedPosts.filter(p => !existingIds.has(p.id));
@@ -302,8 +315,9 @@ export const useRunFeed = () => {
       
       // Set up background fetch
       setupBackgroundFetch();
+      console.log('⭐ fetchRunPostsViaSubscription completed successfully');
     } catch (err) {
-      console.error('Error fetching running posts:', err);
+      console.error('⭐ Error fetching running posts:', err);
       setError(`Failed to load posts: ${err.message}`);
     } finally {
       setLoading(false);
@@ -401,6 +415,24 @@ export const useRunFeed = () => {
       setTimeout(resolve, 1500);
     });
   };
+
+  // Listen for stats page unloading to prioritize feed resources
+  useEffect(() => {
+    const handleStatsPageUnloaded = () => {
+      console.log('Stats page unloaded, prioritizing feed resources');
+      // Check if we should reload the feed when stats page is closed
+      if (globalState.allPosts.length === 0) {
+        console.log('Feed is empty, triggering refresh');
+        fetchRunPostsViaSubscription();
+      }
+    };
+    
+    document.addEventListener('statsPageUnloaded', handleStatsPageUnloaded);
+    
+    return () => {
+      document.removeEventListener('statsPageUnloaded', handleStatsPageUnloaded);
+    };
+  }, [fetchRunPostsViaSubscription]);
 
   return {
     posts,

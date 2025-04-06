@@ -128,6 +128,9 @@ export const fetchEvents = async (filter) => {
  */
 export const fetchRunningPosts = async (limit = 7, since = undefined) => {
   try {
+    // First ensure connection is active
+    await ensureConnection();
+    
     // If no custom "since" provided, use 30 days (not 90 days)
     const defaultSince = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
     const sinceTimestamp = since ? Math.floor(since / 1000) : defaultSince;
@@ -137,107 +140,108 @@ export const fetchRunningPosts = async (limit = 7, since = undefined) => {
     // Standardized hashtag list across the app - ensure "runstr" has high priority
     const runningTags = ["runstr", "running", "run", "runner", "5k", "10k", "marathon", "jog"];
     
-    // Try fetching posts with multiple approaches in parallel for better performance
-    const promises = [
-      // Approach 1: Direct hashtag filtering - fastest but might miss some
-      ndk.fetchEvents({
-        kinds: [1], // Regular posts
-        limit: limit,
-        "#t": runningTags,
-        since: sinceTimestamp
-      }),
+    // Create a helper function for fetching with timeout
+    const fetchWithTimeout = async (filter, timeoutMs = 10000) => {
+      const timeout = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Fetch timeout')), timeoutMs)
+      );
       
-      // Approach 2: Fetch posts with more specific "runstr" tag - highest relevance
-      ndk.fetchEvents({
+      return Promise.race([
+        ndk.fetchEvents(filter),
+        timeout
+      ]);
+    };
+    
+    // Use a sequential approach with fallbacks to avoid overwhelming connections
+    let events = new Set();
+    
+    // Try first approach: Direct #runstr tag (highest priority, most specific)
+    try {
+      console.log("Trying primary fetch with #runstr tag");
+      events = await fetchWithTimeout({
         kinds: [1],
         limit: limit,
         "#t": ["runstr"],
         since: sinceTimestamp
-      }),
+      });
       
-      // Approach 3: Use content filtering with a higher limit - slower but more comprehensive
-      ndk.fetchEvents({
+      if (events && events.size > 0) {
+        console.log(`Found ${events.size} posts with #runstr tag`);
+        return Array.from(events).sort((a, b) => b.created_at - a.created_at);
+      }
+    } catch (err) {
+      console.log("Primary fetch attempt failed or timed out:", err.message);
+      // Continue to next approach
+    }
+    
+    // Try second approach: Broader running tag set
+    try {
+      console.log("Trying secondary fetch with broader running tags");
+      events = await fetchWithTimeout({
+        kinds: [1],
+        limit: limit,
+        "#t": ["running", "run", "5k", "10k", "marathon"],
+        since: sinceTimestamp
+      });
+      
+      if (events && events.size > 0) {
+        console.log(`Found ${events.size} posts with broader running tags`);
+        return Array.from(events).sort((a, b) => b.created_at - a.created_at);
+      }
+    } catch (err) {
+      console.log("Secondary fetch attempt failed or timed out:", err.message);
+      // Continue to next approach
+    }
+    
+    // Try third approach: Content-based search with limited events
+    try {
+      console.log("Trying content-based search for running posts");
+      events = await fetchWithTimeout({
         kinds: [1],
         limit: limit * 3, // Get more to filter client-side
         since: sinceTimestamp
-      }).then(events => {
-        const allEvents = Array.from(events);
+      }, 15000); // Give content search more time
+      
+      if (events && events.size > 0) {
         // Filter for running content client-side
-        return allEvents.filter(event => {
+        const filteredEvents = Array.from(events).filter(event => {
           const content = event.content.toLowerCase();
           return runningTags.some(keyword => 
             content.includes(keyword) || 
             content.includes(`#${keyword}`) || 
-            event.tags.some(tag => tag[0] === 't' && runningTags.includes(tag[1].toLowerCase()))
+            event.tags.some(tag => tag[0] === 't' && tag[1].toLowerCase() === keyword)
           );
-        }).slice(0, limit);
-      })
-    ];
-    
-    // Wait for all approaches to complete and combine results
-    const results = await Promise.all(promises);
-    
-    // Combine all events, removing duplicates
-    const uniqueEvents = new Map();
-    let totalFound = 0;
-    
-    results.forEach(eventSet => {
-      if (!eventSet) return;
-      
-      const events = Array.isArray(eventSet) ? eventSet : Array.from(eventSet);
-      totalFound += events.length;
-      
-      events.forEach(event => {
-        if (event && event.id && !uniqueEvents.has(event.id)) {
-          uniqueEvents.set(event.id, event);
+        });
+        
+        if (filteredEvents.length > 0) {
+          console.log(`Found ${filteredEvents.length} posts through content filtering`);
+          return filteredEvents.sort((a, b) => b.created_at - a.created_at).slice(0, limit);
         }
-      });
-    });
-    
-    console.log(`Found ${totalFound} total posts across all methods, ${uniqueEvents.size} unique`);
-    
-    // Convert to array and sort by created_at (newest first)
-    const eventArray = Array.from(uniqueEvents.values())
-      .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
-      .slice(0, limit);
-    
-    // If we got results, return them
-    if (eventArray.length > 0) {
-      return eventArray;
+      }
+    } catch (err) {
+      console.log("Content search attempt failed or timed out:", err.message);
+      // Continue to emergency fallback
     }
     
-    // No results found, try one last fallback with very basic filter
-    console.log("No results from optimized approaches, using emergency fallback...");
-    const simpleFilter = {
-      kinds: [1],
-      limit: limit || 10
-    };
-    
-    const events = await ndk.fetchEvents(simpleFilter);
-    const fallbackArray = Array.from(events);
-    console.log(`Emergency fallback retrieved ${fallbackArray.length} general posts`);
-    
-    return fallbackArray;
-  } catch (error) {
-    console.error('Error fetching running posts:', error);
-    
-    // Try a more general filter as fallback if all else fails
-    console.log('Attempting fallback with simplified filter...');
+    // Emergency fallback: Just get any recent posts
+    console.log("All optimized searches failed, using emergency fallback");
     try {
-      const simpleFilter = {
+      events = await fetchWithTimeout({
         kinds: [1],
-        limit: limit || 10
-      };
+        limit: limit
+      }, 8000);
       
-      const events = await ndk.fetchEvents(simpleFilter);
-      const eventArray = Array.from(events);
-      console.log(`Emergency fallback retrieved ${eventArray.length} general posts`);
+      const fallbackArray = Array.from(events);
+      console.log(`Emergency fallback retrieved ${fallbackArray.length} general posts`);
       
-      return eventArray;
+      return fallbackArray.sort((a, b) => b.created_at - a.created_at);
     } catch (err) {
-      console.error('Fallback also failed:', err);
+      console.error('All fetch attempts failed:', err);
       return [];
     }
+  } catch (error) {
+    console.error('Error in fetchRunningPosts:', error);
+    return [];
   }
 };
 

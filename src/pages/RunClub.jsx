@@ -59,6 +59,12 @@ export const RunClub = () => {
     };
   }, []);
 
+  // Explicitly fetch posts when the component mounts
+  useEffect(() => {
+    console.log('RunClub mounted, fetching posts...');
+    fetchRunPostsViaSubscription();
+  }, [fetchRunPostsViaSubscription]);
+
   // Simple diagnostic function to test connectivity
   const diagnoseConnection = async () => {
     setDiagnosticInfo('Testing connection to Nostr relays...');
