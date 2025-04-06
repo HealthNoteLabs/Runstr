@@ -928,4 +928,8 @@ export const formatEnhancedRunEvent = (runData, caloriesBurned, distanceUnit = '
   };
 };
 
+export const formatRunData = (runData, distanceUnit = 'km') => {
+  return formatRunEvent(runData, distanceUnit);
+};
+
 export { ndk };
