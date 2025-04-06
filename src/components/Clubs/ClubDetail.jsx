@@ -41,16 +41,38 @@ export const ClubDetail = () => {
         
         // Special handling for default club
         if (clubId === 'default') {
+          // Get the current user's pubkey from localStorage
+          const userPubkey = localStorage.getItem('nostrPublicKey') || 'default-user';
+          
+          // Set club data
           setClub({
             id: 'default',
             name: 'Alpha Test #RUNSTR',
             about: 'This is a placeholder running club until real ones are created. Create your own club to get started!',
             createdAt: Math.floor(Date.now() / 1000),
-            createdBy: ''
+            createdBy: userPubkey
           });
-          setPosts([]);
-          setMembers([]);
+          
+          // Create a default member (the current user)
+          const defaultMember = {
+            pubkey: userPubkey,
+            addedAt: Math.floor(Date.now() / 1000),
+            addedBy: userPubkey
+          };
+          
+          // Set membership state and members list
+          setMembers([defaultMember]);
           setMembership({ isMember: true, role: 'admin' });
+          
+          // Set default welcome post
+          setPosts([{
+            id: `welcome-${Date.now()}`,
+            content: 'Welcome to the Alpha Test running club! This is a special club for testing purposes. You can post messages here to try out the club functionality.',
+            pubkey: userPubkey,
+            created_at: Math.floor(Date.now() / 1000),
+            tags: []
+          }]);
+          
           setError(null);
           clearTimeout(loadingTimeout);
           setLoading(false);
@@ -62,6 +84,7 @@ export const ClubDetail = () => {
         setPosts(groupPosts);
         
         // Extract group metadata from the first post if available
+        let metadata = null;
         if (groupPosts.length > 0) {
           // Try to find the metadata from group posts' tags
           for (const post of groupPosts) {
@@ -69,28 +92,30 @@ export const ClubDetail = () => {
             const about = post.tags.find(t => t[0] === 'about')?.[1];
             
             if (name) {
-              setClub({
+              metadata = {
                 id: clubId,
                 name,
                 about: about || '',
                 createdAt: post.created_at,
                 createdBy: post.pubkey
-              });
+              };
               break;
             }
           }
         }
         
         // If we couldn't find metadata, use a placeholder
-        if (!club) {
-          setClub({
+        if (!metadata) {
+          metadata = {
             id: clubId,
             name: 'Running Club',
             about: 'A club for runners',
             createdAt: Math.floor(Date.now() / 1000),
             createdBy: ''
-          });
+          };
         }
+        
+        setClub(metadata);
         
         // Get members list
         const groupMembers = await getGroupMembers(clubId);
@@ -112,7 +137,7 @@ export const ClubDetail = () => {
     };
     
     loadClubData();
-  }, [clubId, club]);
+  }, [clubId]); // Remove club from dependencies to avoid loops
   
   // Request to join the club
   const handleJoinRequest = async () => {
@@ -121,7 +146,24 @@ export const ClubDetail = () => {
       
       // Special handling for default club
       if (clubId === 'default') {
+        const userPubkey = localStorage.getItem('nostrPublicKey') || 'default-user';
+        
+        // Create a member object for the current user
+        const newMember = {
+          pubkey: userPubkey,
+          addedAt: Math.floor(Date.now() / 1000),
+          addedBy: userPubkey
+        };
+        
+        // Update membership state and add to members list
         setMembership({ isMember: true, role: 'member' });
+        setMembers(prev => {
+          // Make sure we don't add the user twice
+          if (prev.some(m => m.pubkey === userPubkey)) {
+            return prev;
+          }
+          return [...prev, newMember];
+        });
         return;
       }
       
@@ -131,6 +173,22 @@ export const ClubDetail = () => {
         // Refresh membership status
         const membershipStatus = await checkGroupMembership(clubId);
         setMembership(membershipStatus);
+        
+        // If membership was successful, add the user to the local members list
+        if (membershipStatus.isMember) {
+          const userPubkey = localStorage.getItem('nostrPublicKey') || 'default-user';
+          setMembers(prev => {
+            if (prev.some(m => m.pubkey === userPubkey)) {
+              return prev;
+            }
+            
+            return [...prev, {
+              pubkey: userPubkey,
+              addedAt: Math.floor(Date.now() / 1000),
+              addedBy: userPubkey
+            }];
+          });
+        }
       } else {
         setError(result.error || 'Failed to send join request');
         setJoinRequestSent(false);
@@ -149,7 +207,11 @@ export const ClubDetail = () => {
       
       // Special handling for default club
       if (clubId === 'default') {
+        const userPubkey = localStorage.getItem('nostrPublicKey') || 'default-user';
         setMembership({ isMember: false, role: null });
+        
+        // Remove user from members list
+        setMembers(prev => prev.filter(m => m.pubkey !== userPubkey));
         setLeavingGroup(false);
         return;
       }
@@ -159,6 +221,10 @@ export const ClubDetail = () => {
       if (result.success) {
         // Refresh membership status
         setMembership({ isMember: false, role: null });
+        
+        // Remove the user from the local members list
+        const userPubkey = localStorage.getItem('nostrPublicKey') || 'default-user';
+        setMembers(prev => prev.filter(m => m.pubkey !== userPubkey));
       } else {
         setError(result.error || 'Failed to leave club');
       }
@@ -179,17 +245,38 @@ export const ClubDetail = () => {
       
       // Special handling for default club
       if (clubId === 'default') {
+        const userPubkey = localStorage.getItem('nostrPublicKey') || 'default-user';
+        
         // Create a local post for the default club
-        setPosts([
+        setPosts(prev => [
           {
             id: `local-${Date.now()}`,
             content: postContent,
-            pubkey: localStorage.getItem('nostrPublicKey') || 'default-user',
+            pubkey: userPubkey,
             created_at: Math.floor(Date.now() / 1000),
             tags: []
           },
-          ...posts
+          ...prev
         ]);
+        
+        // If not already a member, join automatically
+        if (!membership.isMember) {
+          setMembership({ isMember: true, role: 'member' });
+          
+          // Add user to members list if not already there
+          setMembers(prev => {
+            if (prev.some(m => m.pubkey === userPubkey)) {
+              return prev;
+            }
+            
+            return [...prev, {
+              pubkey: userPubkey,
+              addedAt: Math.floor(Date.now() / 1000),
+              addedBy: userPubkey
+            }];
+          });
+        }
+        
         setPostContent('');
         setIsPosting(false);
         return;
@@ -213,6 +300,7 @@ export const ClubDetail = () => {
     }
   };
 
+  // Render the UI based on current state
   if (loading) {
     return (
       <div className="p-4 flex justify-center items-center h-64">
@@ -301,8 +389,8 @@ export const ClubDetail = () => {
         )}
       </div>
       
-      {/* Post Form (visible only to members) */}
-      {membership.isMember && (
+      {/* Post Form (visible to everyone for the default club, otherwise only to members) */}
+      {(membership.isMember || clubId === 'default') && (
         <div className="bg-gray-800 rounded-lg p-4 mb-4">
           <h3 className="text-lg font-semibold mb-2">Post to Club</h3>
           <textarea
@@ -341,7 +429,7 @@ export const ClubDetail = () => {
         {posts.length === 0 ? (
           <div className="bg-gray-800 rounded-lg p-4 text-center text-gray-400">
             <p>No posts in this club yet</p>
-            {membership.isMember && (
+            {(membership.isMember || clubId === 'default') && (
               <p className="text-sm mt-2">Be the first to post!</p>
             )}
           </div>

@@ -63,22 +63,27 @@ class RunTracker extends EventEmitter {
   setupStepCounterListener() {
     try {
       // Listen for step counter updates
-      this.stepChangeHandler = (steps) => {
+      this.stepChangeHandler = (steps, isSimulated) => {
         if (this.isTracking && !this.isPaused && this.useStepCounter) {
           this.steps = steps;
-          this.emit('stepsChange', steps);
+          // Also pass whether steps are simulated to UI
+          this.emit('stepsChange', steps, isSimulated);
           
-          // Estimate distance based on steps (rough estimate)
-          // Average step length is about 0.75m
-          const estimatedDistance = steps * 0.75;
-          
-          if (estimatedDistance > this.distance) {
-            this.distance = estimatedDistance;
-            this.emit('distanceChange', this.distance);
+          // Only use steps for distance estimation if they're not already being used
+          // for that purpose by the step counter service
+          if (!isSimulated) {
+            // Estimate distance based on steps (rough estimate)
+            // Average step length is about 0.75m
+            const estimatedDistance = steps * 0.75;
             
-            // Update pace based on new distance
-            this.pace = this.calculatePace(this.distance, this.duration);
-            this.emit('paceChange', this.pace);
+            if (estimatedDistance > this.distance) {
+              this.distance = estimatedDistance;
+              this.emit('distanceChange', this.distance);
+              
+              // Update pace based on new distance
+              this.pace = this.calculatePace(this.distance, this.duration);
+              this.emit('paceChange', this.pace);
+            }
           }
         }
       };
@@ -447,6 +452,17 @@ class RunTracker extends EventEmitter {
       // Start speed calculator for cycle mode
       if (this.isCycleMode) {
         this.startSpeedCalculator();
+      }
+      
+      // If using step counter, start it
+      if (this.useStepCounter) {
+        try {
+          console.log('Starting step counter service from RunTracker');
+          const result = await stepCounterService.startTracking();
+          console.log('Step counter service started:', result);
+        } catch (error) {
+          console.error('Error starting step counter service:', error);
+        }
       }
       
       // Emit status change event

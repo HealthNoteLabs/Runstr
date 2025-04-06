@@ -43,10 +43,27 @@ export const ClubCreate = () => {
       
       if (result.success) {
         setStatusMessage('Club created successfully! Redirecting...');
+        
+        // Make sure the group ID is properly URL encoded
+        let encodedGroupId = encodeURIComponent(result.groupId);
+        
+        // Store in localStorage to help with debugging
+        try {
+          const createdClubs = JSON.parse(localStorage.getItem('createdClubs') || '[]');
+          createdClubs.push({
+            id: result.groupId,
+            name: clubName,
+            createdAt: new Date().toISOString()
+          });
+          localStorage.setItem('createdClubs', JSON.stringify(createdClubs));
+        } catch (err) {
+          console.error("Couldn't store club in localStorage:", err);
+        }
+        
         // Add a slight delay to show the success message
         setTimeout(() => {
           // Navigate to the new club's page
-          navigate(`/club/detail/${encodeURIComponent(result.groupId)}`);
+          navigate(`/club/detail/${encodedGroupId}`);
         }, 1500);
       } else {
         setError(result.error || 'Failed to create club');

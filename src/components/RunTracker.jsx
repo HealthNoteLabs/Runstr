@@ -66,6 +66,9 @@ export const RunTracker = () => {
   const [isWalkMode, setIsWalkMode] = useState(false);
   const [isCycleMode, setIsCycleMode] = useState(false);
 
+  // Add state for tracking whether steps are simulated
+  const [isSimulatedSteps, setIsSimulatedSteps] = useState(false);
+
   // Load the most recent run of the current activity type
   useEffect(() => {
     const loadRecentRun = () => {
@@ -93,13 +96,16 @@ export const RunTracker = () => {
     };
   }, [activityType, activityLabelLower]);
 
-  // Listen for step count changes
+  // Update the step counter listener
   useEffect(() => {
     if (!splits) return;
     
-    const handleStepsChange = (steps) => {
+    const handleStepsChange = (steps, isSimulated) => {
       try {
+        console.log(`Steps updated in UI: ${steps}${isSimulated ? ' (simulated)' : ''}`);
         setSteps(steps || 0);
+        // Store whether steps are simulated for UI display
+        setIsSimulatedSteps(!!isSimulated);
       } catch (error) {
         console.error('Error handling step change:', error);
       }
@@ -394,7 +400,9 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                 </svg>
               </div>
-              <span className="text-sm text-gray-400">Steps</span>
+              <span className="text-sm text-gray-400">
+                Steps {isSimulatedSteps ? "(est.)" : ""}
+              </span>
             </div>
             <div className="text-3xl font-bold">{steps.toLocaleString()}</div>
           </div>

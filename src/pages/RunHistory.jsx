@@ -303,7 +303,7 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
   
   // Format speed for display
   const formatSpeed = (speed) => {
-    if (!speed) return '0.0';
+    if (!speed || isNaN(speed)) return '0.0';
     return speed.toFixed(1);
   };
   
@@ -350,22 +350,22 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
         <div className="stats-grid">
           <div className="stat-card">
             <h3>Total Distance</h3>
-            <p>{displayDistance(stats.totalDistance, distanceUnit)}</p>
+            <p>{!stats ? '0.00 ' + distanceUnit : displayDistance(stats.totalDistance || 0, distanceUnit)}</p>
           </div>
           <div className="stat-card">
             <h3>Total {activityLabel}s</h3>
-            <p>{stats.totalRuns}</p>
+            <p>{!stats ? '0' : (stats.totalRuns || 0)}</p>
           </div>
           <div className="stat-card">
             <h3>Current Streak</h3>
-            <p>{stats.currentStreak} days</p>
+            <p>{!stats ? '0' : (stats.currentStreak || 0)} days</p>
           </div>
           
           {activityType === 'cycle' ? (
             <div className="stat-card">
               <h3>Average Speed</h3>
               <p>
-                {stats.averageSpeed === 0 
+                {!stats || typeof stats.averageSpeed !== 'number' || stats.averageSpeed <= 0
                   ? '-' 
                   : `${stats.averageSpeed.toFixed(1)}`}{' '}
                 {distanceUnit === 'km' ? 'km/h' : 'mph'}
@@ -375,7 +375,7 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
             <div className="stat-card">
               <h3>Average Pace</h3>
               <p>
-                {stats.averagePace === 0 
+                {!stats || typeof stats.averagePace !== 'number' || stats.averagePace <= 0
                   ? '-' 
                   : `${Math.floor(stats.averagePace)}:${Math.round(stats.averagePace % 1 * 60).toString().padStart(2, '0')}`}{' '}
                 min/{distanceUnit}
@@ -387,7 +387,7 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
             <div className="stat-card">
               <h3>Top Speed</h3>
               <p>
-                {stats.topSpeed === 0
+                {!stats || typeof stats.topSpeed !== 'number' || stats.topSpeed <= 0
                   ? '-'
                   : `${stats.topSpeed.toFixed(1)}`}{' '}
                 {distanceUnit === 'km' ? 'km/h' : 'mph'}
@@ -397,7 +397,7 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
             <div className="stat-card">
               <h3>Fastest Pace</h3>
               <p>
-                {stats.fastestPace === 0
+                {!stats || typeof stats.fastestPace !== 'number' || stats.fastestPace <= 0
                   ? '-'
                   : `${Math.floor(stats.fastestPace)}:${Math.round(stats.fastestPace % 1 * 60).toString().padStart(2, '0')}`}{' '}
                 min/{distanceUnit}
@@ -407,7 +407,7 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
           
           <div className="stat-card">
             <h3>Longest {activityLabel}</h3>
-            <p>{displayDistance(stats.longestRun, distanceUnit)}</p>
+            <p>{!stats ? '0.00 ' + distanceUnit : displayDistance(stats.longestRun || 0, distanceUnit)}</p>
           </div>
         </div>
 
@@ -416,11 +416,11 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
           <div className="stats-grid">
             <div className="stat-card">
               <h4>Total Calories Burned</h4>
-              <p>{stats.totalCaloriesBurned.toLocaleString()} kcal</p>
+              <p>{!stats ? '0' : (stats.totalCaloriesBurned || 0).toLocaleString()} kcal</p>
             </div>
             <div className="stat-card">
               <h4>Avg. Calories per {distanceUnit.toUpperCase()}</h4>
-              <p>{Math.round(stats.averageCaloriesPerKm)} kcal</p>
+              <p>{!stats ? '0' : Math.round(stats.averageCaloriesPerKm || 0)} kcal</p>
             </div>
           </div>
         </div>
@@ -430,11 +430,11 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
           <div className="stats-grid">
             <div className="stat-card">
               <h4>This Week</h4>
-              <p>{displayDistance(stats.thisWeekDistance, distanceUnit)}</p>
+              <p>{!stats ? '0.00 ' + distanceUnit : displayDistance(stats.thisWeekDistance || 0, distanceUnit)}</p>
             </div>
             <div className="stat-card">
               <h4>This Month</h4>
-              <p>{displayDistance(stats.thisMonthDistance, distanceUnit)}</p>
+              <p>{!stats ? '0.00 ' + distanceUnit : displayDistance(stats.thisMonthDistance || 0, distanceUnit)}</p>
             </div>
           </div>
         </div>
@@ -445,36 +445,36 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
             <div className="stat-card">
               <h4>5K</h4>
               <p>
-                {stats.personalBests['5k'] === 0
+                {!stats || !stats.personalBests || stats.personalBests['5k'] === 0 || typeof stats.personalBests['5k'] !== 'number'
                   ? '-'
-                  : `${Math.floor(stats.personalBests['5k'])}:${Math.round(stats.personalBests['5k'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
+                  : `${Math.floor(stats.personalBests['5k'])}:${Math.round((stats.personalBests['5k'] % 1) * 60).toString().padStart(2, '0')}`}{' '}
                 min/{distanceUnit}
               </p>
             </div>
             <div className="stat-card">
               <h4>10K</h4>
               <p>
-                {stats.personalBests['10k'] === 0
+                {!stats || !stats.personalBests || stats.personalBests['10k'] === 0 || typeof stats.personalBests['10k'] !== 'number'
                   ? '-'
-                  : `${Math.floor(stats.personalBests['10k'])}:${Math.round(stats.personalBests['10k'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
+                  : `${Math.floor(stats.personalBests['10k'])}:${Math.round((stats.personalBests['10k'] % 1) * 60).toString().padStart(2, '0')}`}{' '}
                 min/{distanceUnit}
               </p>
             </div>
             <div className="stat-card">
               <h4>Half Marathon</h4>
               <p>
-                {stats.personalBests['halfMarathon'] === 0
+                {!stats || !stats.personalBests || stats.personalBests['halfMarathon'] === 0 || typeof stats.personalBests['halfMarathon'] !== 'number'
                   ? '-'
-                  : `${Math.floor(stats.personalBests['halfMarathon'])}:${Math.round(stats.personalBests['halfMarathon'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
+                  : `${Math.floor(stats.personalBests['halfMarathon'])}:${Math.round((stats.personalBests['halfMarathon'] % 1) * 60).toString().padStart(2, '0')}`}{' '}
                 min/{distanceUnit}
               </p>
             </div>
             <div className="stat-card">
               <h4>Marathon</h4>
               <p>
-                {stats.personalBests['marathon'] === 0
+                {!stats || !stats.personalBests || stats.personalBests['marathon'] === 0 || typeof stats.personalBests['marathon'] !== 'number'
                   ? '-'
-                  : `${Math.floor(stats.personalBests['marathon'])}:${Math.round(stats.personalBests['marathon'] % 1 * 60).toString().padStart(2, '0')}`}{' '}
+                  : `${Math.floor(stats.personalBests['marathon'])}:${Math.round((stats.personalBests['marathon'] % 1) * 60).toString().padStart(2, '0')}`}{' '}
                 min/{distanceUnit}
               </p>
             </div>
@@ -488,7 +488,8 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
               <h4>Total Elevation Gain</h4>
               <p>
                 {formatElevation(
-                  runHistory.reduce((sum, run) => sum + (run.elevation?.gain || 0), 0),
+                  !runHistory || !Array.isArray(runHistory) ? 0 : 
+                  runHistory.reduce((sum, run) => sum + ((run?.elevation?.gain) || 0), 0),
                   distanceUnit
                 )}
               </p>
@@ -497,7 +498,8 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
               <h4>Total Elevation Loss</h4>
               <p>
                 {formatElevation(
-                  runHistory.reduce((sum, run) => sum + (run.elevation?.loss || 0), 0),
+                  !runHistory || !Array.isArray(runHistory) ? 0 : 
+                  runHistory.reduce((sum, run) => sum + ((run?.elevation?.loss) || 0), 0),
                   distanceUnit
                 )}
               </p>
@@ -557,8 +559,8 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
                       <span className="stat-label">steps</span>
                     </div>
                   </div>
-                ) : run.activityType === 'cycle' && run.speed ? (
-                  // Display speed for cycle activities
+                ) : run.activityType === 'cycle' ? (
+                  // Display speed for cycle activities, whether run.speed exists or not
                   <div className="run-stat">
                     <div className="stat-icon">
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -8,6 +8,7 @@ const createFallbackPlugin = () => {
     startTracking: async () => ({ value: 0 }),
     stopTracking: async () => ({ value: 0 }),
     getStepCount: async () => ({ steps: 0 }),
+    checkSensors: async () => ({ hasStepCounter: false, hasStepDetector: false }),
     addListener: () => ({ remove: () => {} })
   };
 };
@@ -30,18 +31,48 @@ class StepCounterService extends EventEmitter {
     this.updateInterval = null;
     this.listenerRegistered = false;
     this.isAvailable = true;
+    this.usingSimulation = false;
+    this.sensorInfo = null;
     
     // Try to register listener, but don't crash if it fails
     try {
       // Listen for step updates from the native plugin
-      StepCounter.addListener('stepUpdate', (data) => {
-        this.steps = data?.steps || 0;
-        this.emit('stepsChange', this.steps);
+      this.listener = StepCounter.addListener('stepUpdate', (data) => {
+        try {
+          const newSteps = data?.steps || 0;
+          if (newSteps !== this.steps) {
+            this.steps = newSteps;
+            this.usingSimulation = data?.simulated || false;
+            this.emit('stepsChange', this.steps, this.usingSimulation);
+            console.log(`Step update: ${this.steps}${this.usingSimulation ? ' (simulated)' : ''}`);
+          }
+        } catch (err) {
+          console.error('Error processing step update:', err);
+        }
       });
+      
       this.listenerRegistered = true;
+      console.log('Step counter listener registered successfully');
     } catch (error) {
       console.error('Error adding step counter listener:', error);
       this.isAvailable = false;
+    }
+    
+    // Check sensors on startup
+    this.checkSensors();
+  }
+  
+  /**
+   * Check if step counter sensors are available
+   */
+  async checkSensors() {
+    try {
+      this.sensorInfo = await StepCounter.checkSensors();
+      console.log('Step counter sensor check:', this.sensorInfo);
+      return this.sensorInfo;
+    } catch (error) {
+      console.error('Error checking step counter sensors:', error);
+      return { hasStepCounter: false, hasStepDetector: false, hasPermission: false };
     }
   }
   
@@ -52,22 +83,46 @@ class StepCounterService extends EventEmitter {
     if (this.isTracking) return true;
     
     try {
-      await StepCounter.startTracking();
-      this.isTracking = true;
+      // Always force simulation mode to ensure we get step data
+      // This will be used only if actual sensors aren't available
+      const result = await StepCounter.startTracking({
+        useSimulation: true
+      });
       
-      // Set up a polling interval as a fallback for devices that don't send regular updates
+      this.isTracking = true;
+      this.usingSimulation = result?.usingSimulation || false;
+      
+      console.log(`Step counter started: ${this.usingSimulation ? 'using simulation' : 'using real sensors'}`);
+      
+      // Still set up a polling interval as a fallback/heartbeat
       this.updateInterval = setInterval(async () => {
         if (this.isTracking) {
-          await this.getSteps();
+          try {
+            await this.getSteps();
+          } catch (e) {
+            console.error('Error in step counter polling:', e);
+          }
         }
-      }, 3000);
+      }, 5000);
       
-      return true;
+      // Emit initial step count
+      this.emit('stepsChange', this.steps, this.usingSimulation);
+      
+      return {
+        success: true,
+        usingSimulation: this.usingSimulation
+      };
     } catch (error) {
       console.error('Error starting step counter:', error);
-      // Simulate steps with timer in case of failure
+      // Still enter a tracking state and use our own simulation
+      this.isTracking = true;
+      this.usingSimulation = true;
       this.simulateStepCounter();
-      return false;
+      return {
+        success: false,
+        usingSimulation: true,
+        error: error.message
+      };
     }
   }
   
@@ -90,6 +145,7 @@ class StepCounterService extends EventEmitter {
       this.updateInterval = null;
     }
     
+    console.log(`Step counter stopped. Final count: ${this.steps}`);
     return this.steps;
   }
   
@@ -99,12 +155,28 @@ class StepCounterService extends EventEmitter {
   async getSteps() {
     try {
       const result = await StepCounter.getStepCount();
-      this.steps = result?.steps || this.steps;
-      this.emit('stepsChange', this.steps);
-      return this.steps;
+      const newSteps = result?.steps || this.steps;
+      
+      if (newSteps !== this.steps) {
+        this.steps = newSteps;
+        this.isTracking = result?.isTracking || this.isTracking;
+        this.usingSimulation = result?.usingSimulation || this.usingSimulation;
+        this.emit('stepsChange', this.steps, this.usingSimulation);
+      }
+      
+      return {
+        steps: this.steps,
+        isTracking: this.isTracking,
+        usingSimulation: this.usingSimulation
+      };
     } catch (error) {
       console.error('Error getting step count:', error);
-      return this.steps;
+      return {
+        steps: this.steps,
+        isTracking: this.isTracking,
+        usingSimulation: this.usingSimulation,
+        error: error.message
+      };
     }
   }
   
@@ -113,7 +185,7 @@ class StepCounterService extends EventEmitter {
    */
   resetSteps() {
     this.steps = 0;
-    this.emit('stepsChange', this.steps);
+    this.emit('stepsChange', this.steps, this.usingSimulation);
   }
   
   /**
@@ -121,16 +193,39 @@ class StepCounterService extends EventEmitter {
    * or when permissions are denied
    */
   simulateStepCounter() {
-    console.log('Using simulated step counter');
+    console.log('Using JavaScript-based simulated step counter');
+    this.usingSimulation = true;
+    
     // Simulate walking at roughly 100-120 steps per minute
     this.updateInterval = setInterval(() => {
-      // Random increment between 4-7 steps every 3 seconds
-      const increment = Math.floor(Math.random() * 4) + 4;
-      this.steps += increment;
-      this.emit('stepsChange', this.steps);
+      if (this.isTracking) {
+        // Random increment between 4-7 steps every 3 seconds
+        const increment = Math.floor(Math.random() * 4) + 4;
+        this.steps += increment;
+        this.emit('stepsChange', this.steps, true);
+        console.log(`Simulated step update (JS): ${this.steps} (+${increment})`);
+      }
     }, 3000);
+  }
+  
+  /**
+   * Clean up resources
+   */
+  cleanup() {
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+      this.updateInterval = null;
+    }
     
-    this.isTracking = true;
+    if (this.listener) {
+      try {
+        this.listener.remove();
+      } catch (e) {
+        console.error('Error removing step counter listener:', e);
+      }
+    }
+    
+    this.isTracking = false;
   }
 }
 

@@ -92,12 +92,11 @@ export const useRunStats = (runHistory, userProfile) => {
       today.setHours(0, 0, 0, 0);
 
       let totalDistance = 0;
-      // We're using totalDuration for average speed calculation, so it's needed
       let totalDuration = 0;
       let totalPace = 0;
-      let totalSpeed = 0; // For cycling
+      let totalSpeed = 0;
       let fastestPace = Infinity;
-      let topSpeed = 0; // For cycling
+      let topSpeed = 0;
       let longestRun = 0;
       let totalCaloriesBurned = 0;
       
@@ -120,7 +119,6 @@ export const useRunStats = (runHistory, userProfile) => {
 
       // Calculate current streak
       let currentStreak = 0;
-      // Keeping dateKeys reference for future streak calculation implementation
       const dateKeys = Object.keys(runsByDate).sort((a, b) => b.localeCompare(a)); // Newest first
       
       // Simple streak calculation (to be improved later)
@@ -136,21 +134,31 @@ export const useRunStats = (runHistory, userProfile) => {
       
       // Calculate stats for each run
       validRuns.forEach(run => {
-        totalDistance += run.distance;
-        totalDuration += run.duration;
+        totalDistance += run.distance || 0;
+        totalDuration += run.duration || 0;
+        
+        // Calculate pace values for all activity types as a fallback
+        const runPace = run.pace || (run.duration && run.distance ? (run.duration / 60) / (run.distance / (distanceUnit === 'km' ? 1000 : 1609.344)) : 0);
         
         // Handle pace vs speed based on activity type
-        if (isCycling && run.speed) {
-          totalSpeed += run.speed;
-          if (run.speed > topSpeed) {
-            topSpeed = run.speed;
-          }
-        } else {
-          if (run.pace && run.pace > 0) {
-            totalPace += run.pace;
-            if (run.pace < fastestPace) {
-              fastestPace = run.pace;
+        if (isCycling) {
+          // Use stored speed if available, otherwise calculate it
+          const speed = run.speed || (run.duration && run.distance ? 
+            (run.distance / (distanceUnit === 'km' ? 1000 : 1609.344)) / (run.duration / 3600) : 0);
+          
+          if (speed > 0) {
+            totalSpeed += speed;
+            if (speed > topSpeed) {
+              topSpeed = speed;
             }
+          }
+        }
+        
+        // Always calculate pace for all activities as a fallback
+        if (runPace > 0) {
+          totalPace += runPace;
+          if (runPace < fastestPace) {
+            fastestPace = runPace;
           }
         }
         
@@ -184,37 +192,45 @@ export const useRunStats = (runHistory, userProfile) => {
       
       const thisWeekDistance = validRuns
         .filter(run => new Date(run.date) >= thisWeekStart)
-        .reduce((sum, run) => sum + run.distance, 0);
+        .reduce((sum, run) => sum + (run.distance || 0), 0);
         
       const thisMonthDistance = validRuns
         .filter(run => new Date(run.date) >= thisMonthStart)
-        .reduce((sum, run) => sum + run.distance, 0);
+        .reduce((sum, run) => sum + (run.distance || 0), 0);
 
       // Calculate averages
-      const averagePace = totalPace / validRuns.length;
-      // Use totalSpeed for averageSpeed if we have it, otherwise calculate from distance and duration
-      const averageSpeed = isCycling ? 
-        (totalSpeed > 0 ? totalSpeed / validRuns.length : 
-        (totalDistance / 1000) / (totalDuration / 3600)) : 0;
+      const averagePace = validRuns.length > 0 ? totalPace / validRuns.length : 0;
+      
+      // Calculate average speed for cycling or default to 0
+      let averageSpeed = 0;
+      if (isCycling && validRuns.length > 0) {
+        if (totalSpeed > 0) {
+          averageSpeed = totalSpeed / validRuns.length;
+        } else if (totalDistance > 0 && totalDuration > 0) {
+          // Fallback calculation
+          averageSpeed = (totalDistance / (distanceUnit === 'km' ? 1000 : 1609.344)) / (totalDuration / 3600);
+        }
+      }
+      
       const averageCaloriesPerKm = totalDistance > 0 
         ? (totalCaloriesBurned / (totalDistance / 1000))
         : 0;
 
-      // Update state with calculated stats
+      // Update state with calculated stats (with safe fallbacks)
       setStats({
         totalDistance,
         totalRuns: validRuns.length,
         averagePace: isNaN(averagePace) ? 0 : averagePace,
         fastestPace: fastestPace === Infinity ? 0 : fastestPace,
-        averageSpeed: isNaN(averageSpeed) ? 0 : averageSpeed, // For cycling
-        topSpeed, // For cycling
+        averageSpeed: isNaN(averageSpeed) ? 0 : averageSpeed,
+        topSpeed: isNaN(topSpeed) ? 0 : topSpeed,
         longestRun,
         currentStreak,
         thisWeekDistance,
         thisMonthDistance,
         totalCaloriesBurned,
-        averageCaloriesPerKm,
-        personalBests: { // We can fill these in later when implemented
+        averageCaloriesPerKm: isNaN(averageCaloriesPerKm) ? 0 : averageCaloriesPerKm,
+        personalBests: {
           '5k': 0,
           '10k': 0,
           'halfMarathon': 0,
@@ -223,8 +239,29 @@ export const useRunStats = (runHistory, userProfile) => {
       });
     } catch (error) {
       console.error('Error calculating stats:', error);
+      // In case of error, set default stats to prevent blank screen
+      setStats({
+        totalDistance: 0,
+        totalRuns: 0,
+        averagePace: 0,
+        fastestPace: 0,
+        averageSpeed: 0,
+        topSpeed: 0,
+        longestRun: 0,
+        currentStreak: 0,
+        thisWeekDistance: 0,
+        thisMonthDistance: 0,
+        totalCaloriesBurned: 0,
+        averageCaloriesPerKm: 0,
+        personalBests: {
+          '5k': 0,
+          '10k': 0,
+          'halfMarathon': 0,
+          'marathon': 0
+        }
+      });
     }
-  }, [setStats, distanceUnit]);
+  }, [distanceUnit]);
 
   return {
     stats,

@@ -585,6 +585,19 @@ export async function postToGroup(groupId, content) {
 // Get group posts
 export async function getGroupPosts(groupId) {
   try {
+    // Special case for default club
+    if (groupId === 'default') {
+      // Create a default welcome post
+      const userPubkey = localStorage.getItem('nostrPublicKey') || 'default-user';
+      return [{
+        id: `welcome-${Date.now()}`,
+        content: 'Welcome to the Alpha Test running club! This is a special club for testing purposes. You can post messages here to try out the club functionality.',
+        pubkey: userPubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: []
+      }];
+    }
+    
     await connectToGroupRelays();
     
     const filter = {

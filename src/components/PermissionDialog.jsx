@@ -55,15 +55,21 @@ export const PermissionDialog = ({ onContinue, onCancel }) => {
       
       // Request appropriate tracking permissions based on activity type
       if (isWalkMode) {
-        // For walking, request step counter permission
         try {
+          console.log('Requesting activity recognition permission for step counter');
+          // First check sensors
+          const sensorInfo = await StepCounter.checkSensors();
+          console.log('Sensor info:', sensorInfo);
+          
           // Try to start step counter to trigger permission request
-          await Promise.race([
-            StepCounter.startTracking(),
-            timeoutPromise
-          ]);
+          const result = await StepCounter.startTracking({
+            useSimulation: true // Use simulation as fallback
+          });
+          console.log('Step counter started for permission:', result);
+          
           // Stop it immediately after permission is granted
           await StepCounter.stopTracking();
+          console.log('Step counter stopped after permission request');
         } catch (error) {
           console.error('Error requesting step counter permission:', error);
           // Continue anyway, as the step counter might not be available on all devices
