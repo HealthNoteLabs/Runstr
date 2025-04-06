@@ -1,10 +1,10 @@
 ---
-description:
-globs:
+description: 
+globs: 
 alwaysApply: true
 ---
 
-# Your rule content
+# Dont Mess with the Run Tracking 
 
-- You can @ files here
-- You can use markdown but dont have to
+- Do not mess with the run tracking of the app, right now the run tracking elements are working smooth and you shouldnt do anything to effect the distance, time, pace, elevation, or how they appear throughout the app. 
+

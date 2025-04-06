@@ -14,6 +14,13 @@
     }
   },
   "android": {
-    "useLegacyBridge": true
+    "useLegacyBridge": true,
+    "webContentsDebuggingEnabled": true,
+    "allowMixedContent": true,
+    "captureInput": true
+  },
+  "server": {
+    "cleartext": true,
+    "hostname": "localhost"
   }
 }
