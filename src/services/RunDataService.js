@@ -44,8 +44,9 @@ class RunDataService {
         ...runData
       };
       
-      // Ensure steps are included in the run data
+      // Ensure steps and speed are included in the run data
       const stepsData = runData.steps || 0;
+      const speedData = runData.speed || 0;
       
       // Create complete run data object
       const completeRunData = {
@@ -55,6 +56,7 @@ class RunDataService {
         distance: newRun.distance,
         duration: newRun.duration,
         pace: newRun.pace,
+        speed: speedData, // Include speed for cycle activities
         splits: newRun.splits || [],
         elevation: newRun.elevation || { gain: 0, loss: 0 },
         unit: newRun.unit || 'km',

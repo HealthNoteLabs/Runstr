@@ -2,6 +2,7 @@ import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useActivityType } from '../contexts/ActivityTypeContext';
+import { REPEAT_MODES } from '../contexts/audioPlayerContext';
 
 export function FloatingMusicPlayer() {
   const { 
@@ -9,7 +10,11 @@ export function FloatingMusicPlayer() {
     isPlaying, 
     togglePlayPause, 
     playNext, 
-    playPrevious
+    playPrevious,
+    shuffleMode,
+    repeatMode,
+    toggleShuffle,
+    cycleRepeatMode
   } = useAudioPlayer();
   
   const { getActivityTypeLabel } = useActivityType();
@@ -19,6 +24,20 @@ export function FloatingMusicPlayer() {
   const navigate = useNavigate();
   
   if (!currentTrack) return <span className="text-sm">{activityLabel} with Nostr</span>;
+
+  // Helper to get the appropriate repeat icon
+  const getRepeatIcon = () => {
+    switch (repeatMode) {
+      case REPEAT_MODES.NONE:
+        return '🔄';
+      case REPEAT_MODES.PLAYLIST:
+        return '🔁';
+      case REPEAT_MODES.TRACK:
+        return '🔂';
+      default:
+        return '🔄';
+    }
+  };
 
   return (
     <div className={`${expanded ? 'header-player-expanded' : 'header-player-collapsed'}`}>
@@ -36,7 +55,9 @@ export function FloatingMusicPlayer() {
             <p className="text-sm font-medium truncate">{currentTrack.title}</p>
             <p className="text-xs text-gray-400 truncate">{currentTrack.artist || 'Unknown Artist'}</p>
           </div>
-          <div className="flex justify-center space-x-8">
+          
+          {/* Main player controls */}
+          <div className="flex justify-center space-x-8 mb-3">
             <button onClick={playPrevious} className="text-gray-300">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
@@ -58,6 +79,25 @@ export function FloatingMusicPlayer() {
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
               </svg>
+            </button>
+          </div>
+          
+          {/* Additional controls: shuffle and repeat */}
+          <div className="flex justify-center space-x-6">
+            <button 
+              onClick={toggleShuffle} 
+              className={`text-xs p-1 rounded ${shuffleMode ? 'bg-blue-500 bg-opacity-30 text-blue-300' : 'text-gray-400'}`}
+              title={shuffleMode ? 'Shuffle On' : 'Shuffle Off'}
+            >
+              🔀 Shuffle
+            </button>
+            
+            <button 
+              onClick={cycleRepeatMode} 
+              className={`text-xs p-1 rounded ${repeatMode !== REPEAT_MODES.NONE ? 'bg-blue-500 bg-opacity-30 text-blue-300' : 'text-gray-400'}`}
+              title={`Repeat: ${repeatMode}`}
+            >
+              {getRepeatIcon()} Repeat
             </button>
           </div>
         </div>

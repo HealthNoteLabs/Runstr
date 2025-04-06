@@ -27,6 +27,7 @@ export function NostrProvider({ children }) {
           setPublicKey(response.pubkey);
           setIsNostrReady(true);
           localStorage.setItem('permissionsGranted', 'true');
+          localStorage.setItem('nostrPublicKey', response.pubkey); // Store pubkey for NIP29 service
         }
       });
       
@@ -68,6 +69,7 @@ export function NostrProvider({ children }) {
         setPublicKey(pubkey);
         setIsNostrReady(true);
         localStorage.setItem('permissionsGranted', 'true');
+        localStorage.setItem('nostrPublicKey', pubkey); // Store pubkey for NIP29 service
         return true;
       } catch (error) {
         console.error('Error getting Nostr public key:', error);
@@ -101,6 +103,14 @@ export function NostrProvider({ children }) {
       const permissionsGranted = localStorage.getItem('permissionsGranted') === 'true';
       
       if (permissionsGranted) {
+        // First check if we have a stored pubkey from a previous session
+        const storedPubkey = localStorage.getItem('nostrPublicKey');
+        if (storedPubkey) {
+          setPublicKey(storedPubkey);
+          setIsNostrReady(true);
+          return;
+        }
+        
         // For Android, we rely on the deep link handler to set the public key
         if (Platform.OS === 'android' && isAmberAvailable) {
           // We don't need to do anything here, as the deep link handler will handle it
@@ -112,6 +122,7 @@ export function NostrProvider({ children }) {
             const pubkey = await window.nostr.getPublicKey();
             setPublicKey(pubkey);
             setIsNostrReady(true);
+            localStorage.setItem('nostrPublicKey', pubkey); // Store it for future use
           } catch (error) {
             console.error('Error getting Nostr public key:', error);
           }

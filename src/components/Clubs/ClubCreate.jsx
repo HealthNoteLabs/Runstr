@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createGroup } from '../../services/nip29';
+import { Platform } from '../../utils/react-native-shim';
 
 export const ClubCreate = () => {
   const [name, setName] = useState('');
   const [about, setAbout] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState(null);
+  const [statusMessage, setStatusMessage] = useState('');
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -27,19 +29,47 @@ export const ClubCreate = () => {
     try {
       setIsCreating(true);
       setError(null);
+      setStatusMessage('Connecting to relays...');
       
       // Create the group
+      const isAndroid = Platform.OS === 'android';
+      if (isAndroid) {
+        setStatusMessage('Opening Amber for signing...');
+      } else {
+        setStatusMessage('Waiting for Nostr extension...');
+      }
+      
       const result = await createGroup(clubName, about);
       
       if (result.success) {
-        // Navigate to the new club's page
-        navigate(`/club/detail/${encodeURIComponent(result.groupId)}`);
+        setStatusMessage('Club created successfully! Redirecting...');
+        // Add a slight delay to show the success message
+        setTimeout(() => {
+          // Navigate to the new club's page
+          navigate(`/club/detail/${encodeURIComponent(result.groupId)}`);
+        }, 1500);
       } else {
         setError(result.error || 'Failed to create club');
+        setStatusMessage('');
       }
     } catch (err) {
       console.error('Error creating club:', err);
-      setError(err.message || 'An unexpected error occurred');
+      let errorMessage = err.message || 'An unexpected error occurred';
+      
+      // Provide more specific error messages based on the error
+      if (errorMessage.includes('signer required')) {
+        const isAndroid = Platform.OS === 'android';
+        errorMessage = isAndroid ? 
+          'Amber signer is required. Please make sure Amber is installed and try again.' :
+          'Nostr extension is required. Please install a Nostr extension and try again.';
+      } else if (errorMessage.includes('timeout')) {
+        errorMessage = 'Connection to relays timed out. Please try again.';
+      } else if (errorMessage.includes('pubkey')) {
+        errorMessage = 'Failed to get your public key. Please ensure you are logged in.';
+      }
+      
+      setError(errorMessage);
+      setStatusMessage('');
     } finally {
       setIsCreating(false);
     }
@@ -99,6 +129,12 @@ export const ClubCreate = () => {
             </div>
           )}
           
+          {statusMessage && !error && (
+            <div className="mb-4 p-3 bg-indigo-900/30 border border-indigo-500 rounded-lg text-indigo-400 text-sm">
+              {statusMessage}
+            </div>
+          )}
+          
           <button
             type="submit"
             className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg flex items-center justify-center"
@@ -120,6 +156,16 @@ export const ClubCreate = () => {
           </button>
         </form>
       </div>
+      
+      {Platform.OS === 'android' && (
+        <div className="mt-4 bg-gray-800 rounded-lg p-4">
+          <h3 className="text-lg font-semibold mb-2">Note for Android Users</h3>
+          <p className="text-gray-400 text-sm">
+            Club creation requires Amber to sign the Nostr events. When you click &quot;Create Club&quot;, 
+            Amber will open to request your signature. Please approve the request to complete club creation.
+          </p>
+        </div>
+      )}
     </div>
   );
 }; 

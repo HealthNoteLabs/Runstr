@@ -1,6 +1,6 @@
 import { useReducer, useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import PropTypes from 'prop-types';
-import { AudioPlayerContext, initialState, audioReducer } from './audioPlayerContext';
+import { AudioPlayerContext, initialState, audioReducer, REPEAT_MODES } from './audioPlayerContext';
 import { fetchPlaylist } from '../utils/wavlake';
 
 // Lazy load the audio player to improve initial page load time
@@ -18,6 +18,7 @@ export const AudioPlayerProvider = ({ children }) => {
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [audioPlayerRef, setAudioPlayerRef] = useState(null);
   const [audioPlayerLoaded, setAudioPlayerLoaded] = useState(false);
+  const [shuffledIndices, setShuffledIndices] = useState([]); // Store shuffled order of tracks
 
   // Load playlist when playlist ID changes, but don't auto-play to improve performance
   const loadPlaylist = async (playlistId) => {
@@ -66,6 +67,58 @@ export const AudioPlayerProvider = ({ children }) => {
     }
   };
 
+  // Generate shuffled playlist indices
+  const generateShuffledIndices = useCallback(() => {
+    if (!playlist || !playlist.tracks) return;
+    
+    const indices = Array.from({ length: playlist.tracks.length }, (_, i) => i);
+    // Fisher-Yates shuffle algorithm
+    for (let i = indices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+    
+    // Ensure current track is first in the shuffled order if we're already playing
+    if (state.isPlaying && currentTrackIndex !== undefined) {
+      const currentIndex = indices.indexOf(currentTrackIndex);
+      if (currentIndex > 0) {
+        indices.splice(currentIndex, 1);
+        indices.unshift(currentTrackIndex);
+      }
+    }
+    
+    setShuffledIndices(indices);
+  }, [playlist, currentTrackIndex, state.isPlaying]);
+
+  // Toggle shuffle mode
+  const toggleShuffle = useCallback(() => {
+    if (!state.shuffleMode) {
+      // Turning shuffle on
+      generateShuffledIndices();
+    }
+    dispatch({ type: 'TOGGLE_SHUFFLE' });
+  }, [state.shuffleMode, generateShuffledIndices, dispatch]);
+
+  // Set repeat mode
+  const setRepeatMode = useCallback((mode) => {
+    dispatch({ type: 'SET_REPEAT_MODE', payload: mode });
+  }, [dispatch]);
+  
+  // Cycle through repeat modes
+  const cycleRepeatMode = useCallback(() => {
+    const modes = Object.values(REPEAT_MODES);
+    const currentIndex = modes.indexOf(state.repeatMode);
+    const nextIndex = (currentIndex + 1) % modes.length;
+    setRepeatMode(modes[nextIndex]);
+  }, [state.repeatMode, setRepeatMode]);
+
+  // Update shuffled indices when playlist changes or shuffle is toggled
+  useEffect(() => {
+    if (state.shuffleMode) {
+      generateShuffledIndices();
+    }
+  }, [state.shuffleMode, playlist, generateShuffledIndices]);
+
   // Update current track when currentTrackIndex changes
   useEffect(() => {
     if (playlist && playlist.tracks && playlist.tracks.length > 0) {
@@ -81,21 +134,95 @@ export const AudioPlayerProvider = ({ children }) => {
     }
   }, [currentTrackIndex, playlist, state.isPlaying, audioPlayerRef]);
 
+  // Get next track index based on current mode (shuffle/repeat)
+  const getNextTrackIndex = useCallback(() => {
+    if (!playlist || !playlist.tracks) return 0;
+    
+    const totalTracks = playlist.tracks.length;
+    
+    if (state.shuffleMode) {
+      // Find current position in shuffled list
+      const currentShuffleIndex = shuffledIndices.indexOf(currentTrackIndex);
+      // Get next index in shuffled order, or loop back to beginning
+      const nextShuffleIndex = (currentShuffleIndex + 1) % totalTracks;
+      return shuffledIndices[nextShuffleIndex];
+    } else {
+      // Normal sequential playback
+      if (currentTrackIndex < totalTracks - 1) {
+        return currentTrackIndex + 1;
+      } else if (state.repeatMode === REPEAT_MODES.PLAYLIST) {
+        return 0; // Loop back to first track
+      } else {
+        return currentTrackIndex; // Stay on last track
+      }
+    }
+  }, [playlist, currentTrackIndex, state.shuffleMode, state.repeatMode, shuffledIndices]);
+
+  // Get previous track index based on current mode
+  const getPreviousTrackIndex = useCallback(() => {
+    if (!playlist || !playlist.tracks) return 0;
+    
+    // Check if we need to restart the current track
+    // If user has listened to > 3 seconds, restart the current track
+    const RESTART_THRESHOLD = 3000; // 3 seconds in milliseconds
+    const currentTime = Date.now();
+    const playTime = currentTime - state.trackStartTime;
+    
+    if (playTime < RESTART_THRESHOLD && audioPlayerRef?.audio?.current?.currentTime > 3) {
+      return currentTrackIndex; // Restart current track
+    }
+    
+    const totalTracks = playlist.tracks.length;
+    
+    if (state.shuffleMode) {
+      // Find current position in shuffled list
+      const currentShuffleIndex = shuffledIndices.indexOf(currentTrackIndex);
+      // Get previous index in shuffled order, or loop to end
+      const prevShuffleIndex = (currentShuffleIndex > 0) 
+        ? currentShuffleIndex - 1 
+        : (state.repeatMode === REPEAT_MODES.PLAYLIST ? totalTracks - 1 : 0);
+      return shuffledIndices[prevShuffleIndex];
+    } else {
+      // Normal sequential playback
+      if (currentTrackIndex > 0) {
+        return currentTrackIndex - 1;
+      } else if (state.repeatMode === REPEAT_MODES.PLAYLIST) {
+        return totalTracks - 1; // Loop to last track
+      } else {
+        return 0; // Stay on first track
+      }
+    }
+  }, [playlist, currentTrackIndex, state.shuffleMode, state.repeatMode, 
+      state.trackStartTime, shuffledIndices, audioPlayerRef]);
+
   // Play next track
   const playNext = useCallback(() => {
     if (playlist && playlist.tracks) {
-      setCurrentTrackIndex((current) =>
-        current < playlist.tracks.length - 1 ? current + 1 : 0
-      );
+      const nextIndex = getNextTrackIndex();
+      setCurrentTrackIndex(nextIndex);
     }
-  }, [playlist]);
+  }, [playlist, getNextTrackIndex]);
 
-  // Play previous track
+  // Play previous track or restart current track
   const playPrevious = useCallback(() => {
     if (playlist && playlist.tracks) {
-      setCurrentTrackIndex((current) => (current > 0 ? current - 1 : 0));
+      // If current track has played less than 3 seconds, go to previous track
+      // Otherwise, restart current track
+      const currentTime = audioPlayerRef?.audio?.current?.currentTime || 0;
+      
+      if (currentTime <= 3) {
+        // Go to previous track
+        const prevIndex = getPreviousTrackIndex();
+        setCurrentTrackIndex(prevIndex);
+      } else {
+        // Restart current track
+        if (audioPlayerRef?.audio?.current) {
+          audioPlayerRef.audio.current.currentTime = 0;
+          dispatch({ type: 'UPDATE_TRACK_START_TIME', payload: Date.now() });
+        }
+      }
     }
-  }, [playlist]);
+  }, [playlist, audioPlayerRef, getPreviousTrackIndex, dispatch]);
 
   // Skip to a specific track by index
   const skipToTrack = useCallback((trackIndex) => {
@@ -130,12 +257,36 @@ export const AudioPlayerProvider = ({ children }) => {
 
   // Handle track ended event
   const handleTrackEnded = useCallback(() => {
+    // Handle repeat single track
+    if (state.repeatMode === REPEAT_MODES.TRACK) {
+      // Restart the current track
+      if (audioPlayerRef?.audio?.current) {
+        audioPlayerRef.audio.current.currentTime = 0;
+        dispatch({ type: 'UPDATE_TRACK_START_TIME', payload: Date.now() });
+        setTimeout(() => {
+          audioPlayerRef.audio.current.play().catch(e => console.log('Play prevented:', e));
+        }, 50);
+      }
+      return;
+    }
+    
+    // Handle normal playback or playlist repeat
     // Set a small timeout to ensure state updates properly
     setTimeout(() => {
+      // If not on repeat playlist and we're at the last track, just stop
+      const isLastTrack = !state.shuffleMode && 
+        currentTrackIndex === (playlist?.tracks?.length - 1);
+      
+      if (isLastTrack && state.repeatMode !== REPEAT_MODES.PLAYLIST) {
+        dispatch({ type: 'PAUSE' });
+        return;
+      }
+      
       playNext();
       dispatch({ type: 'PLAY' });
     }, 50);
-  }, [playNext, dispatch]);
+  }, [playNext, dispatch, state.repeatMode, state.shuffleMode, 
+      currentTrackIndex, playlist, audioPlayerRef]);
 
   return (
     <AudioPlayerContext.Provider
@@ -147,6 +298,9 @@ export const AudioPlayerProvider = ({ children }) => {
         playPrevious,
         skipToTrack,
         togglePlayPause,
+        toggleShuffle,
+        cycleRepeatMode,
+        setRepeatMode,
         playlist,
         currentTrackIndex,
         setAudioPlayerRef

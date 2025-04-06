@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import styles from '../assets/styles/AudioPlayer.module.css';
+import { REPEAT_MODES } from '../contexts/audioPlayerContext';
 
 export function MusicPlayer() {
   const { 
@@ -11,7 +12,11 @@ export function MusicPlayer() {
     playPrevious,
     skipToTrack,
     playlist,
-    currentTrackIndex
+    currentTrackIndex,
+    shuffleMode,
+    repeatMode,
+    toggleShuffle,
+    cycleRepeatMode
   } = useAudioPlayer();
   
   const [errorMessage, setErrorMessage] = useState('');
@@ -73,6 +78,22 @@ export function MusicPlayer() {
     skipToTrack(trackIndex);
   };
 
+  // Helper to get the appropriate repeat icon and title
+  const getRepeatIcon = () => {
+    switch (repeatMode) {
+      case REPEAT_MODES.NONE:
+        return { icon: '🔄', title: 'Repeat Off' };
+      case REPEAT_MODES.PLAYLIST:
+        return { icon: '🔁', title: 'Repeat Playlist' };
+      case REPEAT_MODES.TRACK:
+        return { icon: '🔂', title: 'Repeat Track' };
+      default:
+        return { icon: '🔄', title: 'Repeat Off' };
+    }
+  };
+
+  const repeatIcon = getRepeatIcon();
+
   return (
     <div className={styles.container}>
       {/* Error message display */}
@@ -85,6 +106,8 @@ export function MusicPlayer() {
         <p>Selected Playlist: {playlist?.title || 'Unknown'}</p>
         <p>Selected Track: {currentTrack.title}</p>
       </div>
+      
+      {/* Main playback controls */}
       <div className={styles.controls}>
         <button onClick={playPrevious} className={styles.controlButton}>
           <div className="icon-container">
@@ -113,6 +136,32 @@ export function MusicPlayer() {
           </div>
         </button>
       </div>
+      
+      {/* Shuffle and repeat controls */}
+      <div className={styles.advancedControls}>
+        <button 
+          onClick={toggleShuffle} 
+          className={`${styles.advancedButton} ${shuffleMode ? styles.active : ''}`}
+          title={shuffleMode ? 'Shuffle On' : 'Shuffle Off'}
+        >
+          <div className="icon-container">
+            <div className={shuffleMode ? "icon-shuffle-on" : "icon-shuffle"}>🔀</div>
+            <span className={styles.buttonText}>Shuffle</span>
+          </div>
+        </button>
+        
+        <button 
+          onClick={cycleRepeatMode} 
+          className={`${styles.advancedButton} ${repeatMode !== REPEAT_MODES.NONE ? styles.active : ''}`}
+          title={repeatIcon.title}
+        >
+          <div className="icon-container">
+            <div className="icon-repeat">{repeatIcon.icon}</div>
+            <span className={styles.buttonText}>{repeatIcon.title}</span>
+          </div>
+        </button>
+      </div>
+      
       <div className={styles.nowPlaying}>
         <p>Now playing: {currentTrack.title} - {currentTrack.artist || 'Unknown Artist'}</p>
       </div>

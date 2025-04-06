@@ -54,6 +54,40 @@
   transform: translateY(0);
 }
 
+/* Advanced controls (shuffle & repeat) */
+.advancedControls {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.advancedButton {
+  padding: 8px 15px;
+  background-color: rgba(100, 108, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(100, 108, 255, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 500;
+  min-width: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.advancedButton:hover {
+  background-color: rgba(100, 108, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.advancedButton.active {
+  background-color: rgba(100, 108, 255, 0.3);
+  color: rgba(255, 255, 255, 0.9);
+  border-color: #646cff;
+}
+
 .nowPlaying {
   text-align: center;
   margin-bottom: 15px;
@@ -185,6 +219,12 @@
   .controlButton {
     min-width: 80px;
     padding: 8px 16px;
+  }
+  
+  .advancedButton {
+    min-width: 70px;
+    padding: 6px 12px;
+    font-size: 12px;
   }
   
   .upcomingTracks {

@@ -24,6 +24,7 @@ class RunTracker extends EventEmitter {
     this.distance = 0; // in meters
     this.duration = 0; // in seconds
     this.pace = 0; // in seconds per meter
+    this.speed = 0; // in km/h or mph
     this.splits = []; // Array to store split objects { distance, time, pace, isPartial }
     this.positions = [];
     this.distanceUnit = localStorage.getItem('distanceUnit') || 'km'; // Get user's preferred unit
@@ -40,6 +41,7 @@ class RunTracker extends EventEmitter {
     this.steps = 0;
     this.useStepCounter = false; // Will be set based on activity type
     this.stepListenerBound = false;
+    this.isCycleMode = false; // Tracking if in cycle mode
 
     this.isTracking = false;
     this.isPaused = false;
@@ -52,6 +54,7 @@ class RunTracker extends EventEmitter {
     this.watchId = null; // For geolocation watch id
     this.timerInterval = null; // For updating duration every second
     this.paceInterval = null; // For calculating pace at regular intervals
+    this.speedInterval = null; // For calculating speed for cycling
 
     // Try to listen for step counter updates - with error handling
     this.setupStepCounterListener();
@@ -281,6 +284,37 @@ class RunTracker extends EventEmitter {
     }, 5000); // Update pace every 5 seconds
   }
 
+  calculateSpeed(distance, duration) {
+    if (distance <= 0 || duration <= 0) return 0;
+    
+    // Convert meters to km or miles based on the user's preference
+    const distanceInUnits = this.distanceUnit === 'km' 
+      ? distance / 1000 
+      : distance / 1609.344;
+    
+    // Convert seconds to hours
+    const durationInHours = duration / 3600;
+    
+    // Calculate speed in km/h or mph
+    return distanceInUnits / durationInHours;
+  }
+
+  startSpeedCalculator() {
+    this.speedInterval = setInterval(() => {
+      if (this.isTracking && !this.isPaused && this.isCycleMode) {
+        this.speed = this.calculateSpeed(this.distance, this.duration);
+        this.emit('speedChange', this.speed); // Emit speed change
+      }
+    }, 3000); // Update speed every 3 seconds
+  }
+
+  stopSpeedCalculator() {
+    if (this.speedInterval) {
+      clearInterval(this.speedInterval);
+      this.speedInterval = null;
+    }
+  }
+
   async startTracking() {
     try {
       // We should have already requested permissions by this point
@@ -373,6 +407,8 @@ class RunTracker extends EventEmitter {
       const activityType = localStorage.getItem('activityType') || 'run';
       // Use step counter for walk mode
       this.useStepCounter = (activityType === 'walk');
+      // Use speed for cycle mode
+      this.isCycleMode = (activityType === 'cycle');
 
       // Update distanceUnit from localStorage in case it changed
       this.distanceUnit = localStorage.getItem('distanceUnit') || 'km';
@@ -385,6 +421,7 @@ class RunTracker extends EventEmitter {
       this.distance = 0;
       this.duration = 0;
       this.pace = 0;
+      this.speed = 0; // Reset speed
       this.splits = [];
       this.steps = 0; // Reset step count
       this.lastSplitDistance = 0;
@@ -406,6 +443,11 @@ class RunTracker extends EventEmitter {
       this.startTracking();
       this.startTimer(); // Start the timer
       this.startPaceCalculator(); // Start the pace calculator
+      
+      // Start speed calculator for cycle mode
+      if (this.isCycleMode) {
+        this.startSpeedCalculator();
+      }
       
       // Emit status change event
       this.emit('statusChange', { isTracking: this.isTracking, isPaused: this.isPaused });
@@ -462,6 +504,9 @@ class RunTracker extends EventEmitter {
       // Calculate speed and pace one last time
       if (this.distance > 0 && this.duration > 0) {
         this.pace = runDataService.calculatePace(this.distance, this.duration, this.distanceUnit);
+        if (this.isCycleMode) {
+          this.speed = this.calculateSpeed(this.distance, this.duration);
+        }
       }
       
       // Get the current activity type
@@ -472,6 +517,7 @@ class RunTracker extends EventEmitter {
         distance: this.distance,
         duration: this.duration,
         pace: this.pace,
+        speed: this.isCycleMode ? this.speed : 0, // Include speed for cycle activities
         splits: this.splits,
         elevation: { 
           gain: this.elevation.gain,
@@ -620,6 +666,11 @@ class RunTracker extends EventEmitter {
       if (this.paceInterval) {
         clearInterval(this.paceInterval);
         this.paceInterval = null;
+      }
+      
+      if (this.speedInterval) {
+        clearInterval(this.speedInterval);
+        this.speedInterval = null;
       }
       
       // Also stop step counter if needed

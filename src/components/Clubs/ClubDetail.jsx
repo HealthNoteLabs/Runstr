@@ -39,6 +39,24 @@ export const ClubDetail = () => {
       try {
         setLoading(true);
         
+        // Special handling for default club
+        if (clubId === 'default') {
+          setClub({
+            id: 'default',
+            name: 'Alpha Test #RUNSTR',
+            about: 'This is a placeholder running club until real ones are created. Create your own club to get started!',
+            createdAt: Math.floor(Date.now() / 1000),
+            createdBy: ''
+          });
+          setPosts([]);
+          setMembers([]);
+          setMembership({ isMember: true, role: 'admin' });
+          setError(null);
+          clearTimeout(loadingTimeout);
+          setLoading(false);
+          return;
+        }
+        
         // Get group posts (includes metadata)
         const groupPosts = await getGroupPosts(clubId);
         setPosts(groupPosts);
@@ -100,6 +118,13 @@ export const ClubDetail = () => {
   const handleJoinRequest = async () => {
     try {
       setJoinRequestSent(true);
+      
+      // Special handling for default club
+      if (clubId === 'default') {
+        setMembership({ isMember: true, role: 'member' });
+        return;
+      }
+      
       const result = await requestToJoinGroup(clubId);
       
       if (result.success) {
@@ -121,6 +146,14 @@ export const ClubDetail = () => {
   const handleLeaveClub = async () => {
     try {
       setLeavingGroup(true);
+      
+      // Special handling for default club
+      if (clubId === 'default') {
+        setMembership({ isMember: false, role: null });
+        setLeavingGroup(false);
+        return;
+      }
+      
       const result = await leaveGroup(clubId);
       
       if (result.success) {
@@ -143,6 +176,25 @@ export const ClubDetail = () => {
     
     try {
       setIsPosting(true);
+      
+      // Special handling for default club
+      if (clubId === 'default') {
+        // Create a local post for the default club
+        setPosts([
+          {
+            id: `local-${Date.now()}`,
+            content: postContent,
+            pubkey: localStorage.getItem('nostrPublicKey') || 'default-user',
+            created_at: Math.floor(Date.now() / 1000),
+            tags: []
+          },
+          ...posts
+        ]);
+        setPostContent('');
+        setIsPosting(false);
+        return;
+      }
+      
       const result = await postToGroup(clubId, postContent);
       
       if (result.success) {

@@ -60,9 +60,11 @@ export const RunTracker = () => {
   const [additionalContent, setAdditionalContent] = useState('');
   const [isPosting, setIsPosting] = useState(false);
 
-  // Add state for step count
+  // Add state for step count and speed
   const [steps, setSteps] = useState(0);
+  const [speed, setSpeed] = useState(0);
   const [isWalkMode, setIsWalkMode] = useState(false);
+  const [isCycleMode, setIsCycleMode] = useState(false);
 
   // Load the most recent run of the current activity type
   useEffect(() => {
@@ -119,9 +121,38 @@ export const RunTracker = () => {
     }
   }, [splits]);
 
-  // Set walk mode based on activity type
+  // Listen for speed changes
+  useEffect(() => {
+    if (!splits) return;
+    
+    const handleSpeedChange = (speed) => {
+      try {
+        setSpeed(speed || 0);
+      } catch (error) {
+        console.error('Error handling speed change:', error);
+      }
+    };
+    
+    try {
+      splits.on('speedChange', handleSpeedChange);
+      
+      return () => {
+        try {
+          splits.off('speedChange', handleSpeedChange);
+        } catch (error) {
+          console.error('Error removing speed listener:', error);
+        }
+      };
+    } catch (error) {
+      console.error('Error setting up speed listener:', error);
+      return () => {};
+    }
+  }, [splits]);
+
+  // Set walk/cycle mode based on activity type
   useEffect(() => {
     setIsWalkMode(activityType === 'walk');
+    setIsCycleMode(activityType === 'cycle');
   }, [activityType]);
 
   // Handle posting to Nostr
@@ -198,6 +229,22 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     if (!permissionsGranted) {
       setShowPermissionDialog(true);
     }
+    
+    // Clear any stuck processing states when component mounts
+    // This handles the case when user leaves the app and comes back
+    const handleAppVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // When app comes back to foreground, check if dialog should still be shown
+        const currentPermissionsGranted = localStorage.getItem('permissionsGranted') === 'true';
+        setShowPermissionDialog(!currentPermissionsGranted);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleAppVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleAppVisibilityChange);
+    };
   }, []);
 
   const initiateRun = () => {
@@ -260,6 +307,12 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     pace,
     distanceUnit
   );
+  
+  // Format speed for display (e.g., "15.2 km/h" or "9.5 mph")
+  const formattedSpeed = () => {
+    if (!speed) return '0.0 ' + (distanceUnit === 'km' ? 'km/h' : 'mph');
+    return `${speed.toFixed(1)} ${distanceUnit === 'km' ? 'km/h' : 'mph'}`;
+  };
   
   // Helper function to determine time of day based on timestamp
   const getTimeOfDay = (timestamp) => {
@@ -331,7 +384,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           <div className="text-3xl font-bold">{runDataService.formatTime(duration)}</div>
         </div>
 
-        {/* Conditional Pace or Steps Card based on activity type */}
+        {/* Conditional Pace/Steps/Speed Card based on activity type */}
         {isWalkMode ? (
           // Steps Card (for Walk mode)
           <div className="bg-gradient-to-br from-[#111827] to-[#1a222e] p-4 rounded-xl shadow-lg flex flex-col">
@@ -344,6 +397,20 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               <span className="text-sm text-gray-400">Steps</span>
             </div>
             <div className="text-3xl font-bold">{steps.toLocaleString()}</div>
+          </div>
+        ) : isCycleMode ? (
+          // Speed Card (for Cycle mode)
+          <div className="bg-gradient-to-br from-[#111827] to-[#1a222e] p-4 rounded-xl shadow-lg flex flex-col">
+            <div className="flex items-center mb-2">
+              <div className="w-7 h-7 rounded-full bg-[#EC4899]/20 flex items-center justify-center mr-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#EC4899]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <span className="text-sm text-gray-400">Speed</span>
+            </div>
+            <div className="text-3xl font-bold">{formattedSpeed().split(' ')[0]}</div>
+            <div className="text-sm text-gray-400">{formattedSpeed().split(' ')[1]}</div>
           </div>
         ) : (
           // Pace Card (for Run mode)

@@ -42,15 +42,26 @@ export const PermissionDialog = ({ onContinue, onCancel }) => {
     setIsProcessing(true);
     
     try {
-      // Request Nostr permissions
-      await requestNostrPermissions();
+      // Set a timeout to prevent being stuck in processing
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Permission request timed out')), 15000)
+      );
+      
+      // Request Nostr permissions with timeout
+      await Promise.race([
+        requestNostrPermissions(),
+        timeoutPromise
+      ]);
       
       // Request appropriate tracking permissions based on activity type
       if (isWalkMode) {
         // For walking, request step counter permission
         try {
           // Try to start step counter to trigger permission request
-          await StepCounter.startTracking();
+          await Promise.race([
+            StepCounter.startTracking(),
+            timeoutPromise
+          ]);
           // Stop it immediately after permission is granted
           await StepCounter.stopTracking();
         } catch (error) {
@@ -61,7 +72,10 @@ export const PermissionDialog = ({ onContinue, onCancel }) => {
       
       // Always request location permissions as they're needed for both modes
       try {
-        await BackgroundGeolocation.requestPermissions();
+        await Promise.race([
+          BackgroundGeolocation.requestPermissions(),
+          timeoutPromise
+        ]);
       } catch (error) {
         console.error('Error requesting location permissions:', error);
         // Continue anyway - we'll handle missing permissions later
@@ -72,6 +86,11 @@ export const PermissionDialog = ({ onContinue, onCancel }) => {
       if (onContinue) onContinue();
     } catch (error) {
       console.error('Error requesting permissions:', error);
+      // Allow user to continue even if permissions fail
+      alert('There was an issue requesting permissions. Some features may not work properly. You can try again later in the app settings.');
+      setIsVisible(false);
+      if (onContinue) onContinue();
+    } finally {
       setIsProcessing(false);
     }
   };

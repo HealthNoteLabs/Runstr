@@ -301,6 +301,12 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
   
+  // Format speed for display
+  const formatSpeed = (speed) => {
+    if (!speed) return '0.0';
+    return speed.toFixed(1);
+  };
+  
   // Get time of day label based on timestamp
   const getTimeOfDay = (timestamp) => {
     if (!timestamp) return 'Recent';
@@ -354,24 +360,51 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
             <h3>Current Streak</h3>
             <p>{stats.currentStreak} days</p>
           </div>
-          <div className="stat-card">
-            <h3>Average Pace</h3>
-            <p>
-              {stats.averagePace === 0 
-                ? '-' 
-                : `${Math.floor(stats.averagePace)}:${Math.round(stats.averagePace % 1 * 60).toString().padStart(2, '0')}`}{' '}
-              min/{distanceUnit}
-            </p>
-          </div>
-          <div className="stat-card">
-            <h3>Fastest Pace</h3>
-            <p>
-              {stats.fastestPace === 0
-                ? '-'
-                : `${Math.floor(stats.fastestPace)}:${Math.round(stats.fastestPace % 1 * 60).toString().padStart(2, '0')}`}{' '}
-              min/{distanceUnit}
-            </p>
-          </div>
+          
+          {activityType === 'cycle' ? (
+            <div className="stat-card">
+              <h3>Average Speed</h3>
+              <p>
+                {stats.averageSpeed === 0 
+                  ? '-' 
+                  : `${stats.averageSpeed.toFixed(1)}`}{' '}
+                {distanceUnit === 'km' ? 'km/h' : 'mph'}
+              </p>
+            </div>
+          ) : (
+            <div className="stat-card">
+              <h3>Average Pace</h3>
+              <p>
+                {stats.averagePace === 0 
+                  ? '-' 
+                  : `${Math.floor(stats.averagePace)}:${Math.round(stats.averagePace % 1 * 60).toString().padStart(2, '0')}`}{' '}
+                min/{distanceUnit}
+              </p>
+            </div>
+          )}
+          
+          {activityType === 'cycle' ? (
+            <div className="stat-card">
+              <h3>Top Speed</h3>
+              <p>
+                {stats.topSpeed === 0
+                  ? '-'
+                  : `${stats.topSpeed.toFixed(1)}`}{' '}
+                {distanceUnit === 'km' ? 'km/h' : 'mph'}
+              </p>
+            </div>
+          ) : (
+            <div className="stat-card">
+              <h3>Fastest Pace</h3>
+              <p>
+                {stats.fastestPace === 0
+                  ? '-'
+                  : `${Math.floor(stats.fastestPace)}:${Math.round(stats.fastestPace % 1 * 60).toString().padStart(2, '0')}`}{' '}
+                min/{distanceUnit}
+              </p>
+            </div>
+          )}
+          
           <div className="stat-card">
             <h3>Longest {activityLabel}</h3>
             <p>{displayDistance(stats.longestRun, distanceUnit)}</p>
@@ -522,6 +555,19 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
                     <div className="stat-value">
                       <span>{formatSteps(run.steps)}</span>
                       <span className="stat-label">steps</span>
+                    </div>
+                  </div>
+                ) : run.activityType === 'cycle' && run.speed ? (
+                  // Display speed for cycle activities
+                  <div className="run-stat">
+                    <div className="stat-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                    </div>
+                    <div className="stat-value">
+                      <span>{formatSpeed(run.speed)}</span>
+                      <span className="stat-label">{distanceUnit === 'km' ? 'km/h' : 'mph'}</span>
                     </div>
                   </div>
                 ) : (
