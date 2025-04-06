@@ -9,11 +9,16 @@ import {
 } from '../utils/nostr';
 import { useRunStats } from '../hooks/useRunStats';
 import { useRunProfile } from '../hooks/useRunProfile';
+import { useActivityType } from '../contexts/ActivityTypeContext';
 import { formatTime, displayDistance, formatElevation, formatDate } from '../utils/formatters';
 import runDataService from '../services/RunDataService';
 
 export const RunHistory = () => {
   const navigate = useNavigate();
+  const { activityType, getActivityTypeLabel } = useActivityType();
+  const activityLabel = getActivityTypeLabel();
+  const activityLabelLower = activityLabel.toLowerCase();
+  
   // State for run history
   const [runHistory, setRunHistory] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -106,29 +111,29 @@ export const RunHistory = () => {
   };
 
   const handleDeleteRun = async (runId) => {
-    if (window.confirm('Are you sure you want to delete this run? This action cannot be undone.')) {
+    if (window.confirm(`Are you sure you want to delete this ${activityLabelLower}? This action cannot be undone.`)) {
       try {
         const success = runDataService.deleteRun(runId);
         if (success) {
           // Show success message
           if (window.Android && window.Android.showToast) {
-            window.Android.showToast('Run deleted successfully');
+            window.Android.showToast(`${activityLabel} deleted successfully`);
           } else {
-            alert('Run deleted successfully');
+            alert(`${activityLabel} deleted successfully`);
           }
           
           // Reload history to update UI
           loadRunHistory();
         } else {
-          throw new Error('Failed to delete run');
+          throw new Error(`Failed to delete ${activityLabelLower}`);
         }
       } catch (error) {
-        console.error('Error deleting run:', error);
+        console.error(`Error deleting ${activityLabelLower}:`, error);
         
         if (window.Android && window.Android.showToast) {
-          window.Android.showToast('Failed to delete run: ' + error.message);
+          window.Android.showToast(`Failed to delete ${activityLabelLower}: ` + error.message);
         } else {
-          alert('Failed to delete run: ' + error.message);
+          alert(`Failed to delete ${activityLabelLower}: ` + error.message);
         }
       }
     }
@@ -137,14 +142,14 @@ export const RunHistory = () => {
   const handlePostToNostr = async (run) => {
     try {
       const content = `
-Just completed a run with Runstr! 🏃‍♂️💨
+Just completed a ${activityLabelLower} with Runstr! 🏃‍♂️💨
 
 ⏱️ Duration: ${formatTime(run.duration)}
 📏 Distance: ${displayDistance(run.distance, distanceUnit)}
 ⚡ Pace: ${(run.duration / 60 / (distanceUnit === 'km' ? run.distance/1000 : run.distance/1609.344)).toFixed(2)} min/${distanceUnit}
 🔥 Calories: ${calculateCaloriesBurned(run.distance, run.duration)} kcal
 ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gain, distanceUnit)}\n📉 Elevation Loss: ${formatElevation(run.elevation.loss, distanceUnit)}` : ''}
-#Runstr #Running
+#Runstr #${activityLabel}
 `.trim();
 
       const eventTemplate = {
@@ -152,7 +157,7 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
         content: content,
         tags: [
           ['t', 'Runstr'],
-          ['t', 'Running']
+          ['t', activityLabel]
         ]
       };
 
@@ -160,52 +165,86 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
       
       // Show success message
       if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Successfully shared run to Nostr!');
+        window.Android.showToast(`Successfully shared ${activityLabelLower} to Nostr!`);
       } else {
-        alert('Successfully shared run to Nostr!');
+        alert(`Successfully shared ${activityLabelLower} to Nostr!`);
       }
       
       setShowModal(false);
     } catch (error) {
-      console.error('Error sharing run to Nostr:', error);
+      console.error(`Error sharing ${activityLabelLower} to Nostr:`, error);
       
       if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Failed to share run to Nostr: ' + error.message);
+        window.Android.showToast(`Failed to share ${activityLabelLower} to Nostr: ` + error.message);
       } else {
-        alert('Failed to share run to Nostr: ' + error.message);
+        alert(`Failed to share ${activityLabelLower} to Nostr: ` + error.message);
       }
     }
   };
 
   const handleSaveToNostr = async (run) => {
     try {
+      console.log(`Running handleSaveToNostr with ${activityLabelLower}:`, run);
+      
+      // Check if the run has all required fields
+      if (!run || !run.distance || !run.duration) {
+        console.error(`${activityLabel} is missing required fields:`, run);
+        throw new Error(`${activityLabel} is missing required data`);
+      }
+      
+      // Ensure run has elevation data
+      if (!run.elevation) {
+        run.elevation = { gain: 0, loss: 0 };
+      }
+      
+      console.log('formatRunEvent function available:', typeof formatRunEvent === 'function');
+      
       const runEvent = formatRunEvent(run, distanceUnit);
+      console.log('Generated runEvent:', runEvent);
+      
       await createAndPublishEvent(runEvent);
       
       // Show success message
       if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Successfully saved run to Nostr!');
+        window.Android.showToast(`Successfully saved ${activityLabelLower} to Nostr!`);
       } else {
-        alert('Successfully saved run to Nostr!');
+        alert(`Successfully saved ${activityLabelLower} to Nostr!`);
       }
     } catch (error) {
-      console.error('Error saving run to Nostr:', error);
+      console.error(`Detailed error in handleSaveToNostr for ${activityLabelLower}:`, error);
       
       if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Failed to save run to Nostr: ' + error.message);
+        window.Android.showToast(`Failed to save ${activityLabelLower} to Nostr: ` + error.message);
       } else {
-        alert('Failed to save run to Nostr: ' + error.message);
+        alert(`Failed to save ${activityLabelLower} to Nostr: ` + error.message);
       }
     }
   };
 
   const handleSaveHealthData = async (run) => {
     try {
+      console.log(`Running handleSaveHealthData with ${activityLabelLower}:`, run);
+      
+      // Check if the run has all required fields
+      if (!run || !run.distance || !run.duration) {
+        console.error(`${activityLabel} is missing required fields:`, run);
+        throw new Error(`${activityLabel} is missing required data`);
+      }
+      
+      // Ensure run has elevation data
+      if (!run.elevation) {
+        run.elevation = { gain: 0, loss: 0 };
+      }
+      
+      console.log('formatEnhancedRunEvent function available:', typeof formatEnhancedRunEvent === 'function');
+      
       // Calculate calories burned
       const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration);
       
       // Create enhanced workout record with calories
       const workoutEvent = formatEnhancedRunEvent(run, caloriesBurned, distanceUnit);
+      console.log('Generated workoutEvent:', workoutEvent);
+      
       const workoutResult = await createAndPublishEvent(workoutEvent);
       
       // Get user profile data
@@ -231,7 +270,7 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
         alert('Successfully saved health data to Nostr!');
       }
     } catch (error) {
-      console.error('Error saving health data to Nostr:', error);
+      console.error('Detailed error in handleSaveHealthData:', error);
       
       if (window.Android && window.Android.showToast) {
         window.Android.showToast('Failed to save health data to Nostr: ' + error.message);
@@ -281,7 +320,7 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
             <p>{displayDistance(stats.totalDistance, distanceUnit)}</p>
           </div>
           <div className="stat-card">
-            <h3>Total Runs</h3>
+            <h3>Total {activityLabel}s</h3>
             <p>{stats.totalRuns}</p>
           </div>
           <div className="stat-card">
@@ -307,7 +346,7 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
             </p>
           </div>
           <div className="stat-card">
-            <h3>Longest Run</h3>
+            <h3>Longest {activityLabel}</h3>
             <p>{displayDistance(stats.longestRun, distanceUnit)}</p>
           </div>
         </div>
@@ -407,9 +446,9 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
         </div>
       </div>
 
-      <h2>Run History</h2>
+      <h2>{activityLabel} History</h2>
       {runHistory.length === 0 ? (
-        <p>No runs recorded yet</p>
+        <p>No {activityLabelLower}s recorded yet</p>
       ) : (
         <ul className="history-list space-y-4 px-4">
           {runHistory.map((run) => {
@@ -486,7 +525,7 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
       {showModal && (
         <div className="modal-overlay">
           <div className="modal-content">
-            <h3>Post Run to Nostr</h3>
+            <h3>Post {activityLabel} to Nostr</h3>
             <textarea
               placeholder="Add any additional comments or hashtags..."
               rows={4}

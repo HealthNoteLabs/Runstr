@@ -3,6 +3,7 @@ import { Platform } from '../utils/react-native-shim';
 import AmberAuth from '../services/AmberAuth';
 // Import nostr-tools implementation for fallback
 import { createAndPublishEvent as publishWithNostrTools } from './nostrClient';
+import runDataService from '../services/RunDataService';
 
 // Optimized relay list based on testing results
 export const RELAYS = [
@@ -796,26 +797,37 @@ if (typeof window !== 'undefined') {
  * @returns {Object} Formatted NIP-101e event
  */
 export const formatRunEvent = (runData, distanceUnit = 'km') => {
+  // Safely convert distance according to unit
   const distanceValue = distanceUnit === 'km' 
-    ? (runData.distance / 1000).toFixed(2) 
-    : (runData.distance / 1609.344).toFixed(2);
+    ? ((runData.distance || 0) / 1000).toFixed(2) 
+    : ((runData.distance || 0) / 1609.344).toFixed(2);
 
+  // Default to 0 for missing elevation data
+  const elevation = runData.elevation || { gain: 0, loss: 0 };
+  
   const elevationGainValue = distanceUnit === 'km'
-    ? runData.elevation.gain.toFixed(0)
-    : (runData.elevation.gain * 3.28084).toFixed(0);
+    ? (elevation.gain || 0).toFixed(0)
+    : ((elevation.gain || 0) * 3.28084).toFixed(0);
 
   const elevationUnit = distanceUnit === 'km' ? 'm' : 'ft';
+
+  // Create tags array, starting with required fields
+  const tags = [
+    ["workout", runData.name || "Untitled Run"],
+    ["exercise", "running"],
+    ["distance", distanceValue, distanceUnit],
+    ["duration", runDataService.formatTime(runData.duration || 0)]
+  ];
+  
+  // Only add elevation tag if there's actual elevation data
+  if (elevation.gain && elevation.gain > 0) {
+    tags.push(["elevation_gain", elevationGainValue, elevationUnit]);
+  }
 
   return {
     kind: 1301,
     content: "Completed a run with RUNSTR!",
-    tags: [
-      ["workout", runData.name || "Untitled Run"],
-      ["exercise", "running"],
-      ["distance", distanceValue, distanceUnit],
-      ["duration", runDataService.formatTime(runData.duration)],
-      ["elevation_gain", elevationGainValue, elevationUnit]
-    ]
+    tags: tags
   };
 };
 
@@ -879,28 +891,40 @@ export const formatHealthRecordEvent = (healthData, workoutId, weightUnit = 'kg'
  */
 export const formatEnhancedRunEvent = (runData, caloriesBurned, distanceUnit = 'km') => {
   const timestamp = Math.floor(Date.now() / 1000);
+  
+  // Safely convert distance according to unit
   const distanceValue = distanceUnit === 'km' 
-    ? (runData.distance / 1000).toFixed(2) 
-    : (runData.distance / 1609.344).toFixed(2);
+    ? ((runData.distance || 0) / 1000).toFixed(2) 
+    : ((runData.distance || 0) / 1609.344).toFixed(2);
 
+  // Default to 0 for missing elevation data
+  const elevation = runData.elevation || { gain: 0, loss: 0 };
+  
   const elevationGainValue = distanceUnit === 'km'
-    ? runData.elevation.gain.toFixed(0)
-    : (runData.elevation.gain * 3.28084).toFixed(0);
+    ? (elevation.gain || 0).toFixed(0)
+    : ((elevation.gain || 0) * 3.28084).toFixed(0);
 
   const elevationUnit = distanceUnit === 'km' ? 'm' : 'ft';
+
+  // Create tags array, starting with required fields
+  const tags = [
+    ["workout", runData.name || "Untitled Run"],
+    ["exercise", "running"],
+    ["distance", distanceValue, distanceUnit],
+    ["duration", runDataService.formatTime(runData.duration || 0)],
+    ["calories", (caloriesBurned || 0).toString(), "kcal"],
+    ["timestamp", timestamp.toString()]
+  ];
+  
+  // Only add elevation tag if there's actual elevation data
+  if (elevation.gain && elevation.gain > 0) {
+    tags.push(["elevation_gain", elevationGainValue, elevationUnit]);
+  }
 
   return {
     kind: 1301,
     content: "Completed a run with RUNSTR!",
-    tags: [
-      ["workout", runData.name || "Untitled Run"],
-      ["exercise", "running"],
-      ["distance", distanceValue, distanceUnit],
-      ["duration", runDataService.formatTime(runData.duration)],
-      ["elevation_gain", elevationGainValue, elevationUnit],
-      ["calories", caloriesBurned.toString(), "kcal"],
-      ["timestamp", timestamp.toString()]
-    ]
+    tags: tags
   };
 };
 

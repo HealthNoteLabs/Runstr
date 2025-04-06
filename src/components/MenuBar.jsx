@@ -1,10 +1,23 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { FloatingMusicPlayer } from './FloatingMusicPlayer';
+import { useActivityType } from '../contexts/ActivityTypeContext';
 
 export const MenuBar = () => {
   const location = useLocation();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { activityType, setActivityType } = useActivityType();
+
+  // Get the appropriate display name for the header based on activity type
+  const getAppName = () => {
+    if (activityType === 'walk') {
+      return '#WALKSTR';
+    } else if (activityType === 'cycle') {
+      return '#CYCLESTR';
+    } else {
+      return '#RUNSTR';
+    }
+  };
 
   const menuItems = [
     { 
@@ -53,7 +66,7 @@ export const MenuBar = () => {
     <div className="w-full">
       {/* Header with Settings */}
       <header className="flex justify-between items-center p-4 w-full max-w-[375px] mx-auto">
-        <Link to="/" className="text-xl font-bold">#RUNSTR</Link>
+        <Link to="/" className="text-xl font-bold">{getAppName()}</Link>
         <div className="min-w-[120px]">
           <FloatingMusicPlayer />
         </div>
@@ -77,6 +90,47 @@ export const MenuBar = () => {
                 </svg>
               </button>
             </div>
+            
+            {/* Activity Type Toggles */}
+            <div className="mb-6">
+              <h4 className="text-md font-semibold mb-3">Activity Type</h4>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  className={`p-3 rounded-lg flex flex-col items-center justify-center text-sm ${
+                    activityType === 'run' ? 'bg-indigo-600 text-white' : 'bg-[#111827] text-gray-300'
+                  }`}
+                  onClick={() => setActivityType('run')}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  Run
+                </button>
+                <button
+                  className={`p-3 rounded-lg flex flex-col items-center justify-center text-sm ${
+                    activityType === 'walk' ? 'bg-indigo-600 text-white' : 'bg-[#111827] text-gray-300'
+                  }`}
+                  onClick={() => setActivityType('walk')}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16v2a2 2 0 01-2 2H5a2 2 0 01-2-2v-7a2 2 0 012-2h2m3-4H9a2 2 0 00-2 2v7a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-1m-1 4l-3 3m0 0l-3-3m3 3V3" />
+                  </svg>
+                  Walk
+                </button>
+                <button
+                  className={`p-3 rounded-lg flex flex-col items-center justify-center text-sm ${
+                    activityType === 'cycle' ? 'bg-indigo-600 text-white' : 'bg-[#111827] text-gray-300'
+                  }`}
+                  onClick={() => setActivityType('cycle')}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Cycle
+                </button>
+              </div>
+            </div>
+            
             <div className="flex flex-col space-y-4">
               <Link 
                 to="/nwc" 

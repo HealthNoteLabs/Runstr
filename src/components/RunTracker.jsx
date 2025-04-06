@@ -1,10 +1,16 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect } from 'react';
 import { useRunTracker } from '../contexts/RunTrackerContext';
+import { useActivityType } from '../contexts/ActivityTypeContext';
 import { convertDistance, formatPaceWithUnit, formatElevation } from '../utils/formatters';
 import { PermissionDialog } from './PermissionDialog';
-import { createAndPublishEvent } from '../utils/nostr';
+import { 
+  createAndPublishEvent, 
+  formatRunEvent, 
+  formatEnhancedRunEvent, 
+  formatHealthProfileEvent, 
+  formatHealthRecordEvent 
+} from '../utils/nostr';
 import { displayDistance } from '../utils/formatters';
-import SplitsTable from './SplitsTable';
 import runDataService from '../services/RunDataService';
 
 export const RunTracker = () => {
@@ -20,6 +26,10 @@ export const RunTracker = () => {
     resumeRun,
     stopRun
   } = useRunTracker();
+
+  const { activityType, getActivityTypeLabel } = useActivityType();
+  const activityLabel = getActivityTypeLabel();
+  const activityLabelLower = activityLabel.toLowerCase();
 
   const [distanceUnit, setDistanceUnit] = useState(
     () => localStorage.getItem('distanceUnit') || 'km'
@@ -91,7 +101,7 @@ export const RunTracker = () => {
       const caloriesBurned = Math.round(run.distance * 0.06);
       
       const content = `
-Just completed a run with Runstr! 🏃‍♂️💨
+Just completed a ${activityLabelLower} with Runstr! 🏃‍♂️💨
 
 ⏱️ Duration: ${runDataService.formatTime(run.duration)}
 📏 Distance: ${displayDistance(run.distance, distanceUnit)}
@@ -99,7 +109,7 @@ Just completed a run with Runstr! 🏃‍♂️💨
 🔥 Calories: ${caloriesBurned} kcal
 ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gain, distanceUnit)}\n📉 Elevation Loss: ${formatElevation(run.elevation.loss, distanceUnit)}` : ''}
 ${additionalContent ? `\n${additionalContent}` : ''}
-#Runstr #Running
+#Runstr #${activityLabel}
 `.trim();
 
       // Create the event template for nostr-tools
@@ -108,7 +118,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         created_at: Math.floor(Date.now() / 1000),
         tags: [
           ['t', 'Runstr'],
-          ['t', 'Running']
+          ['t', activityLabel]
         ],
         content: content
       };
@@ -152,17 +162,17 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       
       // Show success message
       if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Successfully saved run to Nostr!');
+        window.Android.showToast(`Successfully saved ${activityLabelLower} to Nostr!`);
       } else {
-        alert('Successfully saved run to Nostr!');
+        alert(`Successfully saved ${activityLabelLower} to Nostr!`);
       }
     } catch (error) {
       console.error('Error saving run to Nostr:', error);
       
       if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Failed to save run to Nostr: ' + error.message);
+        window.Android.showToast(`Failed to save ${activityLabelLower} to Nostr: ` + error.message);
       } else {
-        alert('Failed to save run to Nostr: ' + error.message);
+        alert(`Failed to save ${activityLabelLower} to Nostr: ` + error.message);
       }
     } finally {
       setIsSavingToNostr(false);
@@ -244,7 +254,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       startCountdown('start');
     } else {
       // If permissions haven't been granted yet, show a message
-      alert('Location permission is required for tracking runs. Please restart the app to grant permissions.');
+      alert('Location permission is required for tracking activities. Please restart the app to grant permissions.');
       // Set the flag to show permission dialog next time the app starts
       localStorage.removeItem('permissionsGranted');
     }
@@ -435,7 +445,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          Start Run
+          Start {activityLabel}
         </button>
       ) : (
         <div className="flex justify-between px-4 my-4">
@@ -467,7 +477,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       {!isTracking && recentRun && (
         <div className="bg-[#1a222e] rounded-xl shadow-lg mt-6 mx-4 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-800">
-            <h3 className="text-lg font-semibold">Recent Runs</h3>
+            <h3 className="text-lg font-semibold">Recent {activityLabel}s</h3>
             <span className="text-xs text-gray-400">See All</span>
           </div>
           <div className="p-4">
@@ -478,7 +488,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                 </svg>
               </div>
               <div className="flex-1">
-                <h4 className="font-semibold">{recentRun.title || `${getTimeOfDay(recentRun.timestamp)} Run`}</h4>
+                <h4 className="font-semibold">{recentRun.title || `${getTimeOfDay(recentRun.timestamp)} ${activityLabel}`}</h4>
                 <div className="flex items-center text-xs text-gray-400">
                   <span>{formatRunDate(recentRun.date)} • {displayDistance(recentRun.distance, distanceUnit)}</span>
                   <span className="ml-2 px-2 py-1 bg-gray-800 rounded-full">
@@ -490,7 +500,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
               </div>
               <div className="text-right text-gray-400">
                 <span className="block text-lg font-semibold">{runDataService.formatTime(recentRun.duration)}</span>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center justify-end mt-1">
                   <button 
                     onClick={handlePostToNostr}
                     className="text-xs text-indigo-400 flex items-center"
@@ -499,26 +509,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                     </svg>
                     Share
-                  </button>
-                  <button 
-                    onClick={handleSaveToNostr}
-                    disabled={isSavingToNostr || isSavedToNostr}
-                    className={`text-xs flex items-center ${isSavedToNostr ? 'text-green-400' : 'text-indigo-400'}`}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    {isSavingToNostr ? 'Saving...' : isSavedToNostr ? 'Saved to Nostr' : 'Save to Nostr'}
-                  </button>
-                  <button 
-                    onClick={handleSaveHealthData}
-                    disabled={isSavingHealthData || isHealthDataSaved}
-                    className={`text-xs flex items-center ${isHealthDataSaved ? 'text-green-400' : 'text-indigo-400'}`}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                    </svg>
-                    {isSavingHealthData ? 'Saving...' : isHealthDataSaved ? 'Health Data Saved' : 'Save Health Data'}
                   </button>
                 </div>
               </div>
@@ -541,7 +531,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           <div className="flex flex-col items-center">
             <div className="text-6xl font-bold mb-4">{countdown}</div>
             <div className="text-xl">
-              {countdownType === 'start' ? 'Starting run...' : 'Stopping run...'}
+              {countdownType === 'start' ? `Starting ${activityLabelLower}...` : `Stopping ${activityLabelLower}...`}
             </div>
           </div>
         </div>
@@ -551,7 +541,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       {showPostModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="bg-[#1a222e] rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-xl font-semibold mb-4">Post Run to Nostr</h3>
+            <h3 className="text-xl font-semibold mb-4">Post {activityLabel} to Nostr</h3>
             <textarea
               value={additionalContent}
               onChange={(e) => setAdditionalContent(e.target.value)}
