@@ -5,11 +5,7 @@ import runDataService from '../services/RunDataService';
 import { PermissionDialog } from './PermissionDialog';
 import { formatPaceWithUnit, formatElevation, convertDistance, displayDistance } from '../utils/formatters';
 import SplitsList from './SplitsList';
-import { 
-  createAndPublishEvent, 
-  formatRunData, 
-  formatHealthRecordEvent 
-} from '../utils/nostr';
+import { createAndPublishEvent } from '../utils/nostr';
 
 export const RunTracker = () => {
   const { 
@@ -39,9 +35,17 @@ export const RunTracker = () => {
       setDistanceUnit(localStorage.getItem('distanceUnit') || 'km');
     };
     
+    // Handle our custom event for unit changes within the same window
+    const handleUnitChange = (event) => {
+      setDistanceUnit(event.detail.unit);
+    };
+    
     window.addEventListener('storage', handleStorageChange);
+    document.addEventListener('distanceUnitChanged', handleUnitChange);
+    
     return () => {
       window.removeEventListener('storage', handleStorageChange);
+      document.removeEventListener('distanceUnitChanged', handleUnitChange);
     };
   }, []);
 
@@ -55,27 +59,20 @@ export const RunTracker = () => {
   const [showPostModal, setShowPostModal] = useState(false);
   const [additionalContent, setAdditionalContent] = useState('');
   const [isPosting, setIsPosting] = useState(false);
-  const [isSavingToNostr, setIsSavingToNostr] = useState(false);
-  const [isSavedToNostr, setIsSavedToNostr] = useState(false);
-  const [isSavingHealthData, setIsSavingHealthData] = useState(false);
-  const [isHealthDataSaved, setIsHealthDataSaved] = useState(false);
-  const [lastHealthProfileUpdate, setLastHealthProfileUpdate] = useState(null);
 
-  // Load the most recent run
+  // Add state for step count
+  const [steps, setSteps] = useState(0);
+  const [isWalkMode, setIsWalkMode] = useState(false);
+
+  // Load the most recent run of the current activity type
   useEffect(() => {
     const loadRecentRun = () => {
-      const storedRuns = localStorage.getItem('runHistory');
-      if (storedRuns) {
-        try {
-          const parsedRuns = JSON.parse(storedRuns);
-          if (parsedRuns.length > 0) {
-            // Sort runs by date (most recent first)
-            const sortedRuns = [...parsedRuns].sort((a, b) => new Date(b.date) - new Date(a.date));
-            setRecentRun(sortedRuns[0]);
-          }
-        } catch (error) {
-          console.error('Error loading recent run:', error);
-        }
+      try {
+        // Get the most recent activity of the current type
+        const recentActivity = runDataService.getMostRecentRunByType(activityType);
+        setRecentRun(recentActivity);
+      } catch (error) {
+        console.error(`Error loading recent ${activityLabelLower}:`, error);
       }
     };
     
@@ -92,7 +89,27 @@ export const RunTracker = () => {
     return () => {
       document.removeEventListener('runCompleted', handleRunCompleted);
     };
-  }, []);
+  }, [activityType, activityLabelLower]);
+
+  // Listen for step count changes
+  useEffect(() => {
+    if (!splits) return;
+    
+    const handleStepsChange = (steps) => {
+      setSteps(steps);
+    };
+    
+    splits.on('stepsChange', handleStepsChange);
+    
+    return () => {
+      splits.off('stepsChange', handleStepsChange);
+    };
+  }, [splits]);
+
+  // Set walk mode based on activity type
+  useEffect(() => {
+    setIsWalkMode(activityType === 'walk');
+  }, [activityType]);
 
   // Handle posting to Nostr
   const handlePostToNostr = () => {
@@ -157,76 +174,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     } finally {
       setIsPosting(false);
       setShowPostModal(false);
-    }
-  };
-
-  // Handle saving run to Nostr
-  const handleSaveToNostr = async () => {
-    if (!recentRun) return;
-    
-    setIsSavingToNostr(true);
-    
-    try {
-      const runEvent = formatRunData(recentRun, distanceUnit);
-      await createAndPublishEvent(runEvent);
-      setIsSavedToNostr(true);
-      
-      // Show success message
-      if (window.Android && window.Android.showToast) {
-        window.Android.showToast(`Successfully saved ${activityLabelLower} to Nostr!`);
-      } else {
-        alert(`Successfully saved ${activityLabelLower} to Nostr!`);
-      }
-    } catch (error) {
-      console.error('Error saving run to Nostr:', error);
-      
-      if (window.Android && window.Android.showToast) {
-        window.Android.showToast(`Failed to save ${activityLabelLower} to Nostr: ` + error.message);
-      } else {
-        alert(`Failed to save ${activityLabelLower} to Nostr: ` + error.message);
-      }
-    } finally {
-      setIsSavingToNostr(false);
-    }
-  };
-
-  // Handle saving health data to Nostr
-  const handleSaveHealthData = async () => {
-    if (!recentRun) return;
-    
-    setIsSavingHealthData(true);
-    
-    try {
-      // Calculate calories burned
-      const caloriesBurned = Math.round(recentRun.distance * 0.06);
-      
-      // Create health record
-      const healthData = {
-        weight: recentRun.weight || 0,
-        restingCalories: Math.round(caloriesBurned * 0.2) // Simplified calculation
-      };
-      
-      const healthRecordEvent = formatHealthRecordEvent(healthData);
-      await createAndPublishEvent(healthRecordEvent);
-      
-      setIsHealthDataSaved(true);
-      
-      // Show success message
-      if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Successfully saved health data to Nostr!');
-      } else {
-        alert('Successfully saved health data to Nostr!');
-      }
-    } catch (error) {
-      console.error('Error saving health data to Nostr:', error);
-      
-      if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Failed to save health data to Nostr: ' + error.message);
-      } else {
-        alert('Failed to save health data to Nostr: ' + error.message);
-      }
-    } finally {
-      setIsSavingHealthData(false);
     }
   };
 
@@ -301,12 +248,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     distanceUnit
   );
   
-  // Replace the direct pace calculation with RunDataService calculation
-  // when using the pace for any calculations in component
-  const calculateConsistentPace = (distance, duration, unit) => {
-    return runDataService.calculatePace(distance, duration, unit);
-  };
-
   // Helper function to determine time of day based on timestamp
   const getTimeOfDay = (timestamp) => {
     if (!timestamp) {
@@ -377,19 +318,35 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           <div className="text-3xl font-bold">{runDataService.formatTime(duration)}</div>
         </div>
 
-        {/* Pace Card */}
-        <div className="bg-gradient-to-br from-[#111827] to-[#1a222e] p-4 rounded-xl shadow-lg flex flex-col">
-          <div className="flex items-center mb-2">
-            <div className="w-7 h-7 rounded-full bg-[#F59E0B]/20 flex items-center justify-center mr-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#F59E0B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-              </svg>
+        {/* Conditional Pace or Steps Card based on activity type */}
+        {isWalkMode ? (
+          // Steps Card (for Walk mode)
+          <div className="bg-gradient-to-br from-[#111827] to-[#1a222e] p-4 rounded-xl shadow-lg flex flex-col">
+            <div className="flex items-center mb-2">
+              <div className="w-7 h-7 rounded-full bg-[#8B5CF6]/20 flex items-center justify-center mr-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#8B5CF6]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
+              </div>
+              <span className="text-sm text-gray-400">Steps</span>
             </div>
-            <span className="text-sm text-gray-400">Pace</span>
+            <div className="text-3xl font-bold">{steps.toLocaleString()}</div>
           </div>
-          <div className="text-3xl font-bold">{formattedPace.split(' ')[0]}</div>
-          <div className="text-sm text-gray-400">{formattedPace.split(' ')[1]}</div>
-        </div>
+        ) : (
+          // Pace Card (for Run mode)
+          <div className="bg-gradient-to-br from-[#111827] to-[#1a222e] p-4 rounded-xl shadow-lg flex flex-col">
+            <div className="flex items-center mb-2">
+              <div className="w-7 h-7 rounded-full bg-[#F59E0B]/20 flex items-center justify-center mr-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#F59E0B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
+              </div>
+              <span className="text-sm text-gray-400">Pace</span>
+            </div>
+            <div className="text-3xl font-bold">{formattedPace.split(' ')[0]}</div>
+            <div className="text-sm text-gray-400">{formattedPace.split(' ')[1]}</div>
+          </div>
+        )}
 
         {/* Elevation Card */}
         <div className="bg-gradient-to-br from-[#111827] to-[#1a222e] p-4 rounded-xl shadow-lg flex flex-col">

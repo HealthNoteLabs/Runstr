@@ -32,22 +32,45 @@ class RunDataService {
     try {
       const runs = this.getAllRuns();
       
+      // Get current activity type or default to 'run'
+      const activityType = localStorage.getItem('activityType') || 'run';
+      
       // Generate a unique ID if not provided
       const newRun = {
         id: runData.id || Date.now() + '-' + Math.random().toString(36).substr(2, 9),
         date: runData.date || new Date().toLocaleDateString(),
         timestamp: runData.timestamp || Date.now(),
+        activityType: runData.activityType || activityType, // Use provided type or current type
         ...runData
       };
       
+      // Ensure steps are included in the run data
+      const stepsData = runData.steps || 0;
+      
+      // Create complete run data object
+      const completeRunData = {
+        id: newRun.id,
+        date: newRun.date,
+        timestamp: newRun.timestamp,
+        distance: newRun.distance,
+        duration: newRun.duration,
+        pace: newRun.pace,
+        splits: newRun.splits || [],
+        elevation: newRun.elevation || { gain: 0, loss: 0 },
+        unit: newRun.unit || 'km',
+        activityType: newRun.activityType,
+        steps: stepsData, // Include steps count
+        weather: newRun.weather || null,
+      };
+      
       // Add to beginning of array for most recent first
-      const updatedRuns = [newRun, ...runs];
+      const updatedRuns = [completeRunData, ...runs];
       localStorage.setItem(this.storageKey, JSON.stringify(updatedRuns));
       
       // Notify listeners
       this.notifyListeners(updatedRuns);
       
-      return newRun;
+      return completeRunData;
     } catch (error) {
       console.error('Error saving run:', error);
       return null;
@@ -114,6 +137,89 @@ class RunDataService {
   getActiveRuns() {
     const allRuns = this.getAllRuns();
     return allRuns.filter(run => !run.deleted);
+  }
+
+  /**
+   * Get all non-deleted runs of a specific activity type
+   * @param {string} activityType - The activity type to filter by (run, walk, cycle)
+   * @returns {Array} Array of active run objects of the specified type
+   */
+  getActiveRunsByType(activityType = 'run') {
+    const allRuns = this.getActiveRuns();
+    
+    // If no type specified or not found, add a default type
+    const runsWithType = allRuns.map(run => ({
+      ...run,
+      activityType: run.activityType || 'run' // Default to 'run' if no type set
+    }));
+    
+    return runsWithType.filter(run => run.activityType === activityType);
+  }
+
+  /**
+   * Get the most recent run of a specific activity type
+   * @param {string} activityType - The activity type to filter by (run, walk, cycle)
+   * @returns {Object|null} The most recent run of the specified type, or null if none found
+   */
+  getMostRecentRunByType(activityType = 'run') {
+    const runsOfType = this.getActiveRunsByType(activityType);
+    
+    if (runsOfType.length === 0) {
+      return null;
+    }
+    
+    // Sort by timestamp (most recent first)
+    const sortedRuns = [...runsOfType].sort((a, b) => {
+      const dateA = new Date(a.timestamp || a.date);
+      const dateB = new Date(b.timestamp || b.date);
+      return dateB - dateA;
+    });
+    
+    return sortedRuns[0];
+  }
+
+  /**
+   * Calculate statistics for all active runs of a specific type
+   * @param {string} activityType - The activity type to filter by (run, walk, cycle)
+   * @returns {Object} Statistics object
+   */
+  calculateStatsByType(activityType = 'run') {
+    const activeRuns = this.getActiveRunsByType(activityType);
+    
+    if (activeRuns.length === 0) {
+      return {
+        totalRuns: 0,
+        totalDistance: 0,
+        totalDuration: 0,
+        averagePace: 0,
+        totalElevationGain: 0,
+        totalElevationLoss: 0,
+        totalCalories: 0
+      };
+    }
+    
+    const stats = activeRuns.reduce((acc, run) => {
+      acc.totalDistance += run.distance || 0;
+      acc.totalDuration += run.duration || 0;
+      acc.totalElevationGain += (run.elevation?.gain || 0);
+      acc.totalElevationLoss += (run.elevation?.loss || 0);
+      acc.totalCalories += (run.calories || 0);
+      return acc;
+    }, {
+      totalRuns: activeRuns.length,
+      totalDistance: 0,
+      totalDuration: 0,
+      totalElevationGain: 0,
+      totalElevationLoss: 0,
+      totalCalories: 0
+    });
+    
+    // Calculate average pace
+    if (stats.totalDistance > 0) {
+      stats.averagePace = stats.totalDuration / stats.totalDistance;
+    }
+    
+    return stats;
   }
 
   /**

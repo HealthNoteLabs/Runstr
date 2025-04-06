@@ -11,7 +11,18 @@ export const ClubsList = () => {
     const loadClubs = async () => {
       try {
         setLoading(true);
+        
+        // Set a timeout to prevent infinite loading
+        const loadingTimeout = setTimeout(() => {
+          setLoading(false);
+          setError('Loading timed out. Please try again.');
+        }, 15000); // 15 seconds timeout
+        
         const groups = await fetchRunningGroups();
+        
+        // Clear the timeout since we got a response
+        clearTimeout(loadingTimeout);
+        
         setClubs(groups);
         setError(null);
       } catch (err) {
@@ -28,9 +39,20 @@ export const ClubsList = () => {
   const refreshClubs = async () => {
     try {
       setLoading(true);
-      const groups = await fetchRunningGroups();
-      setClubs(groups);
       setError(null);
+      
+      // Set a timeout to prevent infinite loading
+      const loadingTimeout = setTimeout(() => {
+        setLoading(false);
+        setError('Loading timed out. Please try again.');
+      }, 15000); // 15 seconds timeout
+      
+      const groups = await fetchRunningGroups();
+      
+      // Clear the timeout since we got a response
+      clearTimeout(loadingTimeout);
+      
+      setClubs(groups);
     } catch (err) {
       console.error('Error refreshing clubs:', err);
       setError('Failed to refresh running clubs');
@@ -70,8 +92,9 @@ export const ClubsList = () => {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-8">
-          <div className="loading-spinner"></div>
+        <div className="flex flex-col justify-center items-center py-8">
+          <div className="loading-spinner mb-4"></div>
+          <p className="text-gray-400">Loading running clubs...</p>
         </div>
       ) : error ? (
         <div className="bg-red-900/30 border border-red-500 rounded-lg p-4 text-center">

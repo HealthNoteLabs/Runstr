@@ -1,6 +1,7 @@
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useActivityType } from '../contexts/ActivityTypeContext';
 
 export function FloatingMusicPlayer() {
   const { 
@@ -11,10 +12,13 @@ export function FloatingMusicPlayer() {
     playPrevious
   } = useAudioPlayer();
   
+  const { getActivityTypeLabel } = useActivityType();
+  const activityLabel = getActivityTypeLabel();
+  
   const [expanded, setExpanded] = useState(false);
   const navigate = useNavigate();
   
-  if (!currentTrack) return <span className="text-sm">Run with Nostr</span>;
+  if (!currentTrack) return <span className="text-sm">{activityLabel} with Nostr</span>;
 
   return (
     <div className={`${expanded ? 'header-player-expanded' : 'header-player-collapsed'}`}>

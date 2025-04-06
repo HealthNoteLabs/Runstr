@@ -50,7 +50,7 @@ export const RunHistory = () => {
       document.removeEventListener('runHistoryUpdated', handleRunHistoryUpdate);
       document.removeEventListener('runCompleted', handleRunHistoryUpdate);
     };
-  }, []);
+  }, [activityType]); // Reload when activity type changes
 
   // Listen for changes to the distance unit in localStorage
   useEffect(() => {
@@ -87,25 +87,11 @@ export const RunHistory = () => {
     };
   }, [distanceUnit, runHistory.length, setDistanceUnit]);
 
-  // Setup local storage event listener
-  useEffect(() => {
-    // Listen for storage changes
-    const handleStorageChange = () => {
-      // Update distance unit if it changed in another component
-      setDistanceUnit(localStorage.getItem('distanceUnit') || 'km');
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  }, []);
-
   // Load and process run history from localStorage
   const loadRunHistory = () => {
     try {
-      // Use RunDataService to get active runs
-      const activeRuns = runDataService.getActiveRuns();
+      // Use RunDataService to get active runs of the current type
+      const activeRuns = runDataService.getActiveRunsByType(activityType);
       
       // Sort runs by date (newest first)
       const sortedRuns = [...activeRuns].sort((a, b) => {
@@ -116,10 +102,10 @@ export const RunHistory = () => {
 
       setRunHistory(sortedRuns);
       
-      // Recalculate stats
+      // Recalculate stats only for the current activity type
       calculateStats(sortedRuns, profile);
     } catch (error) {
-      console.error('Error loading run history:', error);
+      console.error(`Error loading ${activityLabelLower} history:`, error);
       setRunHistory([]);
     }
   };
@@ -294,10 +280,60 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
     }
   };
 
+  // Toggle distance unit function
+  const toggleDistanceUnit = () => {
+    const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
+    setDistanceUnit(newUnit);
+    localStorage.setItem('distanceUnit', newUnit);
+  };
+
+  // Add function to format steps
+  const formatSteps = (steps) => {
+    if (!steps) return '';
+    return steps.toLocaleString();
+  };
+  
+  // Format pace for display
+  const formatPace = (pace) => {
+    if (!pace) return '0:00';
+    const minutes = Math.floor(pace);
+    const seconds = Math.round((pace - minutes) * 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+  
+  // Get time of day label based on timestamp
+  const getTimeOfDay = (timestamp) => {
+    if (!timestamp) return 'Recent';
+    
+    const date = new Date(timestamp);
+    const hour = date.getHours();
+    
+    if (hour >= 5 && hour < 12) return 'Morning';
+    if (hour >= 12 && hour < 17) return 'Afternoon';
+    if (hour >= 17 && hour < 21) return 'Evening';
+    return 'Night';
+  };
+
   return (
     <div className="run-history">
       <div className="stats-overview">
         <h2>STATS</h2>
+        <div className="flex justify-center my-4">
+          <div className="flex rounded-full bg-[#1a222e] p-1">
+            <button 
+              className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+              onClick={() => distanceUnit !== 'km' && toggleDistanceUnit()}
+            >
+              Kilometers
+            </button>
+            <button 
+              className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+              onClick={() => distanceUnit !== 'mi' && toggleDistanceUnit()}
+            >
+              Miles
+            </button>
+          </div>
+        </div>
         <button 
           className="profile-btn" 
           onClick={() => navigate('/profile')}
@@ -438,80 +474,114 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
       </div>
 
       <h2>{activityLabel} History</h2>
-      {runHistory.length === 0 ? (
-        <p>No {activityLabelLower}s recorded yet</p>
-      ) : (
-        <ul className="history-list space-y-4 px-4">
-          {runHistory.map((run) => {
-            const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration);
-            
-            // Calculate pace with the consistent service method
-            const pace = runDataService.calculatePace(run.distance, run.duration, distanceUnit).toFixed(2);
-            
-            return (
-              <li key={run.id} className="history-item bg-[#1a222e] rounded-lg p-4">
-                <div className="run-date text-lg font-semibold text-indigo-400 mb-2">{formatDate(run.date)}</div>
-                <div className="run-details grid grid-cols-2 gap-2 mb-4 text-sm text-gray-300">
-                  <span>Duration: {formatTime(run.duration)}</span>
-                  <span>Distance: {displayDistance(run.distance, distanceUnit)}</span>
-                  <span>
-                    Pace: {pace} min/{distanceUnit}
-                  </span>
-                  <span>Calories: {caloriesBurned} kcal</span>
-                  {run.elevation && (
-                    <>
-                      <span>
-                        Elevation Gain: {formatElevation(run.elevation.gain, distanceUnit)}
-                      </span>
-                      <span>
-                        Elevation Loss: {formatElevation(run.elevation.loss, distanceUnit)}
-                      </span>
-                    </>
-                  )}
+      <div className="run-list">
+        {runHistory.length === 0 ? (
+          <div className="no-runs">
+            <p>No {activityLabelLower}s recorded yet. Start your first {activityLabelLower} to see it here!</p>
+          </div>
+        ) : (
+          runHistory.map((run) => (
+            <div key={run.id} className="run-card">
+              <div className="run-header">
+                <h3>{run.title || `${getTimeOfDay(run.timestamp)} ${activityLabel}`}</h3>
+                <span className="run-date">{formatDate(run.date)}</span>
+              </div>
+              <div className="run-stats">
+                <div className="run-stat">
+                  <div className="stat-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </div>
+                  <div className="stat-value">
+                    <span>{displayDistance(run.distance, distanceUnit)}</span>
+                    <span className="stat-label">{distanceUnit}</span>
+                  </div>
                 </div>
-                <div className="run-actions flex flex-wrap gap-2 justify-end">
-                  <button
-                    onClick={() => handlePostToNostr(run)}
-                    className="text-xs text-indigo-400 flex items-center hover:text-indigo-300 transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                <div className="run-stat">
+                  <div className="stat-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    Share
-                  </button>
-                  <button
-                    onClick={() => handleSaveToNostr(run)}
-                    className="text-xs text-indigo-400 flex items-center hover:text-indigo-300 transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                    </svg>
-                    Save to Nostr
-                  </button>
-                  <button
-                    onClick={() => handleSaveHealthData(run)}
-                    className="text-xs text-indigo-400 flex items-center hover:text-indigo-300 transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                    </svg>
-                    Save Health Data
-                  </button>
-                  <button
-                    onClick={() => handleDeleteRun(run.id)}
-                    className="text-xs text-red-400 flex items-center hover:text-red-300 transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                    Delete
-                  </button>
+                  </div>
+                  <div className="stat-value">
+                    <span>{runDataService.formatTime(run.duration)}</span>
+                    <span className="stat-label">time</span>
+                  </div>
                 </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                
+                {run.activityType === 'walk' && run.steps ? (
+                  // Display steps for walk activities
+                  <div className="run-stat">
+                    <div className="stat-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <div className="stat-value">
+                      <span>{formatSteps(run.steps)}</span>
+                      <span className="stat-label">steps</span>
+                    </div>
+                  </div>
+                ) : (
+                  // Display pace for run activities
+                  <div className="run-stat">
+                    <div className="stat-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                      </svg>
+                    </div>
+                    <div className="stat-value">
+                      <span>{formatPace(run.pace)}</span>
+                      <span className="stat-label">min/{distanceUnit}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <div className="run-actions flex flex-wrap gap-2 justify-end">
+                <button
+                  onClick={() => handlePostToNostr(run)}
+                  className="text-xs text-indigo-400 flex items-center hover:text-indigo-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                  </svg>
+                  Share
+                </button>
+                <button
+                  onClick={() => handleSaveToNostr(run)}
+                  className="text-xs text-indigo-400 flex items-center hover:text-indigo-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  Save to Nostr
+                </button>
+                <button
+                  onClick={() => handleSaveHealthData(run)}
+                  className="text-xs text-indigo-400 flex items-center hover:text-indigo-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                  </svg>
+                  Save Health Data
+                </button>
+                <button
+                  onClick={() => handleDeleteRun(run.id)}
+                  className="text-xs text-red-400 flex items-center hover:text-red-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
 
       {showModal && (
         <div className="modal-overlay">

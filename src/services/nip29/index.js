@@ -41,7 +41,16 @@ export function getRelayFromGroupId(groupId) {
 // Ensure connection to group relays
 export async function connectToGroupRelays() {
   try {
-    await groupNdk.connect();
+    // Create a timeout promise that rejects after 5 seconds
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Connection timeout')), 5000);
+    });
+    
+    // Create the connection promise
+    const connectionPromise = groupNdk.connect();
+    
+    // Race the connection against the timeout
+    await Promise.race([connectionPromise, timeoutPromise]);
     console.log('Connected to group relays');
     return true;
   } catch (error) {
@@ -109,7 +118,8 @@ export async function createGroup(name, about) {
 // Get timeline references for request context
 export async function getTimelineReferences(groupId) {
   try {
-    const relayUrl = getRelayFromGroupId(groupId);
+    // We don't actually need to use the relayUrl here
+    // const relayUrl = getRelayFromGroupId(groupId);
     await connectToGroupRelays();
     
     // Fetch recent events in the group
@@ -233,37 +243,54 @@ export async function fetchRunningGroups() {
   try {
     await connectToGroupRelays();
     
-    // Fetch groups with RUNSTR in name or about field
-    const filter = {
-      kinds: [39000], // Group metadata
-      limit: 50
+    // Create a promise that resolves after a timeout
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Fetch timeout')), 10000); // 10 second timeout
+    });
+    
+    // Create the fetch promise
+    const fetchPromise = async () => {
+      // Fetch groups with RUNSTR in name or about field
+      const filter = {
+        kinds: [39000], // Group metadata
+        limit: 50
+      };
+      
+      const events = await groupNdk.fetchEvents(filter);
+      const groups = [];
+      
+      // Process each group metadata event
+      for (const event of events) {
+        // Extract group details from tags
+        const name = event.tags.find(t => t[0] === 'name')?.[1] || 'Unnamed Group';
+        const about = event.tags.find(t => t[0] === 'about')?.[1] || '';
+        const idTag = event.tags.find(t => t[0] === 'h')?.[1];
+        
+        // Only include groups with "RUNSTR" in name or about
+        if (idTag && (name.includes('#RUNSTR') || about.includes('#RUNSTR'))) {
+          groups.push({
+            id: idTag,
+            name,
+            about,
+            createdAt: event.created_at,
+            createdBy: event.pubkey
+          });
+        }
+      }
+      
+      return groups;
     };
     
-    const events = await groupNdk.fetchEvents(filter);
-    const groups = [];
-    
-    // Process each group metadata event
-    for (const event of events) {
-      // Extract group details from tags
-      const name = event.tags.find(t => t[0] === 'name')?.[1] || 'Unnamed Group';
-      const about = event.tags.find(t => t[0] === 'about')?.[1] || '';
-      const idTag = event.tags.find(t => t[0] === 'h')?.[1];
-      
-      // Only include groups with "RUNSTR" in name or about
-      if (idTag && (name.includes('#RUNSTR') || about.includes('#RUNSTR'))) {
-        groups.push({
-          id: idTag,
-          name,
-          about,
-          createdAt: event.created_at,
-          createdBy: event.pubkey
-        });
-      }
-    }
-    
-    return groups;
+    // Race the fetch against the timeout
+    return await Promise.race([fetchPromise(), timeoutPromise])
+      .catch(error => {
+        console.error('Error or timeout in fetchRunningGroups:', error);
+        // Return an empty array instead of throwing to prevent UI from getting stuck
+        return [];
+      });
   } catch (error) {
     console.error('Error fetching running groups:', error);
+    // Return empty array instead of throwing
     return [];
   }
 }
@@ -272,6 +299,9 @@ export async function fetchRunningGroups() {
 export async function getGroupMembers(groupId) {
   try {
     await connectToGroupRelays();
+    
+    // No need to extract relay URL if we're not using it
+    // const relayUrl = getRelayFromGroupId(groupId);
     
     // Fetch member addition events
     const addFilter = {

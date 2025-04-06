@@ -1,6 +1,7 @@
 import { registerPlugin } from '@capacitor/core';
 import { EventEmitter } from 'tseep';
 import runDataService from './RunDataService';
+import stepCounterService from './StepCounterService';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
 
@@ -23,6 +24,10 @@ class RunTracker extends EventEmitter {
       lastAltitude: null
     };
 
+    // Add step counter data
+    this.steps = 0;
+    this.useStepCounter = false; // Will be set based on activity type
+
     this.isTracking = false;
     this.isPaused = false;
     this.startTime = 0;
@@ -34,6 +39,27 @@ class RunTracker extends EventEmitter {
     this.watchId = null; // For geolocation watch id
     this.timerInterval = null; // For updating duration every second
     this.paceInterval = null; // For calculating pace at regular intervals
+
+    // Listen for step counter updates
+    stepCounterService.on('stepsChange', (steps) => {
+      if (this.isTracking && !this.isPaused && this.useStepCounter) {
+        this.steps = steps;
+        this.emit('stepsChange', steps);
+        
+        // Estimate distance based on steps (rough estimate)
+        // Average step length is about 0.75m
+        const estimatedDistance = steps * 0.75;
+        
+        if (estimatedDistance > this.distance) {
+          this.distance = estimatedDistance;
+          this.emit('distanceChange', this.distance);
+          
+          // Update pace based on new distance
+          this.pace = this.calculatePace(this.distance, this.duration);
+          this.emit('paceChange', this.pace);
+        }
+      }
+    });
   }
 
   toRadians(degrees) {
@@ -268,6 +294,17 @@ class RunTracker extends EventEmitter {
           this.addPosition(location);
         }
       );
+
+      // If in walk mode, also start the step counter
+      if (this.useStepCounter) {
+        try {
+          await stepCounterService.startTracking();
+          this.steps = 0;
+          this.emit('stepsChange', this.steps);
+        } catch (error) {
+          console.error('Error starting step counter:', error);
+        }
+      }
     } catch (error) {
       console.error('Error starting background tracking:', error);
     }
@@ -282,6 +319,15 @@ class RunTracker extends EventEmitter {
         });
         this.watchId = null;
       }
+
+      // If using step counter, also stop that
+      if (this.useStepCounter) {
+        try {
+          await stepCounterService.stopTracking();
+        } catch (error) {
+          console.error('Error stopping step counter:', error);
+        }
+      }
     } catch (error) {
       console.error('Error cleaning up watchers:', error);
     }
@@ -289,6 +335,11 @@ class RunTracker extends EventEmitter {
 
   async start() {
     if (this.isTracking && !this.isPaused) return;
+
+    // Get current activity type
+    const activityType = localStorage.getItem('activityType') || 'run';
+    // Use step counter for walk mode
+    this.useStepCounter = (activityType === 'walk');
 
     // Update distanceUnit from localStorage in case it changed
     this.distanceUnit = localStorage.getItem('distanceUnit') || 'km';
@@ -302,6 +353,7 @@ class RunTracker extends EventEmitter {
     this.duration = 0;
     this.pace = 0;
     this.splits = [];
+    this.steps = 0; // Reset step count
     this.lastSplitDistance = 0;
     this.lastPartialUpdateDistance = 0;
     
@@ -364,6 +416,9 @@ class RunTracker extends EventEmitter {
       this.pace = runDataService.calculatePace(this.distance, this.duration, this.distanceUnit);
     }
     
+    // Get the current activity type
+    const activityType = localStorage.getItem('activityType') || 'run';
+    
     // Create the final run data object
     const finalResults = {
       distance: this.distance,
@@ -374,7 +429,9 @@ class RunTracker extends EventEmitter {
         gain: this.elevation.gain,
         loss: this.elevation.loss
       },
-      unit: this.distanceUnit
+      unit: this.distanceUnit,
+      activityType: activityType,
+      steps: this.useStepCounter ? this.steps : 0 // Include step count if step counter was used
     };
     
     // Save to run history using RunDataService instead of directly to localStorage
@@ -384,6 +441,11 @@ class RunTracker extends EventEmitter {
     this.stopTracking();
     this.stopTimer();
     this.stopPaceCalculator();
+    
+    // If using step counter, reset it
+    if (this.useStepCounter) {
+      stepCounterService.resetSteps();
+    }
     
     // Emit status change and completed event
     this.emit('statusChange', { isTracking: false, isPaused: false });
@@ -481,8 +543,7 @@ class RunTracker extends EventEmitter {
   }
 }
 
-// Create and export an instance of the tracker
-export const runTracker = new RunTracker();
-
-// Also export the class for type checking and testing
+// Create and export a singleton instance
+const runTracker = new RunTracker();
+export { runTracker };
 export default RunTracker;

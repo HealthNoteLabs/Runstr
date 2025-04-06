@@ -5,8 +5,15 @@ const SplitsList = ({ splits, distanceUnit = 'km', className = '' }) => {
     return null;
   }
 
+  // Filter out partial splits and only keep completed miles/kilometers
+  const completedSplits = splits.filter(split => !split.isPartial);
+  
+  if (completedSplits.length === 0) {
+    return null;
+  }
+
   // Sort splits by distance (descending) to show most recent first
-  const sortedSplits = [...splits].sort((a, b) => b.distance - a.distance);
+  const sortedSplits = [...completedSplits].sort((a, b) => b.distance - a.distance);
   
   // Format the unit label
   const unitLabel = distanceUnit === 'km' ? 'Km' : 'Mile';
@@ -37,19 +44,13 @@ const SplitsList = ({ splits, distanceUnit = 'km', className = '' }) => {
       <div className="bg-[#1a222e]/50 rounded-lg p-2 max-h-48 overflow-y-auto">
         <ul className="divide-y divide-gray-700/30">
           {sortedSplits.map((split, index) => {
-            // Format the distance part (e.g., "1" or ".68")
-            const distanceDisplay = 
-              split.isPartial 
-                ? `.${Math.floor((split.distance % 1) * 100)}` 
-                : split.distance;
-            
             // Format pace for display
             const paceDisplay = formatSplitPace(split.pace, distanceUnit);
 
             return (
               <li key={index} className="py-1.5 flex justify-between items-center">
                 <span className="text-sm font-medium">
-                  {unitLabel} {distanceDisplay}
+                  {unitLabel} {split.distance}
                 </span>
                 <span className="text-sm text-gray-300">
                   {paceDisplay}

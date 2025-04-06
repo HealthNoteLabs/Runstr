@@ -30,6 +30,12 @@ export const ClubDetail = () => {
     const loadClubData = async () => {
       if (!clubId) return;
       
+      // Set a timeout to prevent infinite loading
+      const loadingTimeout = setTimeout(() => {
+        setLoading(false);
+        setError('Loading timed out. Please try again.');
+      }, 15000); // 15 seconds timeout
+      
       try {
         setLoading(true);
         
@@ -81,6 +87,8 @@ export const ClubDetail = () => {
         console.error('Error loading club data:', err);
         setError('Failed to load club data');
       } finally {
+        // Clear the timeout
+        clearTimeout(loadingTimeout);
         setLoading(false);
       }
     };

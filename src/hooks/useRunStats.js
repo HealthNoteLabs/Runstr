@@ -38,6 +38,19 @@ export const useRunStats = (runHistory, userProfile) => {
     }
   }, [runHistory, userProfile, distanceUnit]);
 
+  // Listen for distance unit changes via custom event
+  useEffect(() => {
+    const handleUnitChange = (event) => {
+      setDistanceUnit(event.detail.unit);
+    };
+    
+    document.addEventListener('distanceUnitChanged', handleUnitChange);
+    
+    return () => {
+      document.removeEventListener('distanceUnitChanged', handleUnitChange);
+    };
+  }, []);
+
   // Toggle between km and mi units
   const toggleDistanceUnit = () => {
     const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
