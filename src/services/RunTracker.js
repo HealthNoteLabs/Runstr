@@ -11,7 +11,7 @@ class RunTracker extends EventEmitter {
     this.distance = 0; // in meters
     this.duration = 0; // in seconds
     this.pace = 0; // in seconds per meter
-    this.splits = []; // Array to store split objects { km, time, pace }
+    this.splits = []; // Array to store split objects { distance, time, pace, isPartial }
     this.positions = [];
     this.distanceUnit = localStorage.getItem('distanceUnit') || 'km'; // Get user's preferred unit
     
@@ -29,6 +29,7 @@ class RunTracker extends EventEmitter {
     this.pausedTime = 0; // Total time paused in milliseconds
     this.lastPauseTime = 0; // Timestamp when the run was last paused
     this.lastSplitDistance = 0; // Track last split milestone
+    this.lastPartialUpdateDistance = 0; // Track last partial split update
 
     this.watchId = null; // For geolocation watch id
     this.timerInterval = null; // For updating duration every second
@@ -137,37 +138,70 @@ class RunTracker extends EventEmitter {
         ? this.lastSplitDistance / 1000
         : this.lastSplitDistance / 1609.344;
       
+      // Get the last partial update distance in units
+      const lastPartialUpdateDistanceInUnits = this.distanceUnit === 'km'
+        ? this.lastPartialUpdateDistance / 1000
+        : this.lastPartialUpdateDistance / 1609.344;
+      
       // Check if a new full unit (km or mile) has been completed
       // Using Math.floor ensures we only trigger when a whole unit is completed
       if (Math.floor(currentDistanceInUnits) > Math.floor(lastSplitDistanceInUnits)) {
         // Calculate the current split number (1, 2, 3, etc.)
         const currentSplitNumber = Math.floor(currentDistanceInUnits);
 
-        // Determine the elapsed time at the previous split (or 0 at start)
-        const previousSplitTime = this.splits.length
-          ? this.splits[this.splits.length - 1].time
+        // Find the elapsed time at the previous split (or 0 at start)
+        const previousSplitTime = this.splits.length 
+          ? this.splits.filter(split => !split.isPartial).slice(-1)[0]?.time || 0
           : 0;
         
         // Calculate the duration for this split (time difference)
         const splitDuration = this.duration - previousSplitTime;
         
-        // Calculate pace for this split - pace is in time per distance unit
-        // Pace should be in seconds per meter for proper formatting later
-        const splitPace = splitDuration / splitDistance; 
+        // Calculate pace for this split (seconds per meter)
+        // The pace should be in seconds per meter for proper formatting later
+        const splitPace = splitDistance ? splitDuration / splitDistance : 0; 
         
         console.log(`Recording split at ${currentSplitNumber} ${this.distanceUnit}s with pace ${splitPace}`);
 
         // Record the split with the unit count, cumulative time, and split pace
-        this.splits.push({
-          km: currentSplitNumber, // We keep using 'km' field name for compatibility, but it represents the unit number (mile or km)
+        this.splits = this.splits.filter(split => !split.isPartial).concat([{
+          distance: currentSplitNumber, 
           time: this.duration,
           pace: splitPace,
-          isPartial: false // This is a whole unit split
-        });
+          isPartial: false
+        }]);
         
         // Update lastSplitDistance to the whole unit completed (in meters)
         this.lastSplitDistance = currentSplitNumber * splitDistance;
+        this.lastPartialUpdateDistance = this.lastSplitDistance;
 
+        // Emit an event with updated splits array
+        this.emit('splitRecorded', this.splits);
+      }
+      // Update partial split every 0.05 units (approx 50m for km, ~80m for miles)
+      // but only if we've moved at least that far since last update
+      else if (currentDistanceInUnits - lastPartialUpdateDistanceInUnits >= 0.05) {
+        // Calculate the current partial distance
+        const partialDistance = currentDistanceInUnits;
+        
+        // Calculate the pace for this partial segment
+        // Use the current overall pace (seconds per meter)
+        const splitPace = this.pace;
+        
+        // Add or update the partial split
+        const partialSplit = {
+          distance: partialDistance, 
+          time: this.duration,
+          pace: splitPace,
+          isPartial: true
+        };
+        
+        // Replace any existing partial split with the new one
+        this.splits = this.splits.filter(split => !split.isPartial).concat([partialSplit]);
+        
+        // Update the last partial update distance
+        this.lastPartialUpdateDistance = this.distance;
+        
         // Emit an event with updated splits array
         this.emit('splitRecorded', this.splits);
       }
@@ -269,6 +303,7 @@ class RunTracker extends EventEmitter {
     this.pace = 0;
     this.splits = [];
     this.lastSplitDistance = 0;
+    this.lastPartialUpdateDistance = 0;
     
     // Reset elevation data
     this.elevation = {
@@ -383,6 +418,18 @@ class RunTracker extends EventEmitter {
     this.startTime = Date.now() - (this.duration * 1000);
     this.pausedTime = 0;
     this.lastPauseTime = 0;
+    
+    // Determine the last split distance based on the last non-partial split
+    const lastNonPartialSplit = [...this.splits].filter(split => !split.isPartial).pop();
+    if (lastNonPartialSplit) {
+      const splitDistance = this.distanceUnit === 'km' ? 1000 : 1609.344;
+      this.lastSplitDistance = lastNonPartialSplit.distance * splitDistance;
+    } else {
+      this.lastSplitDistance = 0;
+    }
+    
+    // Set last partial update distance
+    this.lastPartialUpdateDistance = this.lastSplitDistance;
     
     // Start the tracking services
     this.startTracking();

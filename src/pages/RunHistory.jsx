@@ -87,6 +87,20 @@ export const RunHistory = () => {
     };
   }, [distanceUnit, runHistory.length, setDistanceUnit]);
 
+  // Setup local storage event listener
+  useEffect(() => {
+    // Listen for storage changes
+    const handleStorageChange = () => {
+      // Update distance unit if it changed in another component
+      setDistanceUnit(localStorage.getItem('distanceUnit') || 'km');
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
   // Load and process run history from localStorage
   const loadRunHistory = () => {
     try {
@@ -280,33 +294,10 @@ ${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gai
     }
   };
 
-  // Toggle distance unit function
-  const toggleDistanceUnit = () => {
-    const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
-    setDistanceUnit(newUnit);
-    localStorage.setItem('distanceUnit', newUnit);
-  };
-
   return (
     <div className="run-history">
       <div className="stats-overview">
         <h2>STATS</h2>
-        <div className="flex justify-center my-4">
-          <div className="flex rounded-full bg-[#1a222e] p-1">
-            <button 
-              className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-              onClick={() => distanceUnit !== 'km' && toggleDistanceUnit()}
-            >
-              Kilometers
-            </button>
-            <button 
-              className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-              onClick={() => distanceUnit !== 'mi' && toggleDistanceUnit()}
-            >
-              Miles
-            </button>
-          </div>
-        </div>
         <button 
           className="profile-btn" 
           onClick={() => navigate('/profile')}

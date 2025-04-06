@@ -10,8 +10,9 @@ import {
   formatHealthProfileEvent, 
   formatHealthRecordEvent 
 } from '../utils/nostr';
-import { displayDistance } from '../utils/formatters';
+import { displayDistance } from '../utils/unitConversions';
 import runDataService from '../services/RunDataService';
+import SplitsList from './SplitsList';
 
 export const RunTracker = () => {
   const { 
@@ -24,16 +25,29 @@ export const RunTracker = () => {
     startRun,
     pauseRun,
     resumeRun,
-    stopRun
+    stopRun,
+    splits
   } = useRunTracker();
 
   const { activityType, getActivityTypeLabel } = useActivityType();
   const activityLabel = getActivityTypeLabel();
   const activityLabelLower = activityLabel.toLowerCase();
 
-  const [distanceUnit, setDistanceUnit] = useState(
-    () => localStorage.getItem('distanceUnit') || 'km'
-  );
+  // Use a simpler approach to track distanceUnit since we're not updating it directly in this component
+  const [distanceUnit, setDistanceUnit] = useState(localStorage.getItem('distanceUnit') || 'km');
+  
+  // Update distanceUnit when localStorage changes
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setDistanceUnit(localStorage.getItem('distanceUnit') || 'km');
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
   const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const [countdown, setCountdown] = useState(0); // Countdown timer value
   const [isCountingDown, setIsCountingDown] = useState(false); // Flag to indicate countdown is in progress
@@ -300,12 +314,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     }, 1000);
   };
 
-  const toggleDistanceUnit = () => {
-    const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
-    setDistanceUnit(newUnit);
-    localStorage.setItem('distanceUnit', newUnit);
-  };
-
   // Format pace for display
   const formattedPace = formatPaceWithUnit(
     pace,
@@ -417,23 +425,28 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         </div>
       </div>
       
-      {/* Unit Toggle */}
-      <div className="flex justify-center my-4">
-        <div className="flex rounded-full bg-[#1a222e] p-1">
-          <button 
-            className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-            onClick={() => distanceUnit !== 'mi' && toggleDistanceUnit()}
-          >
-            Miles
-          </button>
-          <button 
-            className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-            onClick={() => distanceUnit !== 'km' && toggleDistanceUnit()}
-          >
-            Kilometers
-          </button>
+      {/* Splits Section - Only show during active tracking */}
+      {isTracking && (
+        <div className="mx-4 mb-4">
+          <SplitsList splits={splits} distanceUnit={distanceUnit} className="mt-2" />
         </div>
-      </div>
+      )}
+      
+      {/* Unit Toggle */}
+      {/* Removed miles/km toggle as it's now in the settings menu */}
+      
+      {/* Join Club Button */}
+      {!isTracking && (
+        <button 
+          className="mx-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 px-6 rounded-xl shadow-lg flex items-center justify-center text-lg font-semibold mb-4"
+          onClick={() => window.location.href = '/club'}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+          </svg>
+          Join Club
+        </button>
+      )}
       
       {/* Start Run Button */}
       {!isTracking ? (

@@ -13,6 +13,7 @@ const Team = lazy(() => import('./pages/Team').then(module => ({ default: module
 const Events = lazy(() => import('./pages/Events').then(module => ({ default: module.Events })));
 const Profile = lazy(() => import('./pages/Profile').then(module => ({ default: module.Profile })));
 const About = lazy(() => import('./pages/About').then(module => ({ default: module.About })));
+const Club = lazy(() => import('./pages/Club').then(module => ({ default: module.Club })));
 
 // Loading fallback component
 const LoadingComponent = () => (
@@ -27,6 +28,7 @@ export const AppRoutes = () => {
         <Route path="/profile" element={<Profile />} />
         <Route path="/club" element={<RunClub />} />
         <Route path="/club/join/:teamId" element={<RunClub />} />
+        <Route path="/club/*" element={<Club />} />
         <Route path="/team" element={<Team />} />
         <Route path="/team/profile/:teamId" element={<Team />} />
         <Route path="/events" element={<Events />} />

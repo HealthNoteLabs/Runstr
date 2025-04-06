@@ -7,6 +7,9 @@ export const MenuBar = () => {
   const location = useLocation();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { activityType, setActivityType } = useActivityType();
+  const [distanceUnit, setDistanceUnit] = useState(
+    () => localStorage.getItem('distanceUnit') || 'km'
+  );
 
   // Get the appropriate display name for the header based on activity type
   const getAppName = () => {
@@ -60,6 +63,12 @@ export const MenuBar = () => {
 
   const toggleSettings = () => {
     setSettingsOpen(!settingsOpen);
+  };
+
+  const toggleDistanceUnit = () => {
+    const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
+    setDistanceUnit(newUnit);
+    localStorage.setItem('distanceUnit', newUnit);
   };
 
   return (
@@ -128,6 +137,27 @@ export const MenuBar = () => {
                   </svg>
                   Cycle
                 </button>
+              </div>
+            </div>
+            
+            {/* Distance Unit Toggle */}
+            <div className="mb-6">
+              <h4 className="text-md font-semibold mb-3">Distance Unit</h4>
+              <div className="flex justify-center">
+                <div className="flex rounded-full bg-[#111827] p-1">
+                  <button 
+                    className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+                    onClick={() => distanceUnit !== 'km' && toggleDistanceUnit()}
+                  >
+                    Kilometers
+                  </button>
+                  <button 
+                    className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+                    onClick={() => distanceUnit !== 'mi' && toggleDistanceUnit()}
+                  >
+                    Miles
+                  </button>
+                </div>
               </div>
             </div>
             
