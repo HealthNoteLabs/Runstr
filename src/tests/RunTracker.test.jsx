@@ -212,4 +212,40 @@ describe('RunTracker', () => {
     // Verify success message was shown
     expect(mockShowToast).toHaveBeenCalledWith('Workout record saved to Nostr!');
   });
+  
+  test('allows deleting a run', async () => {
+    // Mock window.confirm to always return true
+    const originalConfirm = window.confirm;
+    window.confirm = vi.fn(() => true);
+    
+    render(<RunTracker />);
+    
+    // Wait for the component to load the recent run
+    await waitFor(() => {
+      expect(screen.getByText(/Recent Runs/i)).toBeInTheDocument();
+    });
+    
+    // Verify the initial state of localStorage
+    const initialRunHistory = JSON.parse(localStorage.getItem('runHistory'));
+    expect(initialRunHistory.length).toBe(1);
+    
+    // Click on the Delete button
+    const deleteButton = screen.getByText(/Delete$/i);
+    fireEvent.click(deleteButton);
+    
+    // Verify confirmation was shown
+    expect(window.confirm).toHaveBeenCalled();
+    
+    // Verify that the run was removed from localStorage
+    await waitFor(() => {
+      const updatedRunHistory = JSON.parse(localStorage.getItem('runHistory'));
+      expect(updatedRunHistory.length).toBe(0);
+    });
+    
+    // Verify success message was shown
+    expect(mockShowToast).toHaveBeenCalledWith('Run deleted successfully');
+    
+    // Restore original confirm
+    window.confirm = originalConfirm;
+  });
 }); 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createAndPublishEvent } from '../utils/nostr';
+import { createAndPublishEvent, createWorkoutEvent } from '../utils/nostr';
 import { useRunStats } from '../hooks/useRunStats';
 import { useRunProfile } from '../hooks/useRunProfile';
 import { formatTime, displayDistance, formatElevation, formatDate } from '../utils/formatters';
@@ -15,10 +15,12 @@ export const RunHistory = () => {
   const [showModal, setShowModal] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [distanceUnit, setDistanceUnit] = useState(() => localStorage.getItem('distanceUnit') || 'km');
-  const [npub, setNpub] = useState(() => localStorage.getItem('currentNpub'));
-  const [publishEnabled, setPublishEnabled] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [runToDelete, setRunToDelete] = useState(null);
+  // Add state for workout record saving
+  const [isSavingWorkout, setIsSavingWorkout] = useState(false);
+  const [savingWorkoutRunId, setSavingWorkoutRunId] = useState(null);
+  const [workoutSavedRuns, setWorkoutSavedRuns] = useState(new Set());
 
   // Get user profile and distance unit from custom hooks
   const { userProfile: profile } = useRunProfile();
@@ -289,6 +291,42 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     }
   };
 
+  const handleSaveWorkoutRecord = async (run) => {
+    if (!run) return;
+    
+    setIsSavingWorkout(true);
+    setSavingWorkoutRunId(run.id);
+    
+    try {
+      // Create a workout event with kind 1301 format
+      const workoutEvent = createWorkoutEvent(run, distanceUnit);
+      
+      // Use the existing createAndPublishEvent function
+      await createAndPublishEvent(workoutEvent);
+      
+      // Update UI to show success
+      setWorkoutSavedRuns(prev => new Set([...prev, run.id]));
+      
+      // Show success message
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Workout record saved to Nostr!');
+      } else {
+        alert('Workout record saved to Nostr!');
+      }
+    } catch (error) {
+      console.error('Error saving workout record:', error);
+      
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Failed to save workout record: ' + error.message);
+      } else {
+        alert('Failed to save workout record: ' + error.message);
+      }
+    } finally {
+      setIsSavingWorkout(false);
+      setSavingWorkoutRunId(null);
+    }
+  };
+
   // Toggle distance unit function
   const toggleDistanceUnit = () => {
     const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
@@ -466,6 +504,9 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             // Calculate pace with the consistent service method
             const pace = runDataService.calculatePace(run.distance, run.duration, distanceUnit).toFixed(2);
             
+            // Check if workout has been saved for this run
+            const isWorkoutSaved = workoutSavedRuns.has(run.id);
+            
             return (
               <li key={run.id} className="history-item">
                 <div className="run-date">{formatDate(run.date)}</div>
@@ -493,6 +534,13 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                     className="share-btn"
                   >
                     Share to Nostr
+                  </button>
+                  <button
+                    onClick={() => handleSaveWorkoutRecord(run)}
+                    disabled={isSavingWorkout || isWorkoutSaved}
+                    className="share-btn"
+                  >
+                    {isSavingWorkout && savingWorkoutRunId === run.id ? 'Saving...' : isWorkoutSaved ? 'Record Saved' : 'Save Workout Record'}
                   </button>
                   <button
                     onClick={() => handleDeleteClick(run)}

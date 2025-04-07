@@ -1,10 +1,9 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect } from 'react';
 import { useRunTracker } from '../contexts/RunTrackerContext';
 import { convertDistance, formatPaceWithUnit, formatElevation } from '../utils/formatters';
 import { PermissionDialog } from './PermissionDialog';
 import { createAndPublishEvent, createWorkoutEvent } from '../utils/nostr';
 import { displayDistance } from '../utils/formatters';
-import SplitsTable from './SplitsTable';
 import runDataService from '../services/RunDataService';
 
 export const RunTracker = () => {
@@ -37,6 +36,8 @@ export const RunTracker = () => {
   // Add new state for workout record posting
   const [isSavingWorkout, setIsSavingWorkout] = useState(false);
   const [workoutSaved, setWorkoutSaved] = useState(false);
+  // Add new state for run deletion
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Load the most recent run
   useEffect(() => {
@@ -214,12 +215,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     distanceUnit
   );
   
-  // Replace the direct pace calculation with RunDataService calculation
-  // when using the pace for any calculations in component
-  const calculateConsistentPace = (distance, duration, unit) => {
-    return runDataService.calculatePace(distance, duration, unit);
-  };
-
   // Helper function to determine time of day based on timestamp
   const getTimeOfDay = (timestamp) => {
     if (!timestamp) {
@@ -291,6 +286,53 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       }
     } finally {
       setIsSavingWorkout(false);
+    }
+  };
+
+  // Add handler for deleting a run
+  const handleDeleteRun = async () => {
+    if (!recentRun) return;
+    
+    const confirmDelete = window.confirm("Are you sure you want to delete this run? This action cannot be undone.");
+    if (!confirmDelete) return;
+    
+    setIsDeleting(true);
+    
+    try {
+      // Get current run history
+      const runHistory = JSON.parse(localStorage.getItem('runHistory') || '[]');
+      
+      // Filter out the run to delete
+      const updatedRunHistory = runHistory.filter(run => run.id !== recentRun.id);
+      
+      // Save updated history back to localStorage
+      localStorage.setItem('runHistory', JSON.stringify(updatedRunHistory));
+      
+      // Show success message
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Run deleted successfully');
+      } else {
+        alert('Run deleted successfully');
+      }
+      
+      // If there are other runs, load the next most recent run
+      if (updatedRunHistory.length > 0) {
+        const sortedRuns = [...updatedRunHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
+        setRecentRun(sortedRuns[0]);
+      } else {
+        // No more runs
+        setRecentRun(null);
+      }
+    } catch (error) {
+      console.error('Error deleting run:', error);
+      
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Failed to delete run: ' + error.message);
+      } else {
+        alert('Failed to delete run: ' + error.message);
+      }
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -457,6 +499,16 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     {isSavingWorkout ? 'Saving...' : workoutSaved ? 'Record Saved' : 'Save Workout Record'}
+                  </button>
+                  <button 
+                    onClick={handleDeleteRun}
+                    disabled={isDeleting}
+                    className="text-xs text-red-400 flex items-center"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    {isDeleting ? 'Deleting...' : 'Delete'}
                   </button>
                 </div>
               </div>
