@@ -1,12 +1,7 @@
-import { useState, useEffect, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { useRunTracker } from '../contexts/RunTrackerContext';
 import { useActivityMode } from '../contexts/ActivityModeContext';
-import { NostrContext } from '../contexts/NostrContext';
 import { useSettings } from '../contexts/SettingsContext';
-import { useAuth } from '../hooks/useAuth';
-import { useNip07 } from '../hooks/useNip07';
-import { publishRunEvent } from '../utils/nostr';
 import runDataService from '../services/RunDataService';
 import { PermissionDialog } from './PermissionDialog';
 import { formatPaceWithUnit, displayDistance, convertDistance, formatElevation } from '../utils/formatters';
@@ -22,7 +17,6 @@ export const RunTracker = () => {
     pace,
     elevation,
     splits,
-    activityType,
     startRun,
     pauseRun,
     resumeRun,
@@ -30,14 +24,8 @@ export const RunTracker = () => {
   } = useRunTracker();
 
   const { getActivityText } = useActivityMode();
-  const { canPublish } = useContext(NostrContext);
-  const { pubkey } = useAuth();
-  const { extension } = useNip07();
   const { distanceUnit } = useSettings();
-  const navigate = useNavigate();
 
-  const [elevationGain, setElevationGain] = useState(0);
-  const [elevationLoss, setElevationLoss] = useState(0);
   const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const [isCountingDown, setIsCountingDown] = useState(false);
   const [countdown, setCountdown] = useState(5);
