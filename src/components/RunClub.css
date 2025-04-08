@@ -13,6 +13,32 @@
   overflow-x: auto;
   -webkit-overflow-scrolling: touch; /* Smooth scrolling for Android */
   padding-bottom: 4px;
+  scrollbar-width: none; /* Hide scrollbar for Firefox */
+  -ms-overflow-style: none; /* Hide scrollbar for IE and Edge */
+  position: relative;
+}
+
+/* Hide scrollbar for Chrome/Safari */
+.team-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* Add fade indicators for horizontal scroll */
+.team-tabs::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: 30px;
+  background: linear-gradient(to right, rgba(36, 36, 36, 0), rgba(36, 36, 36, 0.8));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.team-tabs.has-overflow::after {
+  opacity: 1;
 }
 
 .tab-button {
@@ -26,6 +52,8 @@
   min-width: 80px; /* Minimum width for better tapping */
   text-align: center;
   transition: background-color 0.2s;
+  white-space: nowrap; /* Prevent text wrapping */
+  flex-shrink: 0; /* Prevent tab shrinking */
 }
 
 .tab-button.active {
@@ -558,6 +586,15 @@
   .invite-button {
     margin-top: 10px;
   }
+  
+  /* Ensure buttons don't overflow on small screens */
+  .action-button,
+  .share-btn,
+  .delete-btn {
+    padding: 8px 10px;
+    min-width: 60px;
+    font-size: 13px;
+  }
 }
 
 /* Medium screens */
@@ -736,4 +773,86 @@
 .load-more-button:disabled {
   background-color: #a0b1d9;
   cursor: not-allowed;
+}
+
+/* Message spacing and padding improvements */
+.message {
+  margin-bottom: 15px;
+  max-width: 85%; /* Wider on mobile */
+  padding: 1px; /* Prevent margin collapse */
+}
+
+.message.my-message {
+  margin-left: auto;
+  background-color: #3a86ff22;
+  border-radius: 18px 18px 0 18px;
+}
+
+.message:not(.my-message) {
+  background-color: #333;
+  border-radius: 18px 18px 18px 0;
+}
+
+.message-header {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 4px;
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 10px 0 10px;
+}
+
+.message-content {
+  padding: 10px 15px;
+  border-radius: inherit;
+  word-break: break-word;
+}
+
+/* Fix button alignment and spacing in action groups */
+.run-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-top: 15px;
+  flex-wrap: wrap;
+  padding: 0 5px;
+}
+
+.action-button,
+.share-btn,
+.delete-btn {
+  padding: 8px 12px;
+  font-size: 14px;
+  border-radius: 6px;
+  min-width: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+/* Text truncation with proper ellipsis */
+.team-description,
+.message-content,
+.club-description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2; /* Number of lines to show */
+  -webkit-box-orient: vertical;
+  line-height: 1.4;
+  max-height: 2.8em; /* line-height × line-clamp */
+}
+
+.expanded-text {
+  -webkit-line-clamp: unset;
+  max-height: none;
+}
+
+.read-more {
+  color: #3a86ff;
+  font-size: 0.85em;
+  margin-top: 4px;
+  display: inline-block;
+  cursor: pointer;
 } 

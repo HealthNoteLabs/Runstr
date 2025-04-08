@@ -144,6 +144,9 @@ textarea {
   font-size: 3em;
   font-weight: bold;
   margin: 5px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Style distance display */
@@ -152,13 +155,20 @@ textarea {
   font-weight: bold;
   color: #4caf50;
   margin: 10px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Style pace display */
 .pace-display {
   font-size: 1.8em;
+  font-weight: bold;
   color: #2196f3;
   margin: 10px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Style error message */
@@ -1286,8 +1296,35 @@ textarea {
 .run-actions {
   display: flex;
   gap: 10px;
-  justify-content: center;
+  justify-content: space-between;
   margin-top: 15px;
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 0 5px;
+}
+
+@media (max-width: 768px) {
+  .history-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .run-actions {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  
+  /* Optimize button sizing on small screens */
+  .action-button,
+  .share-btn,
+  .delete-btn {
+    padding: 8px 10px;
+    min-width: 65px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
 }
 
 .delete-btn {
@@ -1299,10 +1336,11 @@ textarea {
   cursor: pointer;
   transition: all 0.2s ease;
   font-weight: 500;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
+  white-space: nowrap;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
@@ -1325,6 +1363,10 @@ textarea {
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .share-btn:hover {
