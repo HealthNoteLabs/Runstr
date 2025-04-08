@@ -16,6 +16,8 @@
   scrollbar-width: none; /* Hide scrollbar for Firefox */
   -ms-overflow-style: none; /* Hide scrollbar for IE and Edge */
   position: relative;
+  width: 100%;
+  max-width: 100%;
 }
 
 /* Hide scrollbar for Chrome/Safari */
@@ -592,8 +594,24 @@
   .share-btn,
   .delete-btn {
     padding: 8px 10px;
-    min-width: 60px;
+    min-width: 0;
     font-size: 13px;
+    flex-basis: calc(33.333% - 10px);
+  }
+  
+  /* For smallest screens, adjust layout further */
+  @media (max-width: 350px) {
+    .run-actions {
+      gap: 5px;
+    }
+    
+    .action-button,
+    .share-btn,
+    .delete-btn {
+      padding: 6px 8px;
+      font-size: 12px;
+      flex-basis: calc(50% - 5px);
+    }
   }
 }
 
@@ -816,6 +834,9 @@
   margin-top: 15px;
   flex-wrap: wrap;
   padding: 0 5px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .action-button,
@@ -824,11 +845,15 @@
   padding: 8px 12px;
   font-size: 14px;
   border-radius: 6px;
-  min-width: 80px;
+  min-width: auto;
+  max-width: 100%;
+  flex: 0 1 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Text truncation with proper ellipsis */

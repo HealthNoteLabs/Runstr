@@ -97,6 +97,7 @@ select {
 
 /* Fix for Android Chrome */
 input[type="number"] {
+  appearance: textfield;
   -moz-appearance: textfield;
 }
 input::-webkit-outer-spin-button,
@@ -110,6 +111,30 @@ input::-webkit-inner-spin-button {
   max-width: 100%;
   overflow-x: hidden;
   word-wrap: break-word;
+}
+
+/* Ensure all buttons stay within parent container */
+button, 
+.btn, 
+.action-button, 
+.share-btn, 
+.delete-btn {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+
+/* Improve container boundaries */
+.run-history-item,
+.run-club-container,
+.post-card,
+.team-item,
+.post-actions {
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 /* Common text ellipsis pattern */

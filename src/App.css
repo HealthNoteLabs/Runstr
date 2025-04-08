@@ -1293,6 +1293,7 @@ textarea {
   }
 }
 
+/* Run actions with better overflow handling */
 .run-actions {
   display: flex;
   gap: 10px;
@@ -1301,29 +1302,67 @@ textarea {
   flex-wrap: wrap;
   width: 100%;
   padding: 0 5px;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
-@media (max-width: 768px) {
-  .history-item {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
+/* Responsive button container to prevent overflow */
+.button-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  justify-content: center;
+  margin: 10px 0;
+}
 
+/* Action buttons with overflow protection */
+.action-button,
+.share-btn,
+.delete-btn,
+.save-btn {
+  padding: 8px 12px;
+  font-size: 14px;
+  border-radius: 6px;
+  min-width: auto;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 1;
+  flex-grow: 0;
+  box-sizing: border-box;
+}
+
+/* Small screen optimization for action buttons */
+@media (max-width: 380px) {
   .run-actions {
-    width: 100%;
-    justify-content: space-between;
-    gap: 8px;
+    gap: 5px;
+    padding: 0 3px;
   }
   
-  /* Optimize button sizing on small screens */
   .action-button,
   .share-btn,
-  .delete-btn {
+  .delete-btn,
+  .save-btn {
     padding: 8px 10px;
-    min-width: 65px;
-    font-size: 13px;
-    white-space: nowrap;
+    font-size: 12px;
+    flex-basis: calc(33.333% - 10px);
+    min-width: 0;
+  }
+
+  /* For very small screens, stack if needed */
+  @media (max-width: 330px) {
+    .action-button,
+    .share-btn,
+    .delete-btn,
+    .save-btn {
+      flex-basis: calc(50% - 5px);
+    }
   }
 }
 
