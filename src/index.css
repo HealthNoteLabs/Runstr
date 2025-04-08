@@ -116,3 +116,70 @@ select {
     background-color: #f9f9f9;
   }
 }
+
+/* Teams feature styles */
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(100, 108, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #646cff;
+  animation: spin 1s ease-in-out infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.team-tab-content {
+  overflow-y: auto;
+  max-height: calc(100vh - 300px);
+}
+
+.team-card {
+  transition: transform 0.2s ease-in-out;
+}
+
+.team-card:active {
+  transform: scale(0.98);
+}
+
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 300px;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+}
+
+.message-bubble {
+  max-width: 85%;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.message-bubble.sent {
+  background-color: rgba(59, 130, 246, 0.3);
+  margin-left: auto;
+}
+
+.message-bubble.received {
+  background-color: rgba(75, 85, 99, 0.3);
+}
+
+.challenge-card {
+  transition: all 0.2s ease;
+}
+
+.challenge-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}

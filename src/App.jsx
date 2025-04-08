@@ -4,6 +4,7 @@ import { NostrProvider } from './contexts/NostrProvider';
 import { AuthProvider } from './components/AuthProvider';
 import { AudioPlayerProvider } from './contexts/AudioPlayerProvider';
 import { RunTrackerProvider } from './contexts/RunTrackerContext';
+import { TeamsProvider } from './contexts/TeamsContext';
 import { MenuBar } from './components/MenuBar';
 import { initializeNostr } from './utils/nostr';
 import './App.css';
@@ -44,14 +45,16 @@ const App = () => {
         <AuthProvider>
           <AudioPlayerProvider>
             <RunTrackerProvider>
-              <div className="relative w-full h-full bg-[#111827] text-white">
-                <MenuBar />
-                <main className="pb-24 max-w-[375px] mx-auto">
-                  <Suspense fallback={<LoadingFallback />}>
-                    <AppRoutes />
-                  </Suspense>
-                </main>
-              </div>
+              <TeamsProvider>
+                <div className="relative w-full h-full bg-[#111827] text-white">
+                  <MenuBar />
+                  <main className="pb-24 max-w-[375px] mx-auto">
+                    <Suspense fallback={<LoadingFallback />}>
+                      <AppRoutes />
+                    </Suspense>
+                  </main>
+                </div>
+              </TeamsProvider>
             </RunTrackerProvider>
           </AudioPlayerProvider>
         </AuthProvider>
