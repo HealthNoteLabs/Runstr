@@ -1,10 +1,14 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { FloatingMusicPlayer } from './FloatingMusicPlayer';
+import { useActivityMode, ACTIVITY_TYPES } from '../contexts/ActivityModeContext';
+import { useSettings } from '../contexts/SettingsContext';
 
 export const MenuBar = () => {
   const location = useLocation();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { mode, setMode, getActivityText } = useActivityMode();
+  const { distanceUnit, toggleDistanceUnit } = useSettings();
 
   const menuItems = [
     { 
@@ -58,6 +62,10 @@ export const MenuBar = () => {
     setSettingsOpen(!settingsOpen);
   };
 
+  const handleActivityModeChange = (newMode) => {
+    setMode(newMode);
+  };
+
   return (
     <div className="w-full">
       {/* Header with Settings */}
@@ -86,6 +94,59 @@ export const MenuBar = () => {
                 </svg>
               </button>
             </div>
+            
+            {/* Activity Types Section */}
+            <div className="mb-6">
+              <h4 className="text-lg font-semibold mb-3">Activity Types</h4>
+              <div className="grid grid-cols-3 gap-2">
+                <button 
+                  className={`p-3 rounded-lg ${mode === ACTIVITY_TYPES.RUN ? 'bg-indigo-600' : 'bg-[#111827]'} text-white text-center`}
+                  onClick={() => handleActivityModeChange(ACTIVITY_TYPES.RUN)}
+                >
+                  Run
+                </button>
+                <button 
+                  className={`p-3 rounded-lg ${mode === ACTIVITY_TYPES.WALK ? 'bg-indigo-600' : 'bg-[#111827]'} text-white text-center`}
+                  onClick={() => handleActivityModeChange(ACTIVITY_TYPES.WALK)}
+                >
+                  Walk
+                </button>
+                <button 
+                  className={`p-3 rounded-lg ${mode === ACTIVITY_TYPES.CYCLE ? 'bg-indigo-600' : 'bg-[#111827]'} text-white text-center`}
+                  onClick={() => handleActivityModeChange(ACTIVITY_TYPES.CYCLE)}
+                >
+                  Cycle
+                </button>
+              </div>
+              <p className="text-sm text-gray-400 mt-2">
+                Currently tracking: {getActivityText()}
+              </p>
+            </div>
+            
+            {/* Distance Unit Section */}
+            <div className="mb-6">
+              <h4 className="text-lg font-semibold mb-3">Distance Units</h4>
+              <div className="flex justify-center mb-2">
+                <div className="flex rounded-full bg-[#111827] p-1">
+                  <button 
+                    className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+                    onClick={() => distanceUnit !== 'km' && toggleDistanceUnit()}
+                  >
+                    Kilometers
+                  </button>
+                  <button 
+                    className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
+                    onClick={() => distanceUnit !== 'mi' && toggleDistanceUnit()}
+                  >
+                    Miles
+                  </button>
+                </div>
+              </div>
+              <p className="text-sm text-gray-400 mt-2">
+                All distances will be shown in {distanceUnit === 'km' ? 'kilometers' : 'miles'} throughout the app
+              </p>
+            </div>
+            
             <div className="flex flex-col space-y-4">
               <Link 
                 to="/nwc" 
@@ -113,17 +174,22 @@ export const MenuBar = () => {
       )}
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 flex justify-around items-center bg-[#111827] border-t border-gray-800 py-4 max-w-[375px] mx-auto z-30">
-        {menuItems.map((item) => (
-          <Link 
-            key={item.name} 
-            to={item.path} 
-            className={`flex flex-col items-center text-xs ${location.pathname === item.path ? 'text-gray-300' : 'text-gray-500'}`}
-          >
-            {item.icon}
-            <span>{item.name}</span>
-          </Link>
-        ))}
+      <nav className="fixed bottom-0 left-0 w-full bg-[#0a1525] py-2 z-40">
+        <div className="max-w-[375px] mx-auto">
+          <ul className="flex justify-around">
+            {menuItems.map((item) => (
+              <li key={item.name} className="text-center">
+                <Link 
+                  to={item.path} 
+                  className={`flex flex-col items-center px-2 py-1 rounded-md ${location.pathname === item.path ? 'text-indigo-400' : 'text-gray-400'}`}
+                >
+                  {item.icon}
+                  <span className="text-xs font-medium tracking-wider">{item.name}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
       </nav>
     </div>
   );

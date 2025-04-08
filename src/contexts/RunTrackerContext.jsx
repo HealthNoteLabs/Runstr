@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { runTracker } from '../services/RunTracker';
+import { useActivityMode } from './ActivityModeContext';
+import { ACTIVITY_TYPES } from '../services/RunDataService';
 
 // Create the context
 const RunTrackerContext = createContext(null);
@@ -19,6 +21,7 @@ export const useRunTracker = () => {
       pace: 0,
       splits: [],
       elevation: { current: null, gain: 0, loss: 0 },
+      activityType: ACTIVITY_TYPES.RUN,
       startRun: () => console.warn('RunTracker not initialized'),
       pauseRun: () => console.warn('RunTracker not initialized'),
       resumeRun: () => console.warn('RunTracker not initialized'),
@@ -31,6 +34,8 @@ export const useRunTracker = () => {
 
 // Provider component
 export const RunTrackerProvider = ({ children }) => {
+  const { mode: activityType } = useActivityMode();
+
   // Initialize state with try/catch to prevent fatal errors on startup
   const [trackingState, setTrackingState] = useState(() => {
     try {
@@ -41,7 +46,8 @@ export const RunTrackerProvider = ({ children }) => {
         duration: runTracker.duration,
         pace: runTracker.pace,
         splits: runTracker.splits,
-        elevation: runTracker.elevation
+        elevation: runTracker.elevation,
+        activityType: runTracker.activityType || activityType
       };
     } catch (error) {
       console.error('Error initializing run tracker state:', error);
@@ -52,7 +58,8 @@ export const RunTrackerProvider = ({ children }) => {
         duration: 0,
         pace: 0,
         splits: [],
-        elevation: { current: null, gain: 0, loss: 0, lastAltitude: null }
+        elevation: { current: null, gain: 0, loss: 0, lastAltitude: null },
+        activityType: activityType
       };
     }
   });
@@ -117,7 +124,8 @@ export const RunTrackerProvider = ({ children }) => {
             duration: runData.duration,
             pace: runData.pace,
             splits: runData.splits,
-            elevation: runData.elevation
+            elevation: runData.elevation,
+            activityType: runData.activityType || activityType
           });
           
           // Restore tracking if active and not paused
@@ -132,6 +140,7 @@ export const RunTrackerProvider = ({ children }) => {
             runTracker.pace = runData.pace;
             runTracker.splits = [...runData.splits];
             runTracker.elevation = {...runData.elevation};
+            runTracker.activityType = runData.activityType || activityType;
           }
         } catch (error) {
           console.error('Error restoring run state:', error);
@@ -155,7 +164,7 @@ export const RunTrackerProvider = ({ children }) => {
       // Return empty cleanup function
       return () => {};
     }
-  }, []);
+  }, [activityType]); // Include activityType in dependencies
 
   // Save run state to localStorage when it changes
   useEffect(() => {
@@ -169,6 +178,7 @@ export const RunTrackerProvider = ({ children }) => {
           pace: trackingState.pace,
           splits: trackingState.splits,
           elevation: trackingState.elevation,
+          activityType: trackingState.activityType,
           timestamp: new Date().getTime()
         };
         
@@ -182,9 +192,19 @@ export const RunTrackerProvider = ({ children }) => {
     }
   }, [trackingState]);
 
+  // Update activity type in tracking state when it changes in context
+  useEffect(() => {
+    if (!trackingState.isTracking) {
+      setTrackingState(prev => ({ ...prev, activityType }));
+    }
+  }, [activityType, trackingState.isTracking]);
+
   // Methods to control the run tracker
   const startRun = async () => {
     try {
+      // Update the activity type to current mode before starting
+      runTracker.activityType = activityType;
+      
       await runTracker.start();
       setTrackingState({
         isTracking: true,
@@ -193,11 +213,12 @@ export const RunTrackerProvider = ({ children }) => {
         duration: 0,
         pace: 0,
         splits: [],
-        elevation: { current: null, gain: 0, loss: 0, lastAltitude: null }
+        elevation: { current: null, gain: 0, loss: 0, lastAltitude: null },
+        activityType: activityType
       });
     } catch (error) {
       console.error('Error starting run:', error);
-      alert('Could not start run tracking. Please check permissions and try again.');
+      alert('Could not start tracking. Please check permissions and try again.');
     }
   };
 
@@ -233,7 +254,8 @@ export const RunTrackerProvider = ({ children }) => {
         duration: 0,
         pace: 0,
         splits: [],
-        elevation: { current: null, gain: 0, loss: 0, lastAltitude: null }
+        elevation: { current: null, gain: 0, loss: 0, lastAltitude: null },
+        activityType: activityType
       });
     }
   };

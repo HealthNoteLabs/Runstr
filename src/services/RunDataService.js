@@ -3,6 +3,13 @@
  * Centralized service for handling run data throughout the application
  */
 
+// Define activity types as constants for consistency across the app
+export const ACTIVITY_TYPES = {
+  RUN: 'run',
+  WALK: 'walk',
+  CYCLE: 'cycle'
+};
+
 class RunDataService {
   constructor() {
     this.storageKey = 'runHistory';
@@ -24,6 +31,23 @@ class RunDataService {
   }
 
   /**
+   * Get runs filtered by activity type
+   * @param {string} activityType - Type of activity (run, walk, cycle)
+   * @returns {Array} Filtered array of activities
+   */
+  getRunsByActivityType(activityType) {
+    const allRuns = this.getAllRuns();
+    
+    // If no activity type filter is provided, return all runs
+    if (!activityType) return allRuns;
+    
+    // Filter runs by activity type, defaulting to 'run' for backwards compatibility
+    return allRuns.filter(run => 
+      (run.activityType || ACTIVITY_TYPES.RUN) === activityType
+    );
+  }
+
+  /**
    * Save a new run to storage
    * @param {Object} runData - Run data to save
    * @returns {Object} The saved run with generated ID
@@ -37,6 +61,8 @@ class RunDataService {
         id: runData.id || Date.now() + '-' + Math.random().toString(36).substr(2, 9),
         date: runData.date || new Date().toLocaleDateString(),
         timestamp: runData.timestamp || Date.now(),
+        // Default activity type to 'run' if not provided (for backward compatibility)
+        activityType: runData.activityType || ACTIVITY_TYPES.RUN,
         ...runData
       };
       

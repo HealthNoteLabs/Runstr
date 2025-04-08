@@ -1,6 +1,6 @@
 import { registerPlugin } from '@capacitor/core';
 import { EventEmitter } from 'tseep';
-import runDataService from './RunDataService';
+import runDataService, { ACTIVITY_TYPES } from './RunDataService';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
 
@@ -13,7 +13,6 @@ class RunTracker extends EventEmitter {
     this.pace = 0; // in seconds per meter
     this.splits = []; // Array to store split objects { km, time, pace }
     this.positions = [];
-    this.distanceUnit = localStorage.getItem('distanceUnit') || 'km'; // Get user's preferred unit
     
     // Add elevation tracking data
     this.elevation = {
@@ -29,10 +28,16 @@ class RunTracker extends EventEmitter {
     this.pausedTime = 0; // Total time paused in milliseconds
     this.lastPauseTime = 0; // Timestamp when the run was last paused
     this.lastSplitDistance = 0; // Track last split milestone
+    this.activityType = localStorage.getItem('activityMode') || ACTIVITY_TYPES.RUN; // Get current activity type
 
     this.watchId = null; // For geolocation watch id
     this.timerInterval = null; // For updating duration every second
     this.paceInterval = null; // For calculating pace at regular intervals
+  }
+
+  // Helper method to get the current distance unit from localStorage
+  getDistanceUnit() {
+    return localStorage.getItem('distanceUnit') || 'km';
   }
 
   toRadians(degrees) {
@@ -61,7 +66,7 @@ class RunTracker extends EventEmitter {
 
   calculatePace(distance, duration) {
     // Use the centralized pace calculation method
-    return runDataService.calculatePace(distance, duration, this.distanceUnit);
+    return runDataService.calculatePace(distance, duration, this.getDistanceUnit());
   }
 
   updateElevation(altitude) {
@@ -124,16 +129,19 @@ class RunTracker extends EventEmitter {
         this.updateElevation(newPosition.altitude);
       }
 
+      // Get current distance unit
+      const distanceUnit = this.getDistanceUnit();
+      
       // Define the split distance in meters based on selected unit
-      const splitDistance = this.distanceUnit === 'km' ? 1000 : 1609.344; // 1km or 1mile in meters
+      const splitDistance = distanceUnit === 'km' ? 1000 : 1609.344; // 1km or 1mile in meters
       
       // Get the current distance in the selected unit (either km or miles)
-      const currentDistanceInUnits = this.distanceUnit === 'km' 
+      const currentDistanceInUnits = distanceUnit === 'km' 
         ? this.distance / 1000  // Convert meters to km
         : this.distance / 1609.344;  // Convert meters to miles
         
       // Get the last split distance in the selected unit
-      const lastSplitDistanceInUnits = this.distanceUnit === 'km'
+      const lastSplitDistanceInUnits = distanceUnit === 'km'
         ? this.lastSplitDistance / 1000
         : this.lastSplitDistance / 1609.344;
       
@@ -155,7 +163,7 @@ class RunTracker extends EventEmitter {
         // Pace should be in seconds per meter for proper formatting later
         const splitPace = splitDuration / splitDistance; 
         
-        console.log(`Recording split at ${currentSplitNumber} ${this.distanceUnit}s with pace ${splitPace}`);
+        console.log(`Recording split at ${currentSplitNumber} ${distanceUnit}s with pace ${splitPace}`);
 
         // Record the split with the unit count, cumulative time, and split pace
         this.splits.push({
@@ -255,9 +263,9 @@ class RunTracker extends EventEmitter {
 
   async start() {
     if (this.isTracking && !this.isPaused) return;
-
-    // Update distanceUnit from localStorage in case it changed
-    this.distanceUnit = localStorage.getItem('distanceUnit') || 'km';
+    
+    // Update activityType from localStorage in case it changed
+    this.activityType = localStorage.getItem('activityMode') || ACTIVITY_TYPES.RUN;
     
     this.isTracking = true;
     this.isPaused = false;
@@ -326,7 +334,7 @@ class RunTracker extends EventEmitter {
     
     // Calculate speed and pace one last time
     if (this.distance > 0 && this.duration > 0) {
-      this.pace = runDataService.calculatePace(this.distance, this.duration, this.distanceUnit);
+      this.pace = runDataService.calculatePace(this.distance, this.duration, this.getDistanceUnit());
     }
     
     // Create the final run data object
@@ -339,7 +347,8 @@ class RunTracker extends EventEmitter {
         gain: this.elevation.gain,
         loss: this.elevation.loss
       },
-      unit: this.distanceUnit
+      unit: this.getDistanceUnit(),
+      activityType: this.activityType
     };
     
     // Save to run history using RunDataService instead of directly to localStorage
@@ -368,6 +377,7 @@ class RunTracker extends EventEmitter {
       ...savedState.elevation,
       lastAltitude: savedState.elevation.current
     };
+    this.activityType = savedState.activityType || ACTIVITY_TYPES.RUN; // Add activity type or default
     
     // Calculate time difference since the run was saved
     const timeDifference = (new Date().getTime() - savedState.timestamp) / 1000;
@@ -408,6 +418,7 @@ class RunTracker extends EventEmitter {
       ...savedState.elevation,
       lastAltitude: savedState.elevation.current
     };
+    this.activityType = savedState.activityType || ACTIVITY_TYPES.RUN; // Add activity type or default
     
     // Set tracking state
     this.isTracking = true;

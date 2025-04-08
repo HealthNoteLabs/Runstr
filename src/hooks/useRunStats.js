@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import runDataService from '../services/RunDataService';
+import { useSettings } from '../contexts/SettingsContext';
 
 /**
  * Custom hook for calculating and managing run statistics
  * Optimized for Android
  */
 export const useRunStats = (runHistory, userProfile) => {
-  const [distanceUnit, setDistanceUnit] = useState(
-    () => localStorage.getItem('distanceUnit') || 'km'
-  );
+  // Use the global settings context instead of local state
+  const { distanceUnit } = useSettings();
   
   // Initialize stats with default values
   const [stats, setStats] = useState({
@@ -37,13 +37,6 @@ export const useRunStats = (runHistory, userProfile) => {
       calculateStats(runHistory);
     }
   }, [runHistory, userProfile, distanceUnit]);
-
-  // Toggle between km and mi units
-  const toggleDistanceUnit = () => {
-    const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
-    setDistanceUnit(newUnit);
-    localStorage.setItem('distanceUnit', newUnit);
-  };
 
   // Calculate calories burned for a run
   const calculateCaloriesBurned = useCallback((distance, duration) => {
@@ -248,9 +241,6 @@ export const useRunStats = (runHistory, userProfile) => {
 
   return {
     stats,
-    distanceUnit,
-    setDistanceUnit,
-    toggleDistanceUnit,
     calculateStats,
     calculateCaloriesBurned
   };

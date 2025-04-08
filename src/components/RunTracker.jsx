@@ -1,44 +1,53 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useRunTracker } from '../contexts/RunTrackerContext';
-import { convertDistance, formatPaceWithUnit, formatElevation } from '../utils/formatters';
-import { PermissionDialog } from './PermissionDialog';
-import { createAndPublishEvent, createWorkoutEvent } from '../utils/nostr';
-import { displayDistance } from '../utils/formatters';
+import { useActivityMode } from '../contexts/ActivityModeContext';
+import { NostrContext } from '../contexts/NostrContext';
+import { useSettings } from '../contexts/SettingsContext';
+import { useAuth } from '../hooks/useAuth';
+import { useNip07 } from '../hooks/useNip07';
+import { publishRunEvent } from '../utils/nostr';
 import runDataService from '../services/RunDataService';
+import { PermissionDialog } from './PermissionDialog';
+import { formatPaceWithUnit, displayDistance, convertDistance, formatElevation } from '../utils/formatters';
+import { createAndPublishEvent, createWorkoutEvent } from '../utils/nostr';
 import SplitsTable from './SplitsTable';
 
 export const RunTracker = () => {
   const { 
-    isTracking, 
-    isPaused, 
-    distance, 
-    duration, 
+    isTracking,
+    isPaused,
+    distance,
+    duration,
     pace,
-    splits,
     elevation,
+    splits,
+    activityType,
     startRun,
     pauseRun,
     resumeRun,
     stopRun
   } = useRunTracker();
 
-  const [distanceUnit, setDistanceUnit] = useState(
-    () => localStorage.getItem('distanceUnit') || 'km'
-  );
+  const { getActivityText } = useActivityMode();
+  const { canPublish } = useContext(NostrContext);
+  const { pubkey } = useAuth();
+  const { extension } = useNip07();
+  const { distanceUnit } = useSettings();
+  const navigate = useNavigate();
+
+  const [elevationGain, setElevationGain] = useState(0);
+  const [elevationLoss, setElevationLoss] = useState(0);
   const [showPermissionDialog, setShowPermissionDialog] = useState(false);
-  const [countdown, setCountdown] = useState(0); // Countdown timer value
-  const [isCountingDown, setIsCountingDown] = useState(false); // Flag to indicate countdown is in progress
-  const [countdownType, setCountdownType] = useState(''); // 'start' or 'stop'
-  
-  // Add new state for recent runs and Nostr posting
+  const [isCountingDown, setIsCountingDown] = useState(false);
+  const [countdown, setCountdown] = useState(5);
+  const [countdownType, setCountdownType] = useState('start');
   const [recentRun, setRecentRun] = useState(null);
   const [showPostModal, setShowPostModal] = useState(false);
   const [additionalContent, setAdditionalContent] = useState('');
   const [isPosting, setIsPosting] = useState(false);
-  // Add new state for workout record posting
-  const [isSavingWorkout, setIsSavingWorkout] = useState(false);
   const [workoutSaved, setWorkoutSaved] = useState(false);
-  // Add new state for run deletion
+  const [isSavingWorkout, setIsSavingWorkout] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Load the most recent run
@@ -159,7 +168,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       startCountdown('start');
     } else {
       // If permissions haven't been granted yet, show a message
-      alert('Location permission is required for tracking runs. Please restart the app to grant permissions.');
+      alert('Location permission is required for tracking. Please restart the app to grant permissions.');
       // Set the flag to show permission dialog next time the app starts
       localStorage.removeItem('permissionsGranted');
     }
@@ -203,12 +212,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         return prevCount - 1;
       });
     }, 1000);
-  };
-
-  const toggleDistanceUnit = () => {
-    const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
-    setDistanceUnit(newUnit);
-    localStorage.setItem('distanceUnit', newUnit);
   };
 
   // Format pace for display
@@ -340,6 +343,11 @@ ${additionalContent ? `\n${additionalContent}` : ''}
 
   return (
     <div className="w-full h-full flex flex-col bg-[#111827] text-white relative">
+      {/* Title Banner */}
+      <div className="bg-gradient-to-r from-indigo-800 to-purple-800 p-4 mb-6 text-center">
+        <h2 className="text-2xl font-bold text-white">{getActivityText('header')}</h2>
+      </div>
+
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-3 p-4">
         {/* Distance Card */}
@@ -414,25 +422,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         </div>
       )}
       
-      {/* Unit Toggle */}
-      <div className="flex justify-center my-4">
-        <div className="flex rounded-full bg-[#1a222e] p-1">
-          <button 
-            className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-            onClick={() => distanceUnit !== 'mi' && toggleDistanceUnit()}
-          >
-            Miles
-          </button>
-          <button 
-            className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-            onClick={() => distanceUnit !== 'km' && toggleDistanceUnit()}
-          >
-            Kilometers
-          </button>
-        </div>
-      </div>
-      
-      {/* Start Run Button */}
+      {/* Start Activity Button */}
       {!isTracking ? (
         <button 
           className="mx-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 px-6 rounded-xl shadow-lg flex items-center justify-center text-lg font-semibold my-4"
@@ -442,7 +432,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          Start Run
+          {getActivityText('start')}
         </button>
       ) : (
         <div className="flex justify-between px-4 my-4">
@@ -470,11 +460,11 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         </div>
       )}
       
-      {/* Recent Runs Section */}
+      {/* Recent Activities Section */}
       {!isTracking && recentRun && (
         <div className="bg-[#1a222e] rounded-xl shadow-lg mt-6 mx-4 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-800">
-            <h3 className="text-lg font-semibold">Recent Runs</h3>
+            <h3 className="text-lg font-semibold">{getActivityText('recent')}</h3>
             <span className="text-xs text-gray-400">See All</span>
           </div>
           <div className="p-4">
@@ -485,7 +475,9 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                 </svg>
               </div>
               <div className="flex-1">
-                <h4 className="font-semibold">{recentRun.title || `${getTimeOfDay(recentRun.timestamp)} Run`}</h4>
+                <h4 className="font-semibold">
+                  {recentRun.title || `${getTimeOfDay(recentRun.timestamp)} ${recentRun.activityType === 'walk' ? 'Walk' : recentRun.activityType === 'cycle' ? 'Cycle' : 'Run'}`}
+                </h4>
                 <div className="flex items-center text-xs text-gray-400">
                   <span>{formatRunDate(recentRun.date)} • {displayDistance(recentRun.distance, distanceUnit)}</span>
                   <span className="ml-2 px-2 py-1 bg-gray-800 rounded-full">

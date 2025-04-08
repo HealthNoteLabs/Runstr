@@ -6,6 +6,8 @@ import { useRunProfile } from '../hooks/useRunProfile';
 import { formatTime, displayDistance, formatElevation, formatDate } from '../utils/formatters';
 import runDataService from '../services/RunDataService';
 import SplitsTable from '../components/SplitsTable';
+import { useActivityMode } from '../contexts/ActivityModeContext';
+import { useSettings } from '../contexts/SettingsContext';
 
 // Add styles near the top of the file, below the imports
 const styles = {
@@ -33,13 +35,16 @@ const styles = {
 
 export const RunHistory = () => {
   const navigate = useNavigate();
+  const { mode, getActivityText } = useActivityMode();
+  const { distanceUnit } = useSettings();
+  
   // State for run history
   const [runHistory, setRunHistory] = useState([]);
+  const [filteredHistory, setFilteredHistory] = useState([]);
   const [selectedRun, setSelectedRun] = useState(null);
   const [additionalContent, setAdditionalContent] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
-  const [distanceUnit, setDistanceUnit] = useState(() => localStorage.getItem('distanceUnit') || 'km');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [runToDelete, setRunToDelete] = useState(null);
   // Add state for workout record saving
@@ -56,7 +61,15 @@ export const RunHistory = () => {
     stats,
     calculateStats,
     calculateCaloriesBurned
-  } = useRunStats(runHistory, profile);
+  } = useRunStats(filteredHistory, profile);
+
+  // Filter runs when activity mode or run history changes
+  useEffect(() => {
+    if (runHistory.length > 0) {
+      const filtered = runDataService.getRunsByActivityType(mode);
+      setFilteredHistory(filtered);
+    }
+  }, [runHistory, mode]);
 
   // Load run history on component mount and listen for updates
   useEffect(() => {
@@ -89,41 +102,6 @@ export const RunHistory = () => {
       document.removeEventListener('runDeleted', handleRunDeleted);
     };
   }, []);
-
-  // Listen for changes to the distance unit in localStorage
-  useEffect(() => {
-    const handleStorageChange = () => {
-      const newUnit = localStorage.getItem('distanceUnit') || 'km';
-      if (newUnit !== distanceUnit) {
-        setDistanceUnit(newUnit);
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Using a shorter interval for Android optimization
-    const checkInterval = setInterval(() => {
-      // Check for unit changes
-      const currentUnit = localStorage.getItem('distanceUnit') || 'km';
-      if (currentUnit !== distanceUnit) {
-        setDistanceUnit(currentUnit);
-      }
-      
-      // Check for run history changes
-      const storedRuns = localStorage.getItem('runHistory');
-      if (storedRuns) {
-        const parsedRuns = JSON.parse(storedRuns);
-        if (parsedRuns.length !== runHistory.length) {
-          loadRunHistory();
-        }
-      }
-    }, 1500); // Increased from 1000ms to 1500ms to reduce battery usage
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      clearInterval(checkInterval);
-    };
-  }, [distanceUnit, runHistory.length, setDistanceUnit]);
 
   // Load and process run history from localStorage
   const loadRunHistory = () => {
@@ -355,13 +333,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     }
   };
 
-  // Toggle distance unit function
-  const toggleDistanceUnit = () => {
-    const newUnit = distanceUnit === 'km' ? 'mi' : 'km';
-    setDistanceUnit(newUnit);
-    localStorage.setItem('distanceUnit', newUnit);
-  };
-
   // Add toggle function for splits view
   const toggleSplitsView = (e, runId) => {
     e.stopPropagation(); // Prevent triggering parent click events
@@ -377,22 +348,25 @@ ${additionalContent ? `\n${additionalContent}` : ''}
   return (
     <div className="run-history">
       <div className="stats-overview">
-        <h2>STATS</h2>
+        <h2>{getActivityText('history')}</h2>
         <div className="flex justify-center my-4">
           <div className="flex rounded-full bg-[#1a222e] p-1">
             <button 
               className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-              onClick={() => distanceUnit !== 'km' && toggleDistanceUnit()}
+              onClick={() => navigate('/settings')}
             >
               Kilometers
             </button>
             <button 
               className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-              onClick={() => distanceUnit !== 'mi' && toggleDistanceUnit()}
+              onClick={() => navigate('/settings')}
             >
               Miles
             </button>
           </div>
+          <p className="text-xs text-gray-400 mt-1">
+            (change in settings)
+          </p>
         </div>
         <button 
           className="profile-btn" 
@@ -534,11 +508,11 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       </div>
 
       <h2>Run History</h2>
-      {runHistory.length === 0 ? (
+      {filteredHistory.length === 0 ? (
         <p>No runs recorded yet</p>
       ) : (
         <ul className="history-list">
-          {runHistory.map((run) => {
+          {filteredHistory.map((run) => {
             const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration);
             
             // Calculate pace with the consistent service method
