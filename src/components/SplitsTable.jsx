@@ -35,7 +35,7 @@ const SplitsTable = ({ splits, distanceUnit = 'km' }) => {
                 {distanceUnit === 'km' ? '1 km' : '1 mi'}
               </td>
               <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-200">
-                {formatTime(split.duration)}
+                {formatTime(split.time)}
               </td>
               <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-200">
                 {formatPace(split.pace, distanceUnit)}
@@ -51,7 +51,7 @@ const SplitsTable = ({ splits, distanceUnit = 'km' }) => {
 SplitsTable.propTypes = {
   splits: PropTypes.arrayOf(
     PropTypes.shape({
-      duration: PropTypes.number.isRequired,
+      time: PropTypes.number.isRequired,
       pace: PropTypes.number.isRequired
     })
   ),
