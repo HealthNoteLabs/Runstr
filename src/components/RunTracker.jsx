@@ -5,6 +5,7 @@ import { PermissionDialog } from './PermissionDialog';
 import { createAndPublishEvent, createWorkoutEvent } from '../utils/nostr';
 import { displayDistance } from '../utils/formatters';
 import runDataService from '../services/RunDataService';
+import SplitsTable from './SplitsTable';
 
 export const RunTracker = () => {
   const { 
@@ -12,7 +13,8 @@ export const RunTracker = () => {
     isPaused, 
     distance, 
     duration, 
-    pace, 
+    pace,
+    splits,
     elevation,
     startRun,
     pauseRun,
@@ -396,6 +398,21 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           <div className="text-sm text-gray-400">{distanceUnit === 'mi' ? 'ft' : 'm'}</div>
         </div>
       </div>
+      
+      {/* Splits Table - Show only when tracking and splits exist */}
+      {isTracking && splits && splits.length > 0 && (
+        <div className="bg-[#1a222e] rounded-xl shadow-lg mt-2 mx-4 p-4">
+          <div className="flex items-center mb-2">
+            <div className="w-6 h-6 rounded-full bg-[#8B5CF6]/20 flex items-center justify-center mr-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-[#8B5CF6]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+            </div>
+            <span className="text-sm font-medium text-gray-300">Split Times</span>
+          </div>
+          <SplitsTable splits={splits} distanceUnit={distanceUnit} />
+        </div>
+      )}
       
       {/* Unit Toggle */}
       <div className="flex justify-center my-4">

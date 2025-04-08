@@ -5,6 +5,31 @@ import { useRunStats } from '../hooks/useRunStats';
 import { useRunProfile } from '../hooks/useRunProfile';
 import { formatTime, displayDistance, formatElevation, formatDate } from '../utils/formatters';
 import runDataService from '../services/RunDataService';
+import SplitsTable from '../components/SplitsTable';
+
+// Add styles near the top of the file, below the imports
+const styles = {
+  splitsToggleBtn: {
+    background: 'rgba(79, 70, 229, 0.2)',
+    color: '#8B5CF6',
+    border: 'none',
+    padding: '4px 10px',
+    borderRadius: '4px',
+    fontSize: '0.8rem',
+    cursor: 'pointer',
+    marginTop: '8px',
+    fontWeight: '500',
+    display: 'inline-flex',
+    alignItems: 'center',
+    transition: 'all 0.2s ease'
+  },
+  splitsContainer: {
+    background: 'rgba(17, 24, 39, 0.5)',
+    borderRadius: '8px',
+    padding: '10px',
+    marginTop: '10px'
+  }
+};
 
 export const RunHistory = () => {
   const navigate = useNavigate();
@@ -21,6 +46,8 @@ export const RunHistory = () => {
   const [isSavingWorkout, setIsSavingWorkout] = useState(false);
   const [savingWorkoutRunId, setSavingWorkoutRunId] = useState(null);
   const [workoutSavedRuns, setWorkoutSavedRuns] = useState(new Set());
+  // Add state for expanded runs to show splits
+  const [expandedRuns, setExpandedRuns] = useState(new Set());
 
   // Get user profile and distance unit from custom hooks
   const { userProfile: profile } = useRunProfile();
@@ -121,8 +148,9 @@ export const RunHistory = () => {
         
         // Fix unrealistic distance values (>100 km is extremely unlikely for normal runs)
         const MAX_REALISTIC_DISTANCE = 100 * 1000; // 100 km in meters
-        if (isNaN(run.distance) || run.distance <= 0) {
-          run.distance = 5000; // Default to 5 km for invalid distances
+        if (isNaN(run.distance)) {
+          // Only set default if the distance is invalid (NaN), not if it's legitimately zero
+          run.distance = 0; // Default to 0 meters for invalid distances instead of 5km
           // Update the run using the service
           runDataService.updateRun(run.id, { distance: run.distance });
         } else if (run.distance > MAX_REALISTIC_DISTANCE) {
@@ -334,6 +362,18 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     localStorage.setItem('distanceUnit', newUnit);
   };
 
+  // Add toggle function for splits view
+  const toggleSplitsView = (e, runId) => {
+    e.stopPropagation(); // Prevent triggering parent click events
+    const newExpandedRuns = new Set(expandedRuns);
+    if (newExpandedRuns.has(runId)) {
+      newExpandedRuns.delete(runId);
+    } else {
+      newExpandedRuns.add(runId);
+    }
+    setExpandedRuns(newExpandedRuns);
+  };
+
   return (
     <div className="run-history">
       <div className="stats-overview">
@@ -527,7 +567,24 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                       </span>
                     </>
                   )}
+                  {/* Split toggle button */}
+                  {run.splits && run.splits.length > 0 && (
+                    <button 
+                      style={styles.splitsToggleBtn}
+                      onClick={(e) => toggleSplitsView(e, run.id)}
+                    >
+                      {expandedRuns.has(run.id) ? '▲ Hide Splits' : '▼ Show Splits'}
+                    </button>
+                  )}
                 </div>
+                
+                {/* Splits table - shown only when expanded */}
+                {expandedRuns.has(run.id) && run.splits && run.splits.length > 0 && (
+                  <div style={styles.splitsContainer}>
+                    <SplitsTable splits={run.splits} distanceUnit={distanceUnit} />
+                  </div>
+                )}
+                
                 <div className="run-actions">
                   <button
                     onClick={() => handlePostToNostr(run)}
