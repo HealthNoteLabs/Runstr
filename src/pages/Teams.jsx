@@ -9,17 +9,13 @@ export const Teams = () => {
     myTeams, 
     loading, 
     error, 
-    currentUser, 
-    setUser,
+    currentUser,
     clearError 
   } = useTeams();
   
   const [activeTab, setActiveTab] = useState('myTeams');
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredTeams, setFilteredTeams] = useState([]);
-  const [tempUserId, setTempUserId] = useState(() => {
-    return currentUser || '';
-  });
 
   // Filter teams based on search query
   useEffect(() => {
@@ -40,46 +36,18 @@ export const Teams = () => {
     setSearchQuery(e.target.value);
   };
 
-  // Handle temp user ID change for demo purposes
-  const handleUserIdChange = (e) => {
-    setTempUserId(e.target.value);
-  };
-
-  // Set user ID for demo purposes
-  const handleSetUser = () => {
-    if (tempUserId.trim()) {
-      setUser(tempUserId.trim());
-    }
-  };
-
   return (
     <div className="px-4 pt-6">
       <h1 className="text-2xl font-bold mb-6 text-center">Clubs & Teams</h1>
       
-      {/* For demonstration - allows setting user ID */}
-      <div className="mb-6 p-4 bg-[#1a222e] rounded-lg">
-        <h2 className="text-lg font-semibold mb-2">Demo Login</h2>
-        <div className="flex">
-          <input
-            type="text"
-            value={tempUserId}
-            onChange={handleUserIdChange}
-            placeholder="Enter any user ID"
-            className="flex-1 p-2 bg-[#111827] border border-gray-700 rounded-l-lg"
-          />
-          <button
-            onClick={handleSetUser}
-            className="bg-blue-600 px-4 py-2 rounded-r-lg"
-          >
-            Set User
-          </button>
-        </div>
-        {currentUser && (
-          <p className="mt-2 text-sm text-green-400">
-            Logged in as: {currentUser.substring(0, 10)}...
+      {/* Login status indicator */}
+      {!currentUser && (
+        <div className="mb-6 p-4 bg-yellow-800/20 border border-yellow-700 rounded-lg">
+          <p className="text-yellow-400 text-center">
+            Sign in to create or join clubs
           </p>
-        )}
-      </div>
+        </div>
+      )}
       
       {/* Error message */}
       {error && (
@@ -118,10 +86,16 @@ export const Teams = () => {
       <div className="mb-6">
         <Link 
           to="/teams/create"
-          className="block w-full bg-blue-600 text-white py-3 px-4 rounded-lg text-center font-semibold"
+          className={`block w-full ${currentUser ? 'bg-blue-600' : 'bg-blue-600/50 cursor-not-allowed'} text-white py-3 px-4 rounded-lg text-center font-semibold`}
+          onClick={(e) => !currentUser && e.preventDefault()}
         >
           Create New Club
         </Link>
+        {!currentUser && (
+          <p className="text-center text-sm text-gray-400 mt-2">
+            You need to be logged in to create a club
+          </p>
+        )}
       </div>
       
       {/* Content based on active tab */}
@@ -130,7 +104,11 @@ export const Teams = () => {
         <div>
           <h2 className="text-xl font-semibold mb-4">My Clubs</h2>
           
-          {loading ? (
+          {!currentUser ? (
+            <div className="text-center py-8 bg-[#1a222e] rounded-lg">
+              <p className="text-gray-400 mb-4">Please log in to see your clubs</p>
+            </div>
+          ) : loading ? (
             <div className="text-center py-8">
               <div className="loading-spinner mx-auto"></div>
               <p className="mt-4 text-gray-400">Loading your clubs...</p>

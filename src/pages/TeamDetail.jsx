@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useTeams } from '../contexts/TeamsContext';
 
 export const TeamDetail = () => {
@@ -35,6 +35,9 @@ export const TeamDetail = () => {
     if (teamId) {
       selectTeam(teamId);
     }
+    
+    // Reset active tab when changing teams
+    setActiveTab('overview');
   }, [teamId, selectTeam]);
   
   // Check if current user is a member/admin when selectedTeam or teamMembers changes
@@ -59,7 +62,8 @@ export const TeamDetail = () => {
   // Handle joining a team
   const handleJoinTeam = async () => {
     if (!currentUser) {
-      return; // User must be logged in
+      // Show authentication required message
+      return;
     }
     
     setIsJoining(true);
@@ -126,8 +130,17 @@ export const TeamDetail = () => {
   const getUserName = (userId) => {
     if (!userId) return 'Unknown User';
     
-    // In a real app, this would fetch user profiles
+    // In a real app, this would fetch user profiles from a proper user service
     return `User ${userId.substring(0, 6)}`;
+  };
+  
+  // Handle challenge participation
+  const handleJoinChallenge = (challengeId) => {
+    if (!currentUser) {
+      return; // User must be logged in
+    }
+    
+    joinChallenge(challengeId);
   };
   
   if (loading) {
@@ -180,6 +193,16 @@ export const TeamDetail = () => {
   
   return (
     <div className="px-4 pt-6 pb-20">
+      {/* Back button */}
+      <div className="mb-4">
+        <Link to="/teams" className="text-blue-400 flex items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
+          </svg>
+          Back to Clubs
+        </Link>
+      </div>
+      
       {/* Team Header */}
       <div className="flex flex-col items-center mb-6">
         {selectedTeam.imageUrl ? (
@@ -199,7 +222,7 @@ export const TeamDetail = () => {
         </p>
         
         {/* Join/Leave Button */}
-        {currentUser && (
+        {currentUser ? (
           isMember ? (
             <button
               onClick={handleLeaveTeam}
@@ -217,6 +240,10 @@ export const TeamDetail = () => {
               {isJoining ? 'Joining...' : 'Join Club'}
             </button>
           )
+        ) : (
+          <div className="text-center">
+            <p className="text-yellow-400 mb-2">Please log in to join this club</p>
+          </div>
         )}
       </div>
       
@@ -364,13 +391,18 @@ export const TeamDetail = () => {
             </div>
             
             {/* Message Input */}
-            {isMember ? (
+            {!currentUser ? (
+              <div className="text-center p-4 bg-yellow-900/20 border border-yellow-700 rounded-lg">
+                <p className="text-yellow-400 mb-2">Please log in to participate in the discussion</p>
+              </div>
+            ) : isMember ? (
               <form onSubmit={handleSendMessage} className="flex">
                 <input
                   type="text"
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
                   placeholder="Type a message..."
+                  maxLength={500}
                   className="flex-1 p-3 bg-[#111827] border border-gray-700 rounded-l-lg"
                 />
                 <button
@@ -388,7 +420,7 @@ export const TeamDetail = () => {
                 <p className="text-gray-300 mb-2">You need to join this club to participate in the chat.</p>
                 <button
                   onClick={handleJoinTeam}
-                  disabled={isJoining || !currentUser}
+                  disabled={isJoining}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg"
                 >
                   {isJoining ? 'Joining...' : 'Join Club'}
@@ -450,7 +482,7 @@ export const TeamDetail = () => {
             
             {isAdmin && (
               <button
-                onClick={() => alert('Challenge creation will be implemented in a future update')}
+                onClick={() => alert('Challenge creation coming soon')}
                 className="mb-4 px-4 py-2 bg-blue-600 text-white rounded-lg"
               >
                 Create New Challenge
@@ -469,15 +501,23 @@ export const TeamDetail = () => {
                       <span>{challenge.participants?.length || 0} participants</span>
                     </div>
                     
-                    {isMember && (
+                    {!currentUser ? (
+                      <div className="text-center p-2 bg-yellow-900/20 rounded-lg">
+                        <p className="text-yellow-400 text-sm">Log in to join challenges</p>
+                      </div>
+                    ) : isMember ? (
                       <button
-                        onClick={() => joinChallenge(challenge.id)}
+                        onClick={() => handleJoinChallenge(challenge.id)}
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg w-full"
                       >
                         {challenge.participants?.includes(currentUser) 
                           ? 'View Challenge Details' 
                           : 'Accept Challenge'}
                       </button>
+                    ) : (
+                      <div className="text-center p-2 bg-blue-900/20 rounded-lg">
+                        <p className="text-gray-300 text-sm">Join club to participate in challenges</p>
+                      </div>
                     )}
                   </div>
                 ))}

@@ -7,6 +7,7 @@ import { PermissionDialog } from './PermissionDialog';
 import { formatPaceWithUnit, displayDistance, convertDistance, formatElevation } from '../utils/formatters';
 import { createAndPublishEvent, createWorkoutEvent } from '../utils/nostr';
 import SplitsTable from './SplitsTable';
+import DashboardRunCard from './DashboardRunCard';
 
 export const RunTracker = () => {
   const { 
@@ -448,69 +449,30 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         </div>
       )}
       
-      {/* Recent Activities Section */}
+      {/* Recent Activities Section with New DashboardRunCard */}
       {!isTracking && recentRun && (
-        <div className="bg-[#1a222e] rounded-xl shadow-lg mt-6 mx-4 overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-800">
+        <div className="mt-6 mx-4">
+          <div className="flex justify-between items-center mb-2">
             <h3 className="text-lg font-semibold">{getActivityText('recent')}</h3>
             <span className="text-xs text-gray-400">See All</span>
           </div>
-          <div className="p-4">
-            <div className="flex items-center">
-              <div className="w-10 h-10 bg-gray-700 rounded-lg flex items-center justify-center mr-4">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <h4 className="font-semibold">
-                  {recentRun.title || `${getTimeOfDay(recentRun.timestamp)} ${recentRun.activityType === 'walk' ? 'Walk' : recentRun.activityType === 'cycle' ? 'Cycle' : 'Run'}`}
-                </h4>
-                <div className="flex items-center text-xs text-gray-400">
-                  <span>{formatRunDate(recentRun.date)} • {displayDistance(recentRun.distance, distanceUnit)}</span>
-                  <span className="ml-2 px-2 py-1 bg-gray-800 rounded-full">
-                    {recentRun.distance > 0 
-                      ? (recentRun.duration / 60 / (distanceUnit === 'km' ? recentRun.distance/1000 : recentRun.distance/1609.344)).toFixed(2) 
-                      : '0.00'} min/{distanceUnit}
-                  </span>
-                </div>
-              </div>
-              <div className="text-right text-gray-400">
-                <span className="block text-lg font-semibold">{runDataService.formatTime(recentRun.duration)}</span>
-                <div className="flex mt-1 space-x-2">
-                  <button 
-                    onClick={handlePostToNostr}
-                    className="text-xs text-indigo-400 flex items-center"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                    </svg>
-                    Share
-                  </button>
-                  <button 
-                    onClick={handleSaveWorkoutRecord}
-                    disabled={isSavingWorkout || workoutSaved}
-                    className={`text-xs ${workoutSaved ? 'text-green-400' : 'text-purple-400'} flex items-center`}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    {isSavingWorkout ? 'Saving...' : workoutSaved ? 'Record Saved' : 'Save Workout Record'}
-                  </button>
-                  <button 
-                    onClick={handleDeleteRun}
-                    disabled={isDeleting}
-                    className="text-xs text-red-400 flex items-center"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                    {isDeleting ? 'Deleting...' : 'Delete'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          
+          <DashboardRunCard
+            run={{
+              ...recentRun,
+              title: recentRun.title || `${getTimeOfDay(recentRun.timestamp)} ${recentRun.activityType === 'walk' ? 'Walk' : recentRun.activityType === 'cycle' ? 'Cycle' : 'Run'}`,
+              date: formatRunDate(recentRun.date)
+            }}
+            formatTime={runDataService.formatTime}
+            displayDistance={displayDistance}
+            distanceUnit={distanceUnit}
+            onShare={handlePostToNostr}
+            onSave={handleSaveWorkoutRecord}
+            onDelete={handleDeleteRun}
+            isSaving={isSavingWorkout}
+            isWorkoutSaved={workoutSaved}
+            isDeleting={isDeleting}
+          />
         </div>
       )}
       

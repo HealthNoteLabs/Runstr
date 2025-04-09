@@ -8,30 +8,7 @@ import runDataService from '../services/RunDataService';
 import SplitsTable from '../components/SplitsTable';
 import { useActivityMode } from '../contexts/ActivityModeContext';
 import { useSettings } from '../contexts/SettingsContext';
-
-// Add styles near the top of the file, below the imports
-const styles = {
-  splitsToggleBtn: {
-    background: 'rgba(79, 70, 229, 0.2)',
-    color: '#8B5CF6',
-    border: 'none',
-    padding: '4px 10px',
-    borderRadius: '4px',
-    fontSize: '0.8rem',
-    cursor: 'pointer',
-    marginTop: '8px',
-    fontWeight: '500',
-    display: 'inline-flex',
-    alignItems: 'center',
-    transition: 'all 0.2s ease'
-  },
-  splitsContainer: {
-    background: 'rgba(17, 24, 39, 0.5)',
-    borderRadius: '8px',
-    padding: '10px',
-    marginTop: '10px'
-  }
-};
+import { RunHistoryCard } from '../components/RunHistoryCard';
 
 export const RunHistory = () => {
   const navigate = useNavigate();
@@ -523,65 +500,25 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             
             return (
               <li key={run.id} className="history-item">
-                <div className="run-date">{formatDate(run.date)}</div>
-                <div className="run-details">
-                  <span>Duration: {formatTime(run.duration)}</span>
-                  <span>Distance: {displayDistance(run.distance, distanceUnit)}</span>
-                  <span>
-                    Pace: {pace} min/{distanceUnit}
-                  </span>
-                  <span>Calories: {caloriesBurned} kcal</span>
-                  {run.elevation && (
-                    <>
-                      <span>
-                        Elevation Gain: {formatElevation(run.elevation.gain, distanceUnit)}
-                      </span>
-                      <span>
-                        Elevation Loss: {formatElevation(run.elevation.loss, distanceUnit)}
-                      </span>
-                    </>
-                  )}
-                  {/* Split toggle button */}
-                  {run.splits && run.splits.length > 0 && (
-                    <button 
-                      style={styles.splitsToggleBtn}
-                      onClick={(e) => toggleSplitsView(e, run.id)}
-                    >
-                      {expandedRuns.has(run.id) ? '▲ Hide Splits' : '▼ Show Splits'}
-                    </button>
-                  )}
-                </div>
-                
-                {/* Splits table - shown only when expanded */}
-                {expandedRuns.has(run.id) && run.splits && run.splits.length > 0 && (
-                  <div style={styles.splitsContainer}>
-                    <SplitsTable splits={run.splits} distanceUnit={distanceUnit} />
-                  </div>
-                )}
-                
-                <div className="run-actions">
-                  <button
-                    onClick={() => handlePostToNostr(run)}
-                    className="share-btn"
-                  >
-                    Share to Nostr
-                  </button>
-                  <button
-                    onClick={() => handleSaveWorkoutRecord(run)}
-                    disabled={isSavingWorkout || isWorkoutSaved}
-                    className="share-btn"
-                  >
-                    {isSavingWorkout && savingWorkoutRunId === run.id ? 'Saving...' : isWorkoutSaved ? 'Record Saved' : 'Save Workout Record'}
-                  </button>
-                  <button
-                    onClick={() => handleDeleteClick(run)}
-                    className="delete-btn"
-                    aria-label="Delete run"
-                    title="Delete this run"
-                  >
-                    Delete
-                  </button>
-                </div>
+                <RunHistoryCard
+                  run={run}
+                  distanceUnit={distanceUnit}
+                  formatDate={formatDate}
+                  formatTime={formatTime}
+                  displayDistance={displayDistance}
+                  formatElevation={formatElevation}
+                  pace={pace}
+                  caloriesBurned={caloriesBurned}
+                  isWorkoutSaved={isWorkoutSaved}
+                  isSavingWorkout={isSavingWorkout}
+                  savingWorkoutRunId={savingWorkoutRunId}
+                  expandedRuns={expandedRuns}
+                  onPostToNostr={handlePostToNostr}
+                  onSaveWorkout={handleSaveWorkoutRecord}
+                  onDeleteClick={handleDeleteClick}
+                  onToggleSplits={toggleSplitsView}
+                  SplitsTable={SplitsTable}
+                />
               </li>
             );
           })}

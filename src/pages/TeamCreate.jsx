@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTeams } from '../contexts/TeamsContext';
 
@@ -16,6 +16,18 @@ export const TeamCreate = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   
+  // Redirect if not logged in
+  useEffect(() => {
+    if (!currentUser) {
+      // Set a small delay to allow the UI to render first
+      const timer = setTimeout(() => {
+        navigate('/teams');
+      }, 1500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [currentUser, navigate]);
+  
   // Handle input change
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -32,6 +44,29 @@ export const TeamCreate = () => {
     // Form validation
     if (!formData.name.trim()) {
       setFormError('Club name is required');
+      return;
+    }
+    
+    // Validate name length
+    if (formData.name.trim().length < 3) {
+      setFormError('Club name must be at least 3 characters long');
+      return;
+    }
+    
+    if (formData.name.trim().length > 50) {
+      setFormError('Club name cannot exceed 50 characters');
+      return;
+    }
+    
+    // Validate description
+    if (formData.description.trim().length > 500) {
+      setFormError('Description cannot exceed 500 characters');
+      return;
+    }
+    
+    // Validate image URL if provided
+    if (formData.imageUrl && !isValidUrl(formData.imageUrl)) {
+      setFormError('Please enter a valid image URL');
       return;
     }
     
@@ -61,6 +96,29 @@ export const TeamCreate = () => {
       setIsSubmitting(false);
     }
   };
+  
+  // Validate URL
+  const isValidUrl = (urlString) => {
+    try {
+      new URL(urlString);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  
+  if (!currentUser) {
+    return (
+      <div className="px-4 pt-6 text-center">
+        <h1 className="text-2xl font-bold mb-6">Access Denied</h1>
+        <div className="bg-[#1a222e] rounded-lg p-6">
+          <p className="text-red-400 mb-4">You must be logged in to create a club</p>
+          <p className="text-gray-400 mb-6">Redirecting you to the teams page...</p>
+          <div className="loading-spinner mx-auto"></div>
+        </div>
+      </div>
+    );
+  }
   
   return (
     <div className="px-4 pt-6">
@@ -97,7 +155,11 @@ export const TeamCreate = () => {
             placeholder="Enter club name"
             className="w-full p-3 bg-[#111827] border border-gray-700 rounded-lg"
             required
+            maxLength={50}
           />
+          <p className="mt-1 text-xs text-gray-500">
+            {formData.name.length}/50 characters
+          </p>
         </div>
         
         <div className="mb-4">
@@ -111,7 +173,11 @@ export const TeamCreate = () => {
             onChange={handleChange}
             placeholder="What&apos;s this club about?"
             className="w-full p-3 bg-[#111827] border border-gray-700 rounded-lg min-h-[100px]"
+            maxLength={500}
           />
+          <p className="mt-1 text-xs text-gray-500">
+            {formData.description.length}/500 characters
+          </p>
         </div>
         
         <div className="mb-4">
@@ -158,20 +224,14 @@ export const TeamCreate = () => {
           </button>
           <button
             type="submit"
-            disabled={isSubmitting || !currentUser}
+            disabled={isSubmitting}
             className={`px-4 py-2 bg-blue-600 text-white rounded-lg ${
-              (isSubmitting || !currentUser) ? 'opacity-60 cursor-not-allowed' : 'hover:bg-blue-700'
+              isSubmitting ? 'opacity-60 cursor-not-allowed' : 'hover:bg-blue-700'
             }`}
           >
             {isSubmitting ? 'Creating...' : 'Create Club'}
           </button>
         </div>
-        
-        {!currentUser && (
-          <p className="mt-4 text-sm text-red-400 text-center">
-            You must be logged in to create a club
-          </p>
-        )}
       </form>
     </div>
   );
