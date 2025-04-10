@@ -1,5 +1,5 @@
 {
-  "appId": "club.runstr.app",
+  "appId": "com.runstr.app",
   "appName": "Runstr",
   "webDir": "dist",
   "plugins": {
