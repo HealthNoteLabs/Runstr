@@ -15,8 +15,8 @@ on:
     inputs:
       confirm_zapstore_publish:
         description: "Type 'YES' to publish the built APK to Zapstore (only affects manual runs)."
-        required: false # Optional, only needed if you manually trigger to force a publish
-        default: 'NO'
+        required: true # Optional, only needed if you manually trigger to force a publish
+        default: 'YES'
 
 jobs:
   # ================= Release & Build Job =================
@@ -271,7 +271,10 @@ jobs:
     # Approval handled by the environment protection rule.
     if: >
       success() &&
-      needs.release_and_build.outputs.released == 'true'
+      (
+        (github.event_name == 'push' && needs.release_and_build.outputs.released == 'true') ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.confirm_zapstore_publish == 'YES')
+      )
     runs-on: ubuntu-latest
     # Add environment for manual approval
     environment: zapstore-publish
