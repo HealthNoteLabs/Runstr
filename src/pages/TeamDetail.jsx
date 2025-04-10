@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useContext } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useTeams } from '../contexts/TeamsContext';
 import { NostrContext } from '../contexts/NostrContext';
+import ResponsiveClubTabs from '../components/ResponsiveClubTabs';
 
 export const TeamDetail = () => {
   const { teamId } = useParams();
@@ -256,49 +257,11 @@ export const TeamDetail = () => {
         )}
       </div>
       
-      {/* Navigation Tabs */}
-      <div className="flex overflow-x-auto border-b border-gray-700 mb-6">
-        <button
-          className={`px-4 py-2 whitespace-nowrap ${activeTab === 'overview' 
-            ? 'border-b-2 border-blue-500 text-blue-500' 
-            : 'text-gray-400'}`}
-          onClick={() => setActiveTab('overview')}
-        >
-          Overview
-        </button>
-        <button
-          className={`px-4 py-2 whitespace-nowrap ${activeTab === 'chat' 
-            ? 'border-b-2 border-blue-500 text-blue-500' 
-            : 'text-gray-400'}`}
-          onClick={() => setActiveTab('chat')}
-        >
-          Chat
-        </button>
-        <button
-          className={`px-4 py-2 whitespace-nowrap ${activeTab === 'members' 
-            ? 'border-b-2 border-blue-500 text-blue-500' 
-            : 'text-gray-400'}`}
-          onClick={() => setActiveTab('members')}
-        >
-          Members
-        </button>
-        <button
-          className={`px-4 py-2 whitespace-nowrap ${activeTab === 'leaderboard' 
-            ? 'border-b-2 border-blue-500 text-blue-500' 
-            : 'text-gray-400'}`}
-          onClick={() => setActiveTab('leaderboard')}
-        >
-          Leaderboard
-        </button>
-        <button
-          className={`px-4 py-2 whitespace-nowrap ${activeTab === 'challenges' 
-            ? 'border-b-2 border-blue-500 text-blue-500' 
-            : 'text-gray-400'}`}
-          onClick={() => setActiveTab('challenges')}
-        >
-          Challenges
-        </button>
-      </div>
+      {/* Responsive Navigation Tabs */}
+      <ResponsiveClubTabs
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
       
       {/* Tab Content */}
       <div className="bg-[#1a222e] rounded-lg p-4">

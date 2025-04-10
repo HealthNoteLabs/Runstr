@@ -127,7 +127,7 @@ export function Music() {
   return (
     <div className="container text-center py-12">
       <h1 className="text-2xl font-bold mb-4">WAVLAKE</h1>
-      <div className="bg-[#1a1a1a] rounded-lg p-4 sm:p-8 w-full max-w-lg mx-auto">
+      <div className="bg-[#1a1a1a] rounded-lg p-4 sm:p-8 w-full mx-auto">
         {currentTrack && <MusicPlayer />}
 
         <PlaylistSection

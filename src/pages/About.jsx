@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 
 export const About = () => {
   return (
-    <div className="w-full max-w-[375px] mx-auto px-4 py-6 text-white">
+    <div className="w-full mx-auto px-4 py-6 text-white">
       <div className="flex items-center mb-6">
         <Link to="/" className="text-gray-400 mr-2">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

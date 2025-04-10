@@ -69,7 +69,7 @@ export const MenuBar = () => {
   return (
     <div className="w-full">
       {/* Header with Settings */}
-      <header className="flex justify-between items-center p-4 w-full max-w-[375px] mx-auto">
+      <header className="flex justify-between items-center p-4 w-full">
         <Link to="/" className="text-xl font-bold">#RUNSTR</Link>
         <div className="min-w-[120px]">
           <FloatingMusicPlayer />

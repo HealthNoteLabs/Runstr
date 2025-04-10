@@ -52,7 +52,7 @@ const App = () => {
                   <TeamsProvider>
                     <div className="relative w-full h-full bg-[#111827] text-white">
                       <MenuBar />
-                      <main className="pb-24 max-w-[375px] mx-auto">
+                      <main className="pb-24 w-full mx-auto px-4 max-w-screen-md">
                         <Suspense fallback={<LoadingFallback />}>
                           <AppRoutes />
                         </Suspense>
