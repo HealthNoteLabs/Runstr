@@ -584,6 +584,17 @@ jobs:
           test -f "${APK_FILENAME}" || { echo "❌ APK file '${APK_FILENAME}' not found!"; exit 1; }
           test -f "${NOTES_FILENAME}" || { echo "❌ Notes file '${NOTES_FILENAME}' not found!"; exit 1; }
 
+          # Verify APK has a signature
+          if [ -f "${APK_FILENAME}" ]; then
+            echo "Checking APK signature..."
+            if unzip -l "${APK_FILENAME}" | grep -q "META-INF/.*\.RSA"; then
+              echo "✅ APK appears to be signed (found .RSA files)"
+            else
+              echo "⚠️ Warning: APK may not be properly signed (no .RSA files found)"
+              echo "Publishing may fail due to signature verification"
+            fi
+          fi
+
           # Attempt to publish to Zapstore
           echo "Attempting to publish to Zapstore..."
           set +e  # Don't exit on error for this command
@@ -591,7 +602,6 @@ jobs:
             --daemon-mode \
             --overwrite-app \
             --overwrite-release \
-            --no-verify \
             --icon "${ICON_FILENAME}" \
             -n "${NOTES_FILENAME}" \
             -a "${APK_FILENAME}" \
@@ -601,60 +611,47 @@ jobs:
           
           # Check if the publish command failed
           if [ $RESULT -ne 0 ]; then
-            echo "⚠️ Initial publish attempt failed with exit code $RESULT"
+            echo "⚠️ Publish attempt failed with exit code $RESULT"
             
-            # Try again with additional options to bypass verification
-            echo "Trying again with signature verification disabled..."
-            set +e  # Don't exit on error for this command
-            APKSIGNER_PATH="$APKSIGNER_PATH" zapstore publish runstr \
+            # Get error output to diagnose the issue
+            ERROR_OUTPUT=$(APKSIGNER_PATH="$APKSIGNER_PATH" zapstore publish runstr \
               --daemon-mode \
               --overwrite-app \
               --overwrite-release \
-              --no-verify \
               --icon "${ICON_FILENAME}" \
               -n "${NOTES_FILENAME}" \
               -a "${APK_FILENAME}" \
-              -v "${VERSION}"
-            FINAL_RESULT=$?
-            set -e  # Re-enable exit on error
-            
-            if [ $FINAL_RESULT -ne 0 ]; then
-              echo "❌ Publish failed even with verification disabled. Exit code: $FINAL_RESULT"
+              -v "${VERSION}" 2>&1)
               
-              # Get the error output to check if it's the YAML parsing error or signature error
-              ERROR_OUTPUT=$(APKSIGNER_PATH="$APKSIGNER_PATH" zapstore publish runstr \
-                --daemon-mode \
-                --overwrite-app \
-                --overwrite-release \
-                --no-verify \
-                --icon "${ICON_FILENAME}" \
-                -n "${NOTES_FILENAME}" \
-                -a "${APK_FILENAME}" \
-                -v "${VERSION}" 2>&1)
+            if echo "$ERROR_OUTPUT" | grep -q "Error on line 1, column 1: Invalid tag for mapping"; then
+              echo "🔄 Detected YAML parsing error. This is a known issue with some APKs."
+              echo "The APK may still be valid and the publishing might have succeeded despite the error."
               
-              if echo "$ERROR_OUTPUT" | grep -q "Error on line 1, column 1: Invalid tag for mapping"; then
-                echo "🔄 Detected YAML parsing error. This is a known issue with some APKs."
-                echo "The APK may still be valid and the publishing might have succeeded despite the error."
+              # Check if the file was actually uploaded
+              if echo "$ERROR_OUTPUT" | grep -q "Uploaded artifact"; then
+                echo "✅ APK was uploaded successfully despite YAML parsing error."
                 echo "Please verify in the Zapstore that the app was published correctly."
-                
-                # Exit with success to allow the workflow to complete
-                echo "⚠️ Continuing with caution - error is likely just from metadata parsing"
-                exit 0
-              elif echo "$ERROR_OUTPUT" | grep -q "ShellException.*apksigner verify"; then
-                echo "⚠️ Detected signature verification error. This is expected after APK cleaning."
-                echo "The APK was uploaded successfully but verification failed."
-                echo "Please verify in the Zapstore that the app was published correctly."
-                
-                # Exit with success since the file was uploaded
-                echo "⚠️ Continuing with caution - APK uploaded but signature verification failed"
                 exit 0
               else
-                echo "❌ Publish failed with an unexpected error:"
-                echo "$ERROR_OUTPUT"
-                exit $FINAL_RESULT
+                echo "❌ APK upload failed due to YAML parsing error."
+                exit 1
+              fi
+            elif echo "$ERROR_OUTPUT" | grep -q "ShellException.*apksigner verify"; then
+              echo "⚠️ Detected signature verification error."
+              
+              # Check if the file was actually uploaded
+              if echo "$ERROR_OUTPUT" | grep -q "Uploaded artifact"; then
+                echo "✅ APK was uploaded successfully but signature verification failed."
+                echo "Please verify in the Zapstore that the app was published correctly."
+                exit 0
+              else
+                echo "❌ APK failed signature verification before upload."
+                exit 1
               fi
             else
-              echo "✅ Successfully published version ${VERSION} to Zapstore with verification disabled!"
+              echo "❌ Publish failed with an unexpected error:"
+              echo "$ERROR_OUTPUT"
+              exit $RESULT
             fi
           else
             echo "✅ Successfully published version ${VERSION} to Zapstore!"
