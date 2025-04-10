@@ -387,7 +387,7 @@ jobs:
           rm -f ./release/apktool.yml
           echo "Contents of ./release after cleanup:"
           ls -l ./release
-
+          
       # --- Publish ---
       - name: Publish to Zapstore
         env:
@@ -407,7 +407,7 @@ jobs:
           test -f "${APK_FILENAME}" || { echo "❌ APK file '${APK_FILENAME}' not found!"; exit 1; }
           test -f "${NOTES_FILENAME}" || { echo "❌ Notes file '${NOTES_FILENAME}' not found!"; exit 1; }
 
-          # Run the publish command - COMMENTED OUT FOR TESTING
+          # Simple publish command - matches the working example
           APKSIGNER_PATH="$APKSIGNER_PATH" zapstore publish runstr \
            --daemon-mode \
            --overwrite-app \
@@ -415,13 +415,9 @@ jobs:
            --icon "${ICON_FILENAME}" \
            -n "${NOTES_FILENAME}" \
            -a "${APK_FILENAME}" \
-           -v "${VERSION}" # Use version determined by semantic-release
+           -v "${VERSION}"
 
           RESULT=$?
-          # Fake success for testing since publish is commented out
-          # RESULT=0
-          # echo "NOTE: Zapstore publish command is commented out."
-
           if [ $RESULT -ne 0 ]; then
             echo "❌ Zapstore publish failed with exit code $RESULT"
             exit 1
