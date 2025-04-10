@@ -333,11 +333,21 @@ jobs:
           VERSION=${{ needs.release_and_build.outputs.new_version }}
           # Use the raw GitHub URL for the logo in the main branch
           RUNSTR_ICON_URL="https://raw.githubusercontent.com/TheWildHustle/Nostr-Run-Club/main/runstr-logo.png"
-          APK_NAME="runstr-${VERSION}.apk"
+          # APK_NAME="runstr-${VERSION}.apk" # We will find the actual name instead
           ICON_FILENAME="runstr_logo.png" # Consistent icon filename
           NOTES_FILENAME="release_notes.md"
 
           cd ./release # Work inside the release directory
+
+          # Find the actual APK file downloaded into this directory
+          ACTUAL_APK_FILE=$(find . -maxdepth 1 -name 'runstr-*.apk' -print -quit)
+          if [ -z "$ACTUAL_APK_FILE" ]; then
+            echo "❌ Downloaded APK file (runstr-*.apk) not found in ./release directory!"
+            exit 1
+          fi
+          # Get just the filename (basename)
+          ACTUAL_APK_FILENAME=$(basename "$ACTUAL_APK_FILE")
+          echo "Found APK: $ACTUAL_APK_FILENAME"
 
           # Create metadata file
           cat > zapstore.yaml <<EOF
@@ -387,8 +397,9 @@ jobs:
             exit 1
           fi
 
+          # Set the actual discovered filename for the publish step
+          echo "APK_FILENAME=$ACTUAL_APK_FILENAME" >> $GITHUB_ENV
           echo "ICON_FILENAME=$ICON_FILENAME" >> $GITHUB_ENV
-          echo "APK_FILENAME=$APK_NAME" >> $GITHUB_ENV
           echo "NOTES_FILENAME=$NOTES_FILENAME" >> $GITHUB_ENV
 
           echo "✅ Metadata, icon, and release notes prepared in ./release directory."
@@ -416,17 +427,21 @@ jobs:
           test -f "${APK_FILENAME}" || { echo "❌ APK file '${APK_FILENAME}' not found!"; exit 1; }
           test -f "${NOTES_FILENAME}" || { echo "❌ Notes file '${NOTES_FILENAME}' not found!"; exit 1; }
 
-          # Run the publish command
-          APKSIGNER_PATH="$APKSIGNER_PATH" zapstore publish runstr \
-            --daemon-mode \
-            --overwrite-app \
-            --overwrite-release \
-            --icon "${ICON_FILENAME}" \
-            -n "${NOTES_FILENAME}" \
-            -a "${APK_FILENAME}" \
-            -v "${VERSION}" # Use version determined by semantic-release
+          # Run the publish command - COMMENTED OUT FOR TESTING
+          # APKSIGNER_PATH="$APKSIGNER_PATH" zapstore publish runstr \
+          #  --daemon-mode \
+          #  --overwrite-app \
+          #  --overwrite-release \
+          #  --icon "${ICON_FILENAME}" \
+          #  -n "${NOTES_FILENAME}" \
+          #  -a "${APK_FILENAME}" \
+          #  -v "${VERSION}" # Use version determined by semantic-release
 
-          RESULT=$?
+          # RESULT=$?
+          # Fake success for testing since publish is commented out
+          RESULT=0
+          echo "NOTE: Zapstore publish command is commented out."
+
           if [ $RESULT -ne 0 ]; then
             echo "❌ Zapstore publish failed with exit code $RESULT"
             exit 1
