@@ -32,3 +32,7 @@ yarn-error.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Keystore files (Android)
+*.jks
+android/keystore.properties
