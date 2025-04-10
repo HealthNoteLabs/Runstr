@@ -262,7 +262,6 @@ jobs:
     needs: release_and_build # Depends on the release and build job
     # Conditional Run:
     # Only run if semantic-release actually created a release in the previous job.
-    if: needs.release_and_build.outputs.released == 'true'
     runs-on: ubuntu-latest
     # Add environment for manual approval
 
