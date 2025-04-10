@@ -9,5 +9,5 @@ runstr:
     author: "TheWildHustle"
     tags: ["running", "fitness", "tracker", "nostr", "wavlake", "bitcoin"]
     icons:
-      - url: "PLACEHOLDER_PERMANENT_ICON_URL" # <-- IMPORTANT: Replace with the actual permanent URL to your icon file (e.g., from GitHub raw content)
+      - url: "https://raw.githubusercontent.com/HealthNoteLabs/Runstr/updates1/runstr-logo.png"
         type: "image/png" # <-- IMPORTANT: Adjust type if needed (e.g., image/jpeg, image/webp) 
