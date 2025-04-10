@@ -1,0 +1,431 @@
+# .github/workflows/release-and-publish.yml
+name: Release RUNSTR and Publish to Zapstore
+
+on:
+  push:
+    branches:
+      # Release from main branch (adjust as needed)
+      - main
+      # Prereleases/builds from updates1 (adjust branch name and prerelease config in .releaserc if needed)
+      - updates1
+  # Enable manual trigger for the Zapstore publish step confirmation
+  workflow_dispatch:
+    inputs:
+      confirm_zapstore_publish:
+        description: "Type 'YES' to publish the built APK to Zapstore (only affects manual runs)."
+        required: false # Optional, only needed if you manually trigger to force a publish
+        default: 'NO'
+
+jobs:
+  # ================= Release & Build Job =================
+  release_and_build:
+    runs-on: ubuntu-latest
+    outputs:
+      # Output whether a release was created by semantic-release
+      released: ${{ steps.semantic_release.outputs.released || 'false' }}
+      # Output the version determined by semantic-release (or fallback)
+      new_version: ${{ steps.semantic_release.outputs.new_version || steps.read_package_version.outputs.version }}
+      # Output the final APK path for artifact upload/download
+      apk_path: ${{ steps.prepare_artifact.outputs.apk_path }}
+
+    permissions:
+      contents: write # Allow semantic-release to push commits/tags
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for semantic-release
+          # Persist credentials for semantic-release to push
+          persist-credentials: true
+
+      # --- Environment Setup ---
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Use your project's Node.js version
+          cache: 'npm'
+
+      # --- Dependencies ---
+      # Assumes semantic-release and plugins are in devDependencies
+      - name: Install Node Dependencies
+        run: npm install
+
+      # --- Semantic Release ---
+      # This step determines the version, generates changelog, updates package.json, commits, and tags
+      - name: Run Semantic Release
+        id: semantic_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Use the default GitHub token
+          # Add any other env vars needed by semantic-release plugins if necessary
+        run: |
+          echo "Running semantic-release..."
+          # Run semantic-release. It will analyze commits, update package.json, changelog, commit, and tag if needed.
+          # Capture output to check if a release happened and get the version.
+          # Use '|| true' to prevent workflow failure if no release is needed.
+          npx semantic-release --debug || true
+
+          # Check if a release was published by looking for a new tag
+          LATEST_TAG=$(git describe --tags --abbrev=0 || echo "none")
+          echo "Latest tag found: $LATEST_TAG"
+
+          # Check if package.json was updated (another indicator)
+          # This might be fragile if other changes happen concurrently
+          if git status --porcelain | grep -q "package.json"; then
+             echo "package.json was modified, likely by semantic-release."
+             # This isn't a foolproof check for release success, tag check is better
+          fi
+
+          # More reliable check: see if the latest tag matches what semantic-release *would* output
+          # This requires more complex output parsing from semantic-release, sticking to tag existence for now.
+
+          if [[ "$LATEST_TAG" != "none" ]]; then
+            # Check if the latest tag points to the current commit HEAD
+            # This confirms semantic-release just created it on this run
+            if git rev-parse HEAD | grep -q "$(git rev-list -n 1 $LATEST_TAG)"; then
+               echo "✅ New release tag $LATEST_TAG created by semantic-release."
+               echo "released=true" >> $GITHUB_OUTPUT
+               echo "new_version=${LATEST_TAG#v}" >> $GITHUB_OUTPUT # Store version without 'v' prefix
+            else
+               echo "ℹ️ Latest tag $LATEST_TAG exists but doesn't point to HEAD. Assuming no new release on this run."
+               echo "released=false" >> $GITHUB_OUTPUT
+               echo "new_version=unknown" >> $GITHUB_OUTPUT # Set explicitly
+            fi
+          else
+             echo "ℹ️ No tags found or semantic-release determined no release needed."
+             echo "released=false" >> $GITHUB_OUTPUT
+             echo "new_version=unknown" >> $GITHUB_OUTPUT # Set explicitly
+          fi
+
+      # --- Read Package Version (Fallback/Info) ---
+      # Read the version from package.json (might have been updated by semantic-release)
+      - name: Read version from package.json
+        id: read_package_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Version from package.json: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # --- Capacitor Sync ---
+      # Sync web assets AFTER potential package.json version update
+      - name: Sync Capacitor Android Project
+        run: npx cap sync android
+
+      # --- Signing Keystore Setup ---
+      - name: Configure Keystore from Secret
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          KEYSTORE_DIR=$GITHUB_WORKSPACE/android/app
+          KEYSTORE_FILE=$KEYSTORE_DIR/runstr-release-key.keystore
+          mkdir -p $KEYSTORE_DIR
+          echo "Decoding keystore to $KEYSTORE_FILE"
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_FILE"
+          test -s "$KEYSTORE_FILE" || { echo "❌ Keystore file missing or empty after decode"; exit 1; }
+          echo "Keystore configured."
+
+      # --- Determine Final Version for Build ---
+      # Use semantic-release version if available, otherwise use package.json version
+      - name: Determine Build Version
+        id: determine_build_version
+        run: |
+          SEMANTIC_VERSION="${{ steps.semantic_release.outputs.new_version }}"
+          PACKAGE_VERSION="${{ steps.read_package_version.outputs.version }}"
+          BUILD_VERSION=""
+
+          if [[ "${{ steps.semantic_release.outputs.released }}" == "true" && "$SEMANTIC_VERSION" != "unknown" ]]; then
+             echo "Using version from semantic-release: $SEMANTIC_VERSION"
+             BUILD_VERSION="$SEMANTIC_VERSION"
+          elif [[ -n "$PACKAGE_VERSION" ]]; then
+             echo "Using version from package.json: $PACKAGE_VERSION"
+             BUILD_VERSION="$PACKAGE_VERSION"
+          else
+             FALLBACK_VERSION="0.0.0-sha-${GITHUB_SHA::7}"
+             echo "Warning: Could not determine version reliably. Using fallback: $FALLBACK_VERSION"
+             BUILD_VERSION="$FALLBACK_VERSION"
+          fi
+          echo "Final build version: $BUILD_VERSION"
+          echo "build_version=$BUILD_VERSION" >> $GITHUB_OUTPUT
+
+      # --- Build ---
+      - name: Build Release APK
+        env:
+          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          cd android
+          BUILD_VERSION=${{ steps.determine_build_version.outputs.build_version }}
+          echo "Building Release APK version $BUILD_VERSION..."
+          # Pass signing config via command line properties
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$(realpath ./app/runstr-release-key.keystore) \
+            -Pandroid.injected.signing.store.password="$SIGNING_STORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$SIGNING_KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$SIGNING_KEY_PASSWORD" \
+            -PappVersionName=$BUILD_VERSION # Pass final version to build
+          cd ..
+
+      # --- Prepare Artifact ---
+      - name: Prepare release directory and Rename APK
+        id: prepare_artifact
+        run: |
+          mkdir -p ./release
+          VERSION=${{ steps.determine_build_version.outputs.build_version }}
+          APK_ORIGINAL="android/app/build/outputs/apk/release/app-release.apk"
+          APK_RENAMED="./release/runstr-${VERSION}.apk" # Consistent naming
+
+          if [[ ! -f "$APK_ORIGINAL" ]]; then
+            echo "❌ Built APK not found at $APK_ORIGINAL"
+            exit 1
+          fi
+
+          echo "Moving $APK_ORIGINAL to $APK_RENAMED"
+          mv "$APK_ORIGINAL" "$APK_RENAMED"
+          echo "✅ APK prepared: $APK_RENAMED"
+          echo "apk_path=$APK_RENAMED" >> $GITHUB_OUTPUT # Output path
+
+      - name: Validate APK file
+        run: |
+          APK_PATH="${{ steps.prepare_artifact.outputs.apk_path }}"
+          echo "Validating $APK_PATH"
+          test -f "$APK_PATH" || { echo "❌ APK file not found: $APK_PATH"; exit 1; }
+          SIZE=$(stat -c%s "$APK_PATH")
+          echo "APK size: $SIZE bytes"
+          if [ "$SIZE" -lt 100000 ]; then # Check minimum reasonable size
+            echo "⚠️ Warning: APK might be too small ($SIZE bytes)"
+          fi
+          unzip -l "$APK_PATH" | grep -q AndroidManifest.xml || {
+            echo "❌ APK appears invalid (no AndroidManifest.xml found)"
+            exit 1
+          }
+          echo "✅ Basic APK structure checked."
+
+      # --- Create GitHub Release ---
+      - name: Create GitHub Release and Upload APK
+        # Only run if semantic-release created a new version
+        if: steps.semantic_release.outputs.released == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          # Tag name should match the tag created by semantic-release (usually with 'v' prefix)
+          tag_name: v${{ steps.determine_build_version.outputs.build_version }}
+          # Name the release using the version
+          name: Release v${{ steps.determine_build_version.outputs.build_version }}
+          # Use the generated CHANGELOG.md as the release body
+          # Ensure semantic-release config includes @semantic-release/changelog plugin
+          body_path: CHANGELOG.md
+          # Path to the APK file to upload, from the prepare_artifact step
+          files: ${{ steps.prepare_artifact.outputs.apk_path }}
+          # Publish the release (not a draft)
+          draft: false
+          # Mark as a non-prerelease (adjust if needed for prerelease branches)
+          prerelease: false
+        env:
+          # Use the default GITHUB_TOKEN for release creation
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: runstr-apk-${{ steps.determine_build_version.outputs.build_version }}
+          path: ${{ steps.prepare_artifact.outputs.apk_path }}
+          retention-days: 7
+
+      - name: Upload CHANGELOG artifact
+        # Only upload if a release happened and CHANGELOG.md exists
+        if: steps.semantic_release.outputs.released == 'true' && steps.semantic_release.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+           name: changelog-${{ steps.determine_build_version.outputs.build_version }}
+           path: CHANGELOG.md
+           retention-days: 7
+
+      - name: 🧹 Clean up Keystore
+        if: ${{ always() }} # Always run this step
+        run: |
+          echo "Removing keystore file..."
+          rm -f $GITHUB_WORKSPACE/android/app/runstr-release-key.keystore
+
+  # ================= Zapstore Publish Job =================
+  publish_zapstore:
+    needs: release_and_build # Depends on the release and build job
+    # Conditional Run:
+    # 1. Build job succeeded
+    # 2. Semantic Release created a new version/tag
+    # Approval handled by the environment protection rule.
+    if: >
+      success() &&
+      needs.release_and_build.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    # Add environment for manual approval
+    environment: zapstore-publish
+
+    steps:
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: runstr-apk-${{ needs.release_and_build.outputs.new_version }}
+          path: ./release # Download into a release directory
+
+      - name: Download CHANGELOG artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: changelog-${{ needs.release_and_build.outputs.new_version }}
+          path: ./release # Download into the same directory
+
+      - name: List downloaded files
+        run: ls -lR ./release
+
+      # --- Install Zapstore Tools ---
+      - name: Install ZapStore CLI and apktool
+        run: |
+          ZAP_CLI_URL="https://cdn.zapstore.dev/0d684425c4bbd3fdecc58f7bf7fc55366d71b8ded9d68b3bbfcb3fcca1072325"
+          curl -L -o zapstore "$ZAP_CLI_URL"
+          chmod +x zapstore
+          sudo mv zapstore /usr/local/bin/
+          zapstore --version || echo "Zapstore CLI installed but version check failed."
+
+          echo "Installing apktool..."
+          # Allow apktool install to fail non-critically if needed
+          yes | zapstore install apktool || echo "⚠️ apktool install via zapstore failed or timed out."
+          # Add a check if apktool command exists afterwards if crucial
+
+      - name: Install Android apksigner tool
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y unzip wget default-jre # JRE needed by apksigner
+          echo "Downloading Android Build Tools..."
+          # Use a known reliable version, adjust if needed
+          BUILD_TOOLS_VERSION="33.0.2"
+          wget -q https://dl.google.com/android/repository/build-tools_r${BUILD_TOOLS_VERSION}-linux.zip -O /tmp/build-tools.zip || \
+            { echo "❌ Failed to download Android Build Tools ${BUILD_TOOLS_VERSION}"; exit 1; }
+          unzip -q /tmp/build-tools.zip -d /tmp/build-tools
+          APKSIGNER_PATH=$(find /tmp/build-tools -name apksigner -type f | head -n 1)
+          if [ -z "$APKSIGNER_PATH" ]; then
+             echo "❌ apksigner not found in downloaded build tools."
+             exit 1
+          fi
+          echo "✅ apksigner found at: $APKSIGNER_PATH"
+          echo "APKSIGNER_PATH=$APKSIGNER_PATH" >> $GITHUB_ENV
+          chmod +x "$APKSIGNER_PATH"
+
+      # --- Prepare Zapstore Metadata ---
+      - name: Create zapstore.yaml and Extract Release Notes
+        run: |
+          VERSION=${{ needs.release_and_build.outputs.new_version }}
+          # Use the raw GitHub URL for the logo in the main branch
+          RUNSTR_ICON_URL="https://raw.githubusercontent.com/TheWildHustle/Nostr-Run-Club/main/runstr-logo.png"
+          APK_NAME="runstr-${VERSION}.apk"
+          ICON_FILENAME="runstr_logo.png" # Consistent icon filename
+          NOTES_FILENAME="release_notes.md"
+
+          cd ./release # Work inside the release directory
+
+          # Create metadata file
+          cat > zapstore.yaml <<EOF
+          runstr:
+            android:
+              name: "RUNSTR"
+              description: "A running app built on the Nostr protocol. Track runs, view a global feed, and listen to Wavlake music."
+              repository: "https://github.com/TheWildHustle/Nostr-Run-Club" # Verify URL
+              license: "MIT"
+              categories: ["health_and_fitness", "sports", "social"]
+              author: "TheWildHustle" # Verify Author
+              tags: ["running", "fitness", "tracker", "nostr", "wavlake", "bitcoin"]
+              icons:
+                - url: "$RUNSTR_ICON_URL"
+                  type: "image/png"
+          EOF
+
+          # Extract release notes from CHANGELOG.md for the current version
+          echo "Extracting release notes for v$VERSION from CHANGELOG.md..."
+          if [ -f "CHANGELOG.md" ]; then
+             # Use awk to extract notes between the current version header and the previous one
+             awk -v ver="## \\[${VERSION}\\]" -v started=0 '
+               $0 ~ ver { started=1; next }
+               /^## / { if (started) exit }
+               started { print }
+             ' CHANGELOG.md > "$NOTES_FILENAME"
+
+             # Check if notes were extracted, provide fallback if empty
+             if [ ! -s "$NOTES_FILENAME" ]; then
+                echo "Warning: Could not extract specific notes for v$VERSION. Using generic message."
+                echo "# Release v$VERSION" > "$NOTES_FILENAME"
+                echo "See CHANGELOG.md for details." >> "$NOTES_FILENAME"
+             else
+                echo "✅ Extracted notes for v$VERSION."
+             fi
+          else
+             echo "Warning: CHANGELOG.md not found. Using generic message."
+             echo "# Release v$VERSION" > "$NOTES_FILENAME"
+             echo "Manual publish via GitHub Actions." >> "$NOTES_FILENAME"
+          fi
+
+          # Copy the local logo file into the release directory
+          echo "Copying local runstr-logo.png to ./release/$ICON_FILENAME"
+          cp "$GITHUB_WORKSPACE/runstr-logo.png" "./$ICON_FILENAME"
+          if [ ! -f "./$ICON_FILENAME" ]; then
+            echo "Error: Failed to copy runstr-logo.png to release directory."
+            exit 1
+          fi
+
+          echo "ICON_FILENAME=$ICON_FILENAME" >> $GITHUB_ENV
+          echo "APK_FILENAME=$APK_NAME" >> $GITHUB_ENV
+          echo "NOTES_FILENAME=$NOTES_FILENAME" >> $GITHUB_ENV
+
+          echo "✅ Metadata, icon, and release notes prepared in ./release directory."
+          echo "--- Release Notes (${NOTES_FILENAME}) ---"
+          cat "${NOTES_FILENAME}"
+          echo "-------------------------------------"
+          cd .. # Return to workspace root
+
+      # --- Publish ---
+      - name: Publish to Zapstore
+        env:
+          NSEC: ${{ secrets.NSEC }}
+          APKSIGNER_PATH: ${{ env.APKSIGNER_PATH }}
+          VERSION: ${{ needs.release_and_build.outputs.new_version }}
+        run: |
+          cd ./release # Navigate into the directory with assets
+
+          echo "Publishing v${VERSION} to Zapstore using apksigner at $APKSIGNER_PATH..."
+          echo "Icon file: ${ICON_FILENAME}"
+          echo "APK file: ${APK_FILENAME}"
+          echo "Notes file: ${NOTES_FILENAME}"
+
+          # Check files exist before publishing
+          test -f "${ICON_FILENAME}" || { echo "❌ Icon file '${ICON_FILENAME}' not found!"; exit 1; }
+          test -f "${APK_FILENAME}" || { echo "❌ APK file '${APK_FILENAME}' not found!"; exit 1; }
+          test -f "${NOTES_FILENAME}" || { echo "❌ Notes file '${NOTES_FILENAME}' not found!"; exit 1; }
+
+          # Run the publish command
+          APKSIGNER_PATH="$APKSIGNER_PATH" zapstore publish runstr \
+            --daemon-mode \
+            --overwrite-app \
+            --overwrite-release \
+            --icon "${ICON_FILENAME}" \
+            -n "${NOTES_FILENAME}" \
+            -a "${APK_FILENAME}" \
+            -v "${VERSION}" # Use version determined by semantic-release
+
+          RESULT=$?
+          if [ $RESULT -ne 0 ]; then
+            echo "❌ Zapstore publish failed with exit code $RESULT"
+            exit 1
+          else
+            echo "✅ Successfully published version ${VERSION} to Zapstore!"
+          fi
+
+      - name: ✅ Notify success
+        if: ${{ success() }}
+        run: |
+          echo "🎉 RUNSTR v${{ needs.release_and_build.outputs.new_version }} published to Zapstore!"
+          echo "🔗 https://zapstore.dev/app/runstr"
