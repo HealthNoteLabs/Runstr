@@ -380,6 +380,14 @@ jobs:
           echo "-------------------------------------"
           cd .. # Return to workspace root
 
+      # --- Cleanup Before Publish ---
+      - name: Clean up potential intermediate files
+        run: |
+          echo "Cleaning up ./release directory..."
+          rm -f ./release/apktool.yml
+          echo "Contents of ./release after cleanup:"
+          ls -l ./release
+
       # --- Publish ---
       - name: Publish to Zapstore
         env:
@@ -404,6 +412,7 @@ jobs:
            --daemon-mode \
            --overwrite-app \
            --overwrite-release \
+           -m zapstore.yaml \
            --icon "${ICON_FILENAME}" \
            -n "${NOTES_FILENAME}" \
            -a "${APK_FILENAME}" \
