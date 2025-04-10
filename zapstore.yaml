@@ -1,4 +1,3 @@
-# zapstore.yaml (Root Level)
 runstr:
   android:
     name: RUNSTR
