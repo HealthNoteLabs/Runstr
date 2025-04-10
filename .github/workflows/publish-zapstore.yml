@@ -280,29 +280,22 @@ jobs:
       # --- Install Zapstore Tools ---
       - name: Install ZapStore CLI and apktool
         run: |
+          echo "Installing Zapstore CLI..."
           ZAP_CLI_URL="https://cdn.zapstore.dev/0d684425c4bbd3fdecc58f7bf7fc55366d71b8ded9d68b3bbfcb3fcca1072325"
           curl -L -o zapstore "$ZAP_CLI_URL"
           chmod +x zapstore
           sudo mv zapstore /usr/local/bin/
-          zapstore --version || { echo "❌ Zapstore CLI install verification failed."; exit 1; }
+          zapstore --version || { echo "❌ Zapstore CLI install failed."; exit 1; }
+          echo "✅ Zapstore CLI installed."
 
-          echo "Attempting to install apktool via zapstore..."
-          # Try zapstore install first, but fallback to manual if it fails
-          yes | zapstore install apktool || {
-            echo "⚠️ apktool install via zapstore failed. Falling back to manual install..."
-            # Use version 2.9.3 like in the voca example
-            curl -L -o apktool.jar https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar || { echo "❌ Failed to download apktool.jar"; exit 1; }
-            curl -L -o apktool https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool || { echo "❌ Failed to download apktool wrapper script"; exit 1; }
-            chmod +x apktool apktool.jar
-            sudo mv apktool /usr/local/bin/
-            sudo mv apktool.jar /usr/local/bin/ # Ensure jar is also in a standard location
-            echo "✅ Manual apktool installation attempted."
-          }
+          echo "Installing apktool via apt..."
+          sudo apt-get update -y
+          sudo apt-get install -y apktool || { echo "❌ apktool install via apt failed."; exit 1; }
+          echo "✅ apktool installed via apt."
 
-          # Mandatory verification: Ensure apktool command works after install attempt
-          echo "Verifying apktool installation..."
-          apktool --version || { echo "❌ apktool verification failed after attempting installation."; exit 1; }
-          echo "✅ apktool is available."
+          # Verify apktool installation
+          apktool --version || { echo "❌ apktool command not found or failed after install."; exit 1; }
+          echo "✅ apktool verified."
 
       - name: Install Android apksigner tool
         run: |
@@ -404,20 +397,20 @@ jobs:
           test -f "${APK_FILENAME}" || { echo "❌ APK file '${APK_FILENAME}' not found!"; exit 1; }
           test -f "${NOTES_FILENAME}" || { echo "❌ Notes file '${NOTES_FILENAME}' not found!"; exit 1; }
 
-          # Run the publish command 
-          APKSIGNER_PATH="$APKSIGNER_PATH" zapstore publish runstr \
-           --daemon-mode \
-           --overwrite-app \
-           --overwrite-release \
-           --icon "${ICON_FILENAME}" \
-           -n "${NOTES_FILENAME}" \
-           -a "${APK_FILENAME}" \
-           -v "${VERSION}" # Use version determined by semantic-release
+          # Run the publish command - COMMENTED OUT FOR TESTING
+          # APKSIGNER_PATH="$APKSIGNER_PATH" zapstore publish runstr \
+          #  --daemon-mode \
+          #  --overwrite-app \
+          #  --overwrite-release \
+          #  --icon "${ICON_FILENAME}" \
+          #  -n "${NOTES_FILENAME}" \
+          #  -a "${APK_FILENAME}" \
+          #  -v "${VERSION}" # Use version determined by semantic-release
 
-          RESULT=$?
+          # RESULT=$?
           # Fake success for testing since publish is commented out
-          # RESULT=0
-          # echo "NOTE: Zapstore publish command is commented out."
+          RESULT=0
+          echo "NOTE: Zapstore publish command is commented out."
 
           if [ $RESULT -ne 0 ]; then
             echo "❌ Zapstore publish failed with exit code $RESULT"
