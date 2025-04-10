@@ -319,10 +319,11 @@ jobs:
       - name: Create zapstore.yaml and Basic Release Notes
         run: |
           VERSION=${{ needs.release_and_build.outputs.build_version }}
-          # Use the raw GitHub URL for the logo in the main branch
+          # Use the raw GitHub URL for the logo in the main branch - KEEP THIS AS IS FOR NOW, but ideally use local copy
           RUNSTR_ICON_URL="https://raw.githubusercontent.com/TheWildHustle/Nostr-Run-Club/main/runstr-logo.png"
           ICON_FILENAME="runstr_logo.png" # Consistent icon filename
           NOTES_FILENAME="release_notes.md"
+          ZAPSTORE_YAML_FILENAME="zapstore.yaml" # Define filename
 
           cd ./release # Work inside the release directory
 
@@ -336,21 +337,17 @@ jobs:
           ACTUAL_APK_FILENAME=$(basename "$ACTUAL_APK_FILE")
           echo "Found APK: $ACTUAL_APK_FILENAME"
 
-          # Create metadata file
-          cat > zapstore.yaml <<EOF
-          runstr:
-            android:
-              name: "RUNSTR"
-              description: "A running app built on the Nostr protocol. Track runs, view a global feed, and listen to Wavlake music."
-              repository: "https://github.com/TheWildHustle/Nostr-Run-Club" # Verify URL
-              license: "MIT"
-              categories: ["health_and_fitness", "sports", "social"]
-              author: "TheWildHustle" # Verify Author
-              tags: ["running", "fitness", "tracker", "nostr", "wavlake", "bitcoin"]
-              icons:
-                - url: "$RUNSTR_ICON_URL"
-                  type: "image/png"
-          EOF
+          # Copy the existing zapstore.yaml from the repository root
+          echo "Copying existing zapstore.yaml from workspace root..."
+          cp "$GITHUB_WORKSPACE/$ZAPSTORE_YAML_FILENAME" "./$ZAPSTORE_YAML_FILENAME"
+          if [ ! -f "./$ZAPSTORE_YAML_FILENAME" ]; then
+            echo "Error: Failed to copy $ZAPSTORE_YAML_FILENAME from repository root."
+            # Optionally fail the job if the file is essential
+            # exit 1
+            # Or provide a default minimal one as fallback? For now, just warn/error.
+          else
+             echo "✅ Copied $ZAPSTORE_YAML_FILENAME."
+          fi
 
           # Create BASIC release notes (REPLACED EXTRACTION LOGIC)
           echo "Creating basic release notes..."
@@ -371,8 +368,13 @@ jobs:
           echo "APK_FILENAME=$ACTUAL_APK_FILENAME" >> $GITHUB_ENV
           echo "ICON_FILENAME=$ICON_FILENAME" >> $GITHUB_ENV
           echo "NOTES_FILENAME=$NOTES_FILENAME" >> $GITHUB_ENV
+          # We no longer directly use zapstore.yaml filename in the publish command itself
+          # but it's good practice to check it exists.
 
-          echo "✅ Metadata, icon, and basic release notes prepared in ./release directory."
+          echo "✅ Metadata (copied), icon, and basic release notes prepared in ./release directory."
+          echo "--- Copied Zapstore Config (${ZAPSTORE_YAML_FILENAME}) ---"
+          # Optionally cat the copied file for verification
+          # cat "${ZAPSTORE_YAML_FILENAME}"
           echo "--- Release Notes (${NOTES_FILENAME}) ---"
           cat "${NOTES_FILENAME}"
           echo "-------------------------------------"
