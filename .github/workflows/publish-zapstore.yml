@@ -251,7 +251,7 @@ jobs:
            if-no-files-found: warn # Don't fail if CHANGELOG.md is somehow missing
            retention-days: 7
 
-      - name: �� Clean up Keystore
+      - name: Clean up Keystore
         if: ${{ always() }} # Always run this step
         run: |
           echo "Removing keystore file..."
@@ -261,9 +261,8 @@ jobs:
   publish_zapstore:
     needs: release_and_build # Depends on the release and build job
     # Conditional Run:
-    # 1. Build job succeeded
-    # Approval handled by the environment protection rule.
-    if: success() # Simplified: Always run if the previous job succeeded
+    # Only run if semantic-release actually created a release in the previous job.
+    if: needs.release_and_build.outputs.released == 'true'
     runs-on: ubuntu-latest
     # Add environment for manual approval
 
