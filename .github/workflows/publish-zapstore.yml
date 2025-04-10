@@ -412,7 +412,6 @@ jobs:
            --daemon-mode \
            --overwrite-app \
            --overwrite-release \
-           -m zapstore.yaml \
            --icon "${ICON_FILENAME}" \
            -n "${NOTES_FILENAME}" \
            -a "${APK_FILENAME}" \
