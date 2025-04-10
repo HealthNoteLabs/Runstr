@@ -272,7 +272,6 @@ jobs:
       )
     runs-on: ubuntu-latest
     # Add environment for manual approval
-    environment: zapstore-publish
 
     steps:
       - name: Download APK artifact
