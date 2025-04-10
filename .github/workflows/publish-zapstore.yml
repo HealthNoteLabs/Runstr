@@ -262,14 +262,8 @@ jobs:
     needs: release_and_build # Depends on the release and build job
     # Conditional Run:
     # 1. Build job succeeded
-    # 2. Semantic Release created a new version/tag
     # Approval handled by the environment protection rule.
-    if: >
-      success() &&
-      (
-        (github.event_name == 'push' && needs.release_and_build.outputs.released == 'true') ||
-        github.event_name == 'workflow_dispatch'
-      )
+    if: success() # Simplified: Always run if the previous job succeeded
     runs-on: ubuntu-latest
     # Add environment for manual approval
 
