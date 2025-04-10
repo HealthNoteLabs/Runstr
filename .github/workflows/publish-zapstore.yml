@@ -12,6 +12,16 @@ on:
       - updates1-release-prep
   # Enable manual trigger for the Zapstore publish step confirmation
   workflow_dispatch:
+    inputs:
+      force_version:
+        description: 'Force specific version (leave empty to use semantic-release)'
+        required: false
+        default: ''
+      skip_semantic_release:
+        description: 'Skip semantic-release process and use forced version'
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   # ================= Release & Build Job =================
@@ -61,6 +71,7 @@ jobs:
       # This step determines the version, generates changelog, updates package.json, commits, and tags
       - name: Run Semantic Release
         id: semantic_release
+        if: ${{ github.event.inputs.skip_semantic_release != 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Use the default GitHub token
           # Add any other env vars needed by semantic-release plugins if necessary
@@ -102,6 +113,37 @@ jobs:
              echo "released=false" >> $GITHUB_OUTPUT
              echo "new_version=unknown" >> $GITHUB_OUTPUT # Set explicitly
           fi
+
+      # --- Manual Version Creation ---
+      - name: Create Manual Release Tag
+        id: manual_release
+        if: ${{ github.event.inputs.skip_semantic_release == 'true' && github.event.inputs.force_version != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FORCED_VERSION="${{ github.event.inputs.force_version }}"
+          echo "Using manually specified version: $FORCED_VERSION"
+          
+          # Update package.json version
+          npm version $FORCED_VERSION --no-git-tag-version
+          
+          # Create a simple CHANGELOG entry for manual version
+          echo "# Release v$FORCED_VERSION" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "Manual release created on $(date)" >> CHANGELOG.md
+          
+          # Commit the changes
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add package.json CHANGELOG.md
+          git commit -m "chore(release): $FORCED_VERSION [skip ci]"
+          
+          # Create and push the tag
+          git tag -a "v$FORCED_VERSION" -m "Release v$FORCED_VERSION"
+          git push --follow-tags
+          
+          echo "released=true" >> $GITHUB_OUTPUT
+          echo "new_version=$FORCED_VERSION" >> $GITHUB_OUTPUT
 
       # --- Read Package Version (Fallback/Info) ---
       # Read the version from package.json (might have been updated by semantic-release)
