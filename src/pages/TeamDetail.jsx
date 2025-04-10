@@ -1,8 +1,173 @@
 import { useState, useEffect, useRef, useContext } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import PropTypes from 'prop-types';
 import { useTeams } from '../contexts/TeamsContext';
 import { NostrContext } from '../contexts/NostrContext';
 import ResponsiveClubTabs from '../components/ResponsiveClubTabs';
+import { fetchEvents } from '../utils/nostrClient';
+
+// Create Announcement Button Component
+const CreateAnnouncementButton = ({ teamId, onAnnouncementCreated }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    title: '',
+    content: ''
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  
+  const { pinPost } = useTeams();
+  
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+  
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!formData.title.trim()) {
+      setError('Title is required');
+      return;
+    }
+    
+    if (!formData.content.trim()) {
+      setError('Content is required');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    setError('');
+    
+    try {
+      const result = await pinPost(teamId, {
+        title: formData.title.trim(),
+        content: formData.content.trim()
+      });
+      
+      if (result) {
+        // Reset form and close modal
+        setFormData({ title: '', content: '' });
+        setIsModalOpen(false);
+        
+        // Notify parent component of new announcement
+        if (onAnnouncementCreated) {
+          onAnnouncementCreated(result);
+        }
+      } else {
+        setError('Failed to create announcement. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error creating announcement:', err);
+      setError(err.message || 'An unexpected error occurred');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+  
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setError('');
+    setFormData({ title: '', content: '' });
+  };
+  
+  return (
+    <>
+      <button
+        onClick={() => setIsModalOpen(true)}
+        className="ml-2 px-3 py-1 bg-blue-600 text-white rounded-md text-sm flex items-center"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+        </svg>
+        Create Announcement
+      </button>
+      
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1a222e] rounded-lg max-w-lg w-full p-6 relative">
+            <button
+              onClick={closeModal}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            
+            <h2 className="text-xl font-semibold mb-4">Create Club Announcement</h2>
+            
+            {error && (
+              <div className="mb-4 p-3 bg-red-900/20 border border-red-800 rounded-lg">
+                <p className="text-red-400 text-sm">{error}</p>
+              </div>
+            )}
+            
+            <form onSubmit={handleSubmit}>
+              <div className="mb-4">
+                <label htmlFor="title" className="block text-sm font-medium mb-2">
+                  Title *
+                </label>
+                <input
+                  type="text"
+                  id="title"
+                  name="title"
+                  value={formData.title}
+                  onChange={handleChange}
+                  placeholder="Announcement Title"
+                  className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              
+              <div className="mb-6">
+                <label htmlFor="content" className="block text-sm font-medium mb-2">
+                  Content *
+                </label>
+                <textarea
+                  id="content"
+                  name="content"
+                  value={formData.content}
+                  onChange={handleChange}
+                  placeholder="Announcement content..."
+                  rows={5}
+                  className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              
+              <div className="flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="px-4 py-2 bg-gray-700 text-white rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Creating...' : 'Create Announcement'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+// Add PropTypes
+CreateAnnouncementButton.propTypes = {
+  teamId: PropTypes.string.isRequired,
+  onAnnouncementCreated: PropTypes.func
+};
 
 export const TeamDetail = () => {
   const { teamId } = useParams();
@@ -21,7 +186,8 @@ export const TeamDetail = () => {
     leaveTeam,
     sendMessage,
     joinChallenge,
-    clearError
+    clearError,
+    pinPost
   } = useTeams();
   
   const { publicKey } = useContext(NostrContext);
@@ -33,6 +199,57 @@ export const TeamDetail = () => {
   const [isMember, setIsMember] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const chatEndRef = useRef(null);
+  
+  // Add state for user profiles
+  const [userProfiles, setUserProfiles] = useState(new Map());
+  
+  // Fetch user profile if it's a Nostr pubkey
+  const fetchUserProfile = async (userId) => {
+    // Skip if already fetched or not a valid pubkey format
+    if (userProfiles.has(userId) || !userId || !userId.startsWith('npub')) {
+      return;
+    }
+    
+    try {
+      console.log(`Fetching profile for user: ${userId}`);
+      
+      const profileEvents = await fetchEvents({
+        kinds: [0],
+        authors: [userId],
+        limit: 1
+      });
+      
+      if (profileEvents && profileEvents.size > 0) {
+        const profileEvent = Array.from(profileEvents)[0];
+        let profile;
+        
+        try {
+          profile = JSON.parse(profileEvent.content);
+          console.log('Profile found:', profile);
+          
+          // Add to profiles cache
+          setUserProfiles(prev => new Map(prev).set(userId, profile));
+        } catch (err) {
+          console.error('Error parsing profile:', err);
+        }
+      } else {
+        console.log('No profile found for user:', userId);
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    }
+  };
+  
+  // Load profiles for all team members when team loads
+  useEffect(() => {
+    if (teamMembers && teamMembers.length > 0) {
+      teamMembers.forEach(member => {
+        if (member.userId && member.userId.startsWith('npub')) {
+          fetchUserProfile(member.userId);
+        }
+      });
+    }
+  }, [teamMembers]);
   
   // Load team data when component mounts or teamId changes
   useEffect(() => {
@@ -105,8 +322,22 @@ export const TeamDetail = () => {
     
     setIsJoining(true);
     try {
-      await sendMessage(teamId, messageText.trim());
-      setMessageText('');
+      console.log('Sending message:', messageText);
+      const result = await sendMessage(teamId, messageText.trim());
+      
+      if (result) {
+        console.log('Message sent successfully:', result);
+        setMessageText('');
+        
+        // Force scroll to bottom on new message
+        setTimeout(() => {
+          if (chatEndRef.current) {
+            chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+          }
+        }, 100);
+      } else {
+        console.error('Failed to send message - no result returned');
+      }
     } catch (err) {
       console.error('Error sending message:', err);
     } finally {
@@ -126,12 +357,27 @@ export const TeamDetail = () => {
     });
   };
   
-  // Get display name for a user ID (simplified for demo)
+  // Get display name for a user ID
   const getUserName = (userId) => {
     if (!userId) return 'Unknown User';
     
-    // In a real app, this would fetch user profiles from a proper user service
-    return `User ${userId.substring(0, 6)}`;
+    // Check if we have a profile for this user
+    if (userProfiles.has(userId)) {
+      const profile = userProfiles.get(userId);
+      return profile.display_name || profile.name || `User ${userId.substring(0, 6)}...`;
+    }
+    
+    // If this looks like a Nostr pubkey, try to fetch the profile
+    if (userId.startsWith('npub') && userId.length > 30) {
+      // Schedule profile fetch (don't await here to avoid blocking UI)
+      setTimeout(() => fetchUserProfile(userId), 0);
+      
+      // Return a shortened version until profile loads
+      return `User ${userId.substring(0, 6)}...`;
+    }
+    
+    // For non-Nostr users or while loading
+    return `User ${userId.substring(0, 6)}...`;
   };
   
   // Handle challenge participation
@@ -146,7 +392,6 @@ export const TeamDetail = () => {
   if (loading) {
     return (
       <div className="px-4 pt-6 text-center">
-        <div className="loading-spinner mx-auto"></div>
         <p className="mt-4 text-gray-400">Loading club details...</p>
       </div>
     );
@@ -277,9 +522,10 @@ export const TeamDetail = () => {
             )}
             
             {/* Pinned Posts */}
-            <h3 className="text-lg font-semibold mb-3 border-b border-gray-700 pb-2">
-              Pinned Announcements
-            </h3>
+            <div className="flex items-center justify-between mb-3 border-b border-gray-700 pb-2">
+              <h3 className="text-lg font-semibold">Pinned Announcements</h3>
+              {isAdmin && <CreateAnnouncementButton teamId={teamId} onAnnouncementCreated={() => selectTeam(teamId)} />}
+            </div>
             
             {pinnedPosts && pinnedPosts.length > 0 ? (
               <div className="space-y-4 mb-6">
@@ -350,7 +596,7 @@ export const TeamDetail = () => {
                         </span>
                         <span className="text-xs text-gray-500 ml-2">{formatDate(message.timestamp)}</span>
                       </div>
-                      <p className="text-gray-300">{message.content}</p>
+                      <p className="text-gray-300 break-words">{message.content}</p>
                     </div>
                   ))}
                   <div ref={chatEndRef} />

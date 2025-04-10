@@ -14,9 +14,9 @@ import './App.css';
 // Lazy load components
 const AppRoutes = lazy(() => import('./AppRoutes').then(module => ({ default: module.AppRoutes })));
 
-// Loading fallback
+// Loading fallback - removed spinner
 const LoadingFallback = () => (
-  <div className="loading-spinner"></div>
+  <div></div>
 );
 
 const App = () => {

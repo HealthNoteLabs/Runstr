@@ -16,9 +16,9 @@ const Events = lazy(() => import('./pages/Events').then(module => ({ default: mo
 const Profile = lazy(() => import('./pages/Profile').then(module => ({ default: module.Profile })));
 const About = lazy(() => import('./pages/About').then(module => ({ default: module.About })));
 
-// Loading fallback component
+// Loading fallback component - removed spinner
 const LoadingComponent = () => (
-  <div className="loading-spinner"></div>
+  <div></div>
 );
 
 export const AppRoutes = () => {

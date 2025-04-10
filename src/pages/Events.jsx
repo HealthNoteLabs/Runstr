@@ -555,7 +555,7 @@ export const Events = () => {
       </div>
       
       {loading ? (
-        <div className="loading-spinner">Loading competitions data...</div>
+        <div className="text-center py-4">Loading competitions data...</div>
       ) : (
         <>
           {activeTab === 'streakLeaderboard' && renderLeaderboardTab()}

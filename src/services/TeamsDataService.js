@@ -156,9 +156,12 @@ class TeamsDataService {
         id: teamData.id || Date.now() + '-' + Math.random().toString(36).substr(2, 9),
         createdAt: teamData.createdAt || new Date().toISOString(),
         members: teamData.members || [],
+        memberCount: 0, // Initialize member count
         ...teamData,
         hasNostrGroup: false // Add Nostr group status field
       };
+      
+      console.log('Creating team with ID:', newTeam.id);
       
       // Add to teams array
       const updatedTeams = [...teams, newTeam];
@@ -259,13 +262,28 @@ class TeamsDataService {
    */
   getUserTeams(userId) {
     try {
-      const memberships = this.getMemberships();
-      const userMemberships = memberships.filter(m => m.userId === userId);
-      const teams = this.getAllTeams();
+      if (!userId) {
+        console.warn('getUserTeams called with null/undefined userId');
+        return [];
+      }
       
-      return teams.filter(team => 
+      console.log(`Getting teams for user: ${userId}`);
+      
+      const memberships = this.getMemberships();
+      console.log('All memberships:', memberships);
+      
+      const userMemberships = memberships.filter(m => m.userId === userId);
+      console.log('User memberships:', userMemberships);
+      
+      const teams = this.getAllTeams();
+      console.log('All teams:', teams);
+      
+      const userTeams = teams.filter(team => 
         userMemberships.some(membership => membership.teamId === team.id)
       );
+      
+      console.log('User teams:', userTeams);
+      return userTeams;
     } catch (error) {
       console.error('Error getting user teams:', error);
       return [];
@@ -302,10 +320,20 @@ class TeamsDataService {
    */
   async addMember(teamId, userId, role = 'member') {
     try {
+      console.log(`Adding member to team: ${teamId}, userId: ${userId}, role: ${role}`);
+      
       const memberships = this.getMemberships();
       
       // Check if already a member
       if (memberships.some(m => m.teamId === teamId && m.userId === userId)) {
+        console.log('User is already a member of this team');
+        return true; // Return true as they're already a member
+      }
+      
+      // Verify team exists
+      const team = this.getTeamById(teamId);
+      if (!team) {
+        console.error('Cannot add member to non-existent team:', teamId);
         return false;
       }
       
@@ -322,12 +350,9 @@ class TeamsDataService {
       localStorage.setItem(this.membershipStorageKey, JSON.stringify(updatedMemberships));
       
       // Update team members count
-      const team = this.getTeamById(teamId);
-      if (team) {
-        this.updateTeam(teamId, { 
-          memberCount: (team.memberCount || 0) + 1
-        });
-      }
+      this.updateTeam(teamId, { 
+        memberCount: (team.memberCount || 0) + 1
+      });
       
       // If Nostr integration is enabled and the team has a Nostr group, add user to the group
       if (this.nostrEnabled && this.isNip29Initialized && team && team.hasNostrGroup) {
@@ -348,6 +373,16 @@ class TeamsDataService {
       // Notify listeners
       this.notifyListeners('memberships', updatedMemberships);
       
+      // Verify membership was added successfully
+      const verifyMemberships = this.getMemberships();
+      const membershipVerified = verifyMemberships.some(m => m.teamId === teamId && m.userId === userId);
+      
+      if (!membershipVerified) {
+        console.error('Membership verification failed after adding member');
+        return false;
+      }
+      
+      console.log(`Successfully added member to team: ${teamId}, userId: ${userId}`);
       return true;
     } catch (error) {
       console.error('Error adding team member:', error);
@@ -416,8 +451,21 @@ class TeamsDataService {
    */
   async addTeamMessage(teamId, userId, content) {
     try {
-      const messages = this.getTeamMessages(teamId);
+      console.log(`Adding message to team: ${teamId}, from user: ${userId}`);
+      console.log(`Message content: ${content}`);
       
+      // Verify team exists
+      const team = this.getTeamById(teamId);
+      if (!team) {
+        console.error('Cannot add message to non-existent team:', teamId);
+        return null;
+      }
+      
+      // Get current messages for the team
+      const messages = this.getTeamMessages(teamId);
+      console.log(`Current message count for team: ${messages.length}`);
+      
+      // Create new message
       const newMessage = {
         id: Date.now() + '-' + Math.random().toString(36).substr(2, 9),
         teamId,
@@ -426,14 +474,24 @@ class TeamsDataService {
         timestamp: new Date().toISOString()
       };
       
+      console.log('Created new message with ID:', newMessage.id);
+      
+      // Get all messages from localStorage
       const allMessages = localStorage.getItem(this.teamMessagesKey);
       const allMessagesParsed = allMessages ? JSON.parse(allMessages) : [];
       
-      const updatedMessages = [...allMessagesParsed.filter(m => m.teamId !== teamId), ...messages, newMessage];
+      // Remove messages for this team and add all messages (including the new one)
+      const updatedMessages = [
+        ...allMessagesParsed.filter(m => m.teamId !== teamId), 
+        ...messages, 
+        newMessage
+      ];
+      
+      // Save to localStorage
       localStorage.setItem(this.teamMessagesKey, JSON.stringify(updatedMessages));
+      console.log(`Updated messages count: ${updatedMessages.length}`);
       
       // If Nostr integration is enabled and the team has a Nostr group, send message to the group
-      const team = this.getTeamById(teamId);
       if (this.nostrEnabled && this.isNip29Initialized && team && team.hasNostrGroup) {
         try {
           // Get user's Nostr pubkey
@@ -451,6 +509,16 @@ class TeamsDataService {
       
       // Notify listeners
       this.notifyListeners('messages', updatedMessages);
+      
+      // Verify message was added
+      const verifyMessages = this.getTeamMessages(teamId);
+      const messageVerified = verifyMessages.some(m => m.id === newMessage.id);
+      
+      if (!messageVerified) {
+        console.error('Message verification failed - message not found after saving');
+      } else {
+        console.log('Message verified and saved successfully');
+      }
       
       return newMessage;
     } catch (error) {

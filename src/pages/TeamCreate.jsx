@@ -2,6 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TeamsContext } from '../contexts/TeamsContext';
 import { NostrContext } from '../contexts/NostrContext';
+import { getUserPublicKey } from '../utils/nostrClient';
 
 export const TeamCreate = () => {
   const navigate = useNavigate();
@@ -17,6 +18,17 @@ export const TeamCreate = () => {
   
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasNostrAuth, setHasNostrAuth] = useState(false);
+  
+  // Check if user has Nostr auth
+  useEffect(() => {
+    const checkNostrAuth = async () => {
+      const pubkey = await getUserPublicKey();
+      setHasNostrAuth(!!pubkey);
+    };
+    
+    checkNostrAuth();
+  }, [publicKey]);
   
   // Redirect to teams page if not logged in
   useEffect(() => {
@@ -32,6 +44,21 @@ export const TeamCreate = () => {
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }));
+  };
+  
+  // Handle Nostr authentication request
+  const handleNostrAuth = async () => {
+    try {
+      const success = await requestNostrPermissions();
+      if (success) {
+        setHasNostrAuth(true);
+      } else {
+        setFormError('Failed to get Nostr permissions. Please try again or disable Nostr integration.');
+      }
+    } catch (error) {
+      console.error('Error requesting Nostr permissions:', error);
+      setFormError('Error requesting Nostr permissions');
+    }
   };
   
   // Handle form submission
@@ -51,13 +78,10 @@ export const TeamCreate = () => {
       }
       
       // Check if Nostr permissions are needed but not granted
-      if (formData.enableNostr && !publicKey) {
-        const hasPermission = await requestNostrPermissions();
-        if (!hasPermission) {
-          setFormError('Nostr permissions are required to create a club with Nostr integration');
-          setIsSubmitting(false);
-          return;
-        }
+      if (formData.enableNostr && !hasNostrAuth) {
+        setFormError('Nostr permissions are required to create a club with Nostr integration. Please click "Connect to Nostr" first or disable Nostr integration.');
+        setIsSubmitting(false);
+        return;
       }
       
       // Create the team
@@ -91,7 +115,6 @@ export const TeamCreate = () => {
         <div className="bg-[#1a222e] rounded-lg p-6">
           <p className="text-red-400 mb-4">You must be logged in to create a club</p>
           <p className="text-gray-400 mb-6">Redirecting you to the teams page...</p>
-          <div className="loading-spinner mx-auto"></div>
         </div>
       </div>
     );
@@ -167,23 +190,52 @@ export const TeamCreate = () => {
         
         {nostrIntegrationEnabled && (
           <div className="mb-6 p-4 bg-purple-900/20 border border-purple-800 rounded-lg">
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                name="enableNostr"
-                checked={formData.enableNostr}
-                onChange={handleChange}
-                className="mr-2 h-4 w-4"
-              />
-              <span>
-                Enable Nostr integration for this club
-              </span>
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  name="enableNostr"
+                  checked={formData.enableNostr}
+                  onChange={handleChange}
+                  className="mr-2 h-4 w-4"
+                />
+                <span>
+                  Enable Nostr integration for this club
+                </span>
+              </label>
+              
+              {formData.enableNostr && !hasNostrAuth && (
+                <button
+                  type="button"
+                  onClick={handleNostrAuth}
+                  className="px-3 py-1 bg-purple-700 text-white rounded-lg text-sm"
+                >
+                  Connect to Nostr
+                </button>
+              )}
+            </div>
+            
             <p className="mt-2 text-xs text-gray-400">
-              This will create a corresponding NIP29 group on the Nostr network,
+              This will create a corresponding Nostr group on the Nostr network,
               allowing interoperability with other Nostr clients.
-              {!publicKey && " Requires Nostr authentication."}
             </p>
+            
+            {formData.enableNostr && (
+              <div className="mt-3 text-xs">
+                <p className="text-white">
+                  Nostr Status: {hasNostrAuth ? (
+                    <span className="text-green-400">Connected ✓</span>
+                  ) : (
+                    <span className="text-red-400">Not Connected ✗</span>
+                  )}
+                </p>
+                {!hasNostrAuth && (
+                  <p className="text-yellow-400 mt-1">
+                    You must connect to Nostr before creating a club with Nostr integration.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
         
@@ -197,7 +249,7 @@ export const TeamCreate = () => {
           </button>
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || (formData.enableNostr && !hasNostrAuth)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50"
           >
             {isSubmitting ? 'Creating...' : 'Create Club'}

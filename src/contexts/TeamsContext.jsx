@@ -67,7 +67,8 @@ export const TeamsProvider = ({ children }) => {
   const fetchMyTeams = useCallback(() => {
     if (currentUser) {
       try {
-        const userTeams = teamsDataService.getTeamsByUserId(currentUser);
+        const userTeams = teamsDataService.getUserTeams(currentUser);
+        console.log('Fetched user teams:', userTeams);
         setMyTeams(userTeams);
       } catch (err) {
         console.error('Error fetching user teams:', err);
@@ -122,24 +123,32 @@ export const TeamsProvider = ({ children }) => {
   const selectTeam = useCallback((teamId) => {
     try {
       setLoading(true);
+      console.log(`Selecting team: ${teamId}`);
+      
       const team = teamsDataService.getTeamById(teamId);
       
       if (team) {
+        console.log('Team found:', team);
         setSelectedTeam(team);
         
         // Load related data
         const messages = teamsDataService.getTeamMessages(teamId);
+        console.log(`Loaded ${messages.length} messages for team`);
         setTeamMessages(messages);
         
         const members = teamsDataService.getMemberships(teamId);
+        console.log(`Loaded ${members.length} members for team`);
         setTeamMembers(members);
         
         const challenges = teamsDataService.getTeamChallenges(teamId);
+        console.log(`Loaded ${challenges.length} challenges for team`);
         setTeamChallenges(challenges);
         
         const pinned = teamsDataService.getPinnedPosts(teamId);
+        console.log(`Loaded ${pinned.length} pinned posts for team`);
         setPinnedPosts(pinned);
       } else {
+        console.error('Team not found with ID:', teamId);
         setError('Team not found');
       }
       
@@ -164,14 +173,27 @@ export const TeamsProvider = ({ children }) => {
         throw new Error('Nostr authentication is required to create a club with Nostr integration');
       }
       
+      console.log('Creating team with data:', { ...teamData, creatorId: currentUser });
+      
       const newTeam = await teamsDataService.createTeam({
         ...teamData,
         creatorId: currentUser,
       });
       
       if (newTeam) {
+        console.log('Team created successfully:', newTeam);
+        
         // Add creator as admin
-        await teamsDataService.addMember(newTeam.id, currentUser, 'admin');
+        const memberAdded = await teamsDataService.addMember(newTeam.id, currentUser, 'admin');
+        console.log('Creator added as admin:', memberAdded);
+        
+        if (!memberAdded) {
+          console.error('Failed to add creator as admin');
+        }
+        
+        // Explicitly reload my teams to ensure UI updates
+        fetchMyTeams();
+        
         return newTeam;
       }
       
@@ -181,7 +203,7 @@ export const TeamsProvider = ({ children }) => {
       setError(error.message || 'Failed to create team');
       return null;
     }
-  }, [currentUser, nostrIntegrationEnabled]);
+  }, [currentUser, nostrIntegrationEnabled, fetchMyTeams]);
 
   // Join a team
   const joinTeam = useCallback(async (teamId) => {

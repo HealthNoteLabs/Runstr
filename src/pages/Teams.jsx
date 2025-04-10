@@ -119,7 +119,6 @@ export const Teams = () => {
             </div>
           ) : loading ? (
             <div className="text-center py-8">
-              <div className="loading-spinner mx-auto"></div>
               <p className="mt-4 text-gray-400">Loading your clubs...</p>
             </div>
           ) : myTeams.length > 0 ? (
@@ -157,7 +156,6 @@ export const Teams = () => {
           
           {loading ? (
             <div className="text-center py-8">
-              <div className="loading-spinner mx-auto"></div>
               <p className="mt-4 text-gray-400">Loading clubs...</p>
             </div>
           ) : filteredTeams.length > 0 ? (

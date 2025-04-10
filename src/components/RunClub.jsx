@@ -101,7 +101,6 @@ const RunClub = () => {
       <h2>RUNSTR FEED</h2>
       {loading && posts.length === 0 ? (
         <div className="loading-indicator">
-          <div className="loading-spinner"></div>
           <p>Loading posts...</p>
         </div>
       ) : error ? (

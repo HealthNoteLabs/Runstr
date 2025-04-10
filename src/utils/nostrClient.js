@@ -123,32 +123,48 @@ export const getSigningKey = async () => {
 
 /**
  * Get the current user's public key
- * @returns {Promise<string>} Public key
+ * @returns {Promise<string>} Public key or null if not available
  */
 export const getUserPublicKey = async () => {
-  // First, check if we have cached key
-  if (cachedKeyPair && cachedKeyPair.publicKey) {
-    return cachedKeyPair.publicKey;
-  }
-  
-  // Try to get from localStorage
-  const npub = localStorage.getItem('currentNpub');
-  if (npub) {
-    try {
-      // For real apps, you'd decode the npub to hex
-      // For this demo, we're just using the npub as is
+  try {
+    // First, check if we have cached key
+    if (cachedKeyPair && cachedKeyPair.publicKey) {
+      return cachedKeyPair.publicKey;
+    }
+    
+    // Try to get from localStorage
+    const npub = localStorage.getItem('currentNpub');
+    if (npub) {
       const keyPair = {
         privateKey: generateSecretKey(), // Generate a new one for demo
         publicKey: npub
       };
       cachedKeyPair = keyPair;
       return npub;
-    } catch (error) {
-      console.error('Error getting user public key:', error);
     }
+    
+    // Try to get from window.nostr (extension) if available
+    if (typeof window !== 'undefined' && window.nostr) {
+      try {
+        const pubkey = await window.nostr.getPublicKey();
+        if (pubkey) {
+          localStorage.setItem('currentNpub', pubkey);
+          cachedKeyPair = {
+            publicKey: pubkey
+          };
+          return pubkey;
+        }
+      } catch (err) {
+        console.error('Error getting public key from extension:', err);
+      }
+    }
+    
+    console.warn('No Nostr public key found');
+    return null;
+  } catch (error) {
+    console.error('Error in getUserPublicKey:', error);
+    return null;
   }
-  
-  return null;
 };
 
 /**

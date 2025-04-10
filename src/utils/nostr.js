@@ -127,116 +127,69 @@ export const fetchEvents = async (filter) => {
  */
 export const fetchRunningPosts = async (limit = 7, since = undefined) => {
   try {
-    // If no custom "since" provided, use 30 days (not 90 days)
+    // If no custom "since" provided, use 30 days
     const defaultSince = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
     const sinceTimestamp = since ? Math.floor(since / 1000) : defaultSince;
     
-    console.log(`Fetching running posts from ${new Date(sinceTimestamp * 1000).toLocaleString()}`);
+    console.log(`Fetching posts with #runstr and #running hashtags from ${new Date(sinceTimestamp * 1000).toLocaleString()}`);
     
-    // Standardized hashtag list across the app - ensure "runstr" has high priority
-    const runningTags = ["runstr", "running", "run", "runner", "5k", "10k", "marathon", "jog"];
+    // Simplified approach: Only fetch posts with the two specific hashtags
+    const events = await ndk.fetchEvents({
+      kinds: [1], // Regular posts
+      limit: limit,
+      "#t": ["runstr", "running"],  // Only these two specific hashtags
+      since: sinceTimestamp
+    });
     
-    // Try fetching posts with multiple approaches in parallel for better performance
-    const promises = [
-      // Approach 1: Direct hashtag filtering - fastest but might miss some
-      ndk.fetchEvents({
-        kinds: [1], // Regular posts
-        limit: limit,
-        "#t": runningTags,
-        since: sinceTimestamp
-      }),
-      
-      // Approach 2: Fetch posts with more specific "runstr" tag - highest relevance
+    // Convert to array and sort by created_at (newest first)
+    const eventArray = Array.from(events)
+      .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
+      .slice(0, limit);
+    
+    console.log(`Found ${eventArray.length} posts with #runstr and #running hashtags`);
+    
+    if (eventArray.length > 0) {
+      return eventArray;
+    }
+    
+    // Fallback if no posts found with both tags
+    console.log("No posts found with both tags, trying individual tag queries...");
+    
+    // Try fetching with each tag separately and combine results
+    const [runstrEvents, runningEvents] = await Promise.all([
       ndk.fetchEvents({
         kinds: [1],
         limit: limit,
         "#t": ["runstr"],
         since: sinceTimestamp
       }),
-      
-      // Approach 3: Use content filtering with a higher limit - slower but more comprehensive
       ndk.fetchEvents({
         kinds: [1],
-        limit: limit * 3, // Get more to filter client-side
+        limit: limit,
+        "#t": ["running"],
         since: sinceTimestamp
-      }).then(events => {
-        const allEvents = Array.from(events);
-        // Filter for running content client-side
-        return allEvents.filter(event => {
-          const content = event.content.toLowerCase();
-          return runningTags.some(keyword => 
-            content.includes(keyword) || 
-            content.includes(`#${keyword}`) || 
-            event.tags.some(tag => tag[0] === 't' && runningTags.includes(tag[1].toLowerCase()))
-          );
-        }).slice(0, limit);
       })
-    ];
+    ]);
     
-    // Wait for all approaches to complete and combine results
-    const results = await Promise.all(promises);
-    
-    // Combine all events, removing duplicates
+    // Combine and deduplicate events
     const uniqueEvents = new Map();
-    let totalFound = 0;
     
-    results.forEach(eventSet => {
-      if (!eventSet) return;
-      
-      const events = Array.isArray(eventSet) ? eventSet : Array.from(eventSet);
-      totalFound += events.length;
-      
-      events.forEach(event => {
-        if (event && event.id && !uniqueEvents.has(event.id)) {
-          uniqueEvents.set(event.id, event);
-        }
-      });
+    [...Array.from(runstrEvents), ...Array.from(runningEvents)].forEach(event => {
+      if (event && event.id && !uniqueEvents.has(event.id)) {
+        uniqueEvents.set(event.id, event);
+      }
     });
     
-    console.log(`Found ${totalFound} total posts across all methods, ${uniqueEvents.size} unique`);
-    
-    // Convert to array and sort by created_at (newest first)
-    const eventArray = Array.from(uniqueEvents.values())
+    // Sort by created_at and limit
+    const fallbackArray = Array.from(uniqueEvents.values())
       .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
       .slice(0, limit);
     
-    // If we got results, return them
-    if (eventArray.length > 0) {
-      return eventArray;
-    }
-    
-    // No results found, try one last fallback with very basic filter
-    console.log("No results from optimized approaches, using emergency fallback...");
-    const simpleFilter = {
-      kinds: [1],
-      limit: limit || 10
-    };
-    
-    const events = await ndk.fetchEvents(simpleFilter);
-    const fallbackArray = Array.from(events);
-    console.log(`Emergency fallback retrieved ${fallbackArray.length} general posts`);
-    
+    console.log(`Found ${fallbackArray.length} posts with individual hashtags`);
     return fallbackArray;
   } catch (error) {
-    console.error('Error fetching running posts:', error);
-    
-    // Try a more general filter as fallback if all else fails
-    console.log('Attempting fallback with simplified filter...');
-    try {
-      const simpleFilter = {
-        kinds: [1],
-        limit: limit || 10
-      };
-      
-      const events = await ndk.fetchEvents(simpleFilter);
-      const eventArray = Array.from(events);
-      console.log(`Emergency fallback retrieved ${eventArray.length} general posts`);
-      
-      return eventArray;
-    } catch (err) {
-      console.error('Fallback also failed:', err);
-      return [];
-    }
+    console.error('Error fetching hashtag posts:', error);
+    return [];
   }
 };
 

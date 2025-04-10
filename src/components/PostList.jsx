@@ -17,18 +17,6 @@ export const PostList = ({
 }) => {
   return (
     <div className="posts-container">
-      {/* Diagnostic counter */}
-      <div className="diagnostic-counter" style={{ 
-        background: '#111',
-        color: '#0f0',
-        padding: '8px',
-        marginBottom: '10px',
-        borderRadius: '4px',
-        fontFamily: 'monospace'
-      }}>
-        Rendering {posts.length} posts
-      </div>
-      
       {posts.map((post) => (
         <Post
           key={post.id}
