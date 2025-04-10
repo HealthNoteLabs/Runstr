@@ -251,7 +251,7 @@ jobs:
            if-no-files-found: warn # Don't fail if CHANGELOG.md is somehow missing
            retention-days: 7
 
-      - name: �� Clean up Keystore
+      - name: Clean up Keystore
         if: ${{ always() }} # Always run this step
         run: |
           echo "Removing keystore file..."
@@ -261,9 +261,8 @@ jobs:
   publish_zapstore:
     needs: release_and_build # Depends on the release and build job
     # Conditional Run:
-    # 1. Build job succeeded
-    # Approval handled by the environment protection rule.
-    if: success() # Simplified: Always run if the previous job succeeded
+    # Only run if semantic-release actually created a release in the previous job.
+    if: needs.release_and_build.outputs.released == 'true'
     runs-on: ubuntu-latest
     # Add environment for manual approval
 
@@ -274,13 +273,6 @@ jobs:
           # Use the consistent build_version output from the previous job
           name: runstr-apk-${{ needs.release_and_build.outputs.build_version }}
           path: ./release # Download into a release directory
-
-      - name: Download CHANGELOG artifact
-        uses: actions/download-artifact@v4
-        with:
-          # Use the consistent build_version output from the previous job
-          name: changelog-${{ needs.release_and_build.outputs.build_version }}
-          path: ./release # Download into the same directory
 
       - name: List downloaded files
         run: ls -lR ./release
@@ -318,12 +310,11 @@ jobs:
           chmod +x "$APKSIGNER_PATH"
 
       # --- Prepare Zapstore Metadata ---
-      - name: Create zapstore.yaml and Extract Release Notes
+      - name: Create zapstore.yaml and Basic Release Notes
         run: |
           VERSION=${{ needs.release_and_build.outputs.build_version }}
           # Use the raw GitHub URL for the logo in the main branch
           RUNSTR_ICON_URL="https://raw.githubusercontent.com/TheWildHustle/Nostr-Run-Club/main/runstr-logo.png"
-          # APK_NAME="runstr-${VERSION}.apk" # We will find the actual name instead
           ICON_FILENAME="runstr_logo.png" # Consistent icon filename
           NOTES_FILENAME="release_notes.md"
 
@@ -355,33 +346,16 @@ jobs:
                   type: "image/png"
           EOF
 
-          # Extract release notes from CHANGELOG.md for the current version
-          echo "Extracting release notes for v$VERSION from CHANGELOG.md..."
-          if [ -f "CHANGELOG.md" ]; then
-             # Use awk to extract notes between the current version header and the previous one
-             awk -v ver="## \\[${VERSION}\\]" -v started=0 '
-               $0 ~ ver { started=1; next }
-               /^## / { if (started) exit }
-               started { print }
-             ' CHANGELOG.md > "$NOTES_FILENAME"
-
-             # Check if notes were extracted, provide fallback if empty
-             if [ ! -s "$NOTES_FILENAME" ]; then
-                echo "Warning: Could not extract specific notes for v$VERSION. Using generic message."
-                echo "# Release v$VERSION" > "$NOTES_FILENAME"
-                echo "See CHANGELOG.md for details." >> "$NOTES_FILENAME"
-             else
-                echo "✅ Extracted notes for v$VERSION."
-             fi
-          else
-             echo "Warning: CHANGELOG.md not found. Using generic message."
-             echo "# Release v$VERSION" > "$NOTES_FILENAME"
-             echo "Manual publish via GitHub Actions." >> "$NOTES_FILENAME"
-          fi
+          # Create BASIC release notes (REPLACED EXTRACTION LOGIC)
+          echo "Creating basic release notes..."
+          echo "# Release v$VERSION" > "$NOTES_FILENAME"
+          echo "See repository CHANGELOG.md for full details." >> "$NOTES_FILENAME"
+          echo "✅ Basic notes created for v$VERSION."
 
           # Copy the local logo file into the release directory
           echo "Copying local runstr-logo.png to ./release/$ICON_FILENAME"
-          cp "$GITHUB_WORKSPACE/runstr-logo.png" "./$ICON_FILENAME"
+          # Ensure the source path is correct relative to GITHUB_WORKSPACE
+          cp "$GITHUB_WORKSPACE/runstr-logo.png" "./$ICON_FILENAME" 
           if [ ! -f "./$ICON_FILENAME" ]; then
             echo "Error: Failed to copy runstr-logo.png to release directory."
             exit 1
@@ -392,7 +366,7 @@ jobs:
           echo "ICON_FILENAME=$ICON_FILENAME" >> $GITHUB_ENV
           echo "NOTES_FILENAME=$NOTES_FILENAME" >> $GITHUB_ENV
 
-          echo "✅ Metadata, icon, and release notes prepared in ./release directory."
+          echo "✅ Metadata, icon, and basic release notes prepared in ./release directory."
           echo "--- Release Notes (${NOTES_FILENAME}) ---"
           cat "${NOTES_FILENAME}"
           echo "-------------------------------------"
