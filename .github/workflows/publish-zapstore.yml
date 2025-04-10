@@ -432,54 +432,60 @@ jobs:
       
       # --- Clean APK Metadata ---
       - name: Clean APK Metadata
-        env:
-          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           cd ./release
           
-          # Create a temp directory for APK extraction
-          mkdir -p temp_apk
+          echo "Creating backup of original APK..."
+          cp "${APK_FILENAME}" "original_${APK_FILENAME}"
           
-          echo "Extracting APK to clean metadata..."
-          # Extract the APK using apktool
-          apktool d -f -o temp_apk "${APK_FILENAME}"
+          echo "Creating temporary directory..."
+          mkdir -p temp_meta
           
-          # Remove the problematic metadata file
-          rm -f temp_apk/apktool.yml
+          echo "Extracting problematic metadata files from APK..."
+          unzip -q "${APK_FILENAME}" "META-INF/*.yml" -d temp_meta 2>/dev/null || true
+          unzip -q "${APK_FILENAME}" "*.yml" -d temp_meta 2>/dev/null || true
+          unzip -q "${APK_FILENAME}" "apktool.yml" -d temp_meta 2>/dev/null || true
           
-          # Create a clean apktool.yml file
-          echo "version: 2.0.0" > temp_apk/apktool.yml
-          echo "apkFileName: ${APK_FILENAME}" >> temp_apk/apktool.yml
+          # Check for the problematic tag in any extracted files
+          echo "Searching for problematic metadata tags..."
+          FOUND_PROBLEMATIC=false
+          if grep -q "!!brut.androlib.meta.MetaInfo" temp_meta/* 2>/dev/null; then
+            echo "⚠️ Found problematic metadata tag. Will create cleaned APK."
+            FOUND_PROBLEMATIC=true
+          else
+            echo "No problematic metadata found in extracted files."
+          fi
           
-          # Build a clean APK
-          CLEAN_APK="clean_${APK_FILENAME}"
-          echo "Rebuilding clean APK..."
-          apktool b temp_apk -o "${CLEAN_APK}"
-          
-          # Create temporary keystore from base64
-          echo "Setting up keystore for signing..."
-          TEMP_KEYSTORE="./temp_keystore.jks"
-          echo "$KEYSTORE_BASE64" | base64 --decode > "$TEMP_KEYSTORE"
-          
-          # Sign the rebuilt APK
-          echo "Signing rebuilt APK..."
-          "$APKSIGNER_PATH" sign --ks "$TEMP_KEYSTORE" \
-            --ks-pass "pass:$SIGNING_STORE_PASSWORD" \
-            --ks-key-alias "$SIGNING_KEY_ALIAS" \
-            --key-pass "pass:$SIGNING_KEY_PASSWORD" \
-            "${CLEAN_APK}"
-          
-          # Replace the original APK with the clean one
-          mv "${CLEAN_APK}" "${APK_FILENAME}"
+          if [ "$FOUND_PROBLEMATIC" = true ]; then
+            echo "Creating cleaned APK..."
+            # Create a new zip file without the problematic files
+            
+            # Create a temporary directory to work with the APK contents
+            mkdir -p temp_apk_contents
+            
+            # Extract the entire APK
+            unzip -q "${APK_FILENAME}" -d temp_apk_contents
+            
+            # Remove any problematic YML files
+            find temp_apk_contents -name "*.yml" -type f -delete
+            
+            # Create a new APK without these files
+            CLEAN_APK="clean_${APK_FILENAME}"
+            cd temp_apk_contents
+            zip -r -q "../${CLEAN_APK}" ./*
+            cd ..
+            
+            # Replace the original APK with the clean one
+            mv "${CLEAN_APK}" "${APK_FILENAME}"
+            echo "✅ Created cleaned APK without problematic metadata"
+          else
+            echo "✅ No cleaning needed, APK appears to be fine"
+          fi
           
           # Clean up
-          rm -f "$TEMP_KEYSTORE"
-          rm -rf temp_apk
+          rm -rf temp_meta temp_apk_contents
           
-          echo "✅ APK cleaned and repacked successfully"
+          echo "✅ APK metadata cleaning process completed"
           cd ..
       
       # --- Verify Cleaned APK ---
@@ -487,29 +493,25 @@ jobs:
         run: |
           cd ./release
           
-          # Create a temporary directory for the verification
-          mkdir -p temp_verify
+          echo "Verifying APK is free from problematic metadata..."
           
-          # Unzip the APK to check contents
-          unzip -q "${APK_FILENAME}" -d temp_verify
+          # Create a temporary directory for verification
+          mkdir -p verify_apk
           
-          # Check if problematic metadata files exist
-          echo "Checking for problematic metadata..."
-          if grep -q "!!brut.androlib.meta.MetaInfo" temp_verify/META-INF/* 2>/dev/null; then
-            echo "⚠️ Warning: Found problematic metadata tag in META-INF"
+          # Extract any YML files to check
+          unzip -q "${APK_FILENAME}" "*.yml" -d verify_apk 2>/dev/null || true
+          unzip -q "${APK_FILENAME}" "META-INF/*.yml" -d verify_apk 2>/dev/null || true
+          
+          # Check for problematic metadata
+          if find verify_apk -type f -name "*.yml" | xargs grep -l "!!brut.androlib.meta.MetaInfo" 2>/dev/null; then
+            echo "⚠️ Warning: Problematic metadata still found in APK after cleaning!"
+            echo "This may cause issues with Zapstore publishing."
           else
-            echo "✅ No problematic metadata found in META-INF"
-          fi
-          
-          # Check in any other potential locations
-          if find temp_verify -type f -name "*.yml" | xargs grep -l "!!brut.androlib.meta.MetaInfo" 2>/dev/null; then
-            echo "⚠️ Warning: Found problematic metadata tag in YML files"
-          else
-            echo "✅ No problematic metadata found in YML files"
+            echo "✅ Verification passed - no problematic metadata found in APK"
           fi
           
           # Clean up
-          rm -rf temp_verify
+          rm -rf verify_apk
           cd ..
           
       # --- Publish ---
