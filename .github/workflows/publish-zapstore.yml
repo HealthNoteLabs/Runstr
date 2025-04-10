@@ -429,78 +429,89 @@ jobs:
           rm -f ./release/apktool.yml
           echo "Contents of ./release after cleanup:"
           ls -l ./release
-          
-      # --- Fix APK Metadata ---
-      - name: Clean problematic metadata from APK
+      
+      # --- Clean APK Metadata ---
+      - name: Clean APK Metadata
         env:
           SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           cd ./release
-          echo "Fixing APK metadata to avoid !!brut.androlib.meta.MetaInfo error..."
           
-          # Create temp directory
-          mkdir -p ./apk_fix
-          cd ./apk_fix
+          # Create a temp directory for APK extraction
+          mkdir -p temp_apk
           
-          # Extract APK using apktool
-          echo "Extracting APK..."
-          apktool d "../${APK_FILENAME}" -o extracted -f
+          echo "Extracting APK to clean metadata..."
+          # Extract the APK using apktool
+          apktool d -f -o temp_apk "${APK_FILENAME}"
           
-          # Remove problematic file or fix it
-          echo "Removing or fixing problematic meta files..."
-          if [ -f "extracted/apktool.yml" ]; then
-            # Option 1: Remove the file entirely if not needed
-            rm "extracted/apktool.yml"
-            echo "Removed extracted/apktool.yml"
-            
-            # Option 2 (alternative): Fix the file by removing the problematic tag
-            # sed -i 's/!!brut.androlib.meta.MetaInfo//' "extracted/apktool.yml"
+          # Remove the problematic metadata file
+          rm -f temp_apk/apktool.yml
+          
+          # Create a clean apktool.yml file
+          echo "version: 2.0.0" > temp_apk/apktool.yml
+          echo "apkFileName: ${APK_FILENAME}" >> temp_apk/apktool.yml
+          
+          # Build a clean APK
+          CLEAN_APK="clean_${APK_FILENAME}"
+          echo "Rebuilding clean APK..."
+          apktool b temp_apk -o "${CLEAN_APK}"
+          
+          # Create temporary keystore from base64
+          echo "Setting up keystore for signing..."
+          TEMP_KEYSTORE="./temp_keystore.jks"
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$TEMP_KEYSTORE"
+          
+          # Sign the rebuilt APK
+          echo "Signing rebuilt APK..."
+          "$APKSIGNER_PATH" sign --ks "$TEMP_KEYSTORE" \
+            --ks-pass "pass:$SIGNING_STORE_PASSWORD" \
+            --ks-key-alias "$SIGNING_KEY_ALIAS" \
+            --key-pass "pass:$SIGNING_KEY_PASSWORD" \
+            "${CLEAN_APK}"
+          
+          # Replace the original APK with the clean one
+          mv "${CLEAN_APK}" "${APK_FILENAME}"
+          
+          # Clean up
+          rm -f "$TEMP_KEYSTORE"
+          rm -rf temp_apk
+          
+          echo "✅ APK cleaned and repacked successfully"
+          cd ..
+      
+      # --- Verify Cleaned APK ---
+      - name: Verify Cleaned APK
+        run: |
+          cd ./release
+          
+          # Create a temporary directory for the verification
+          mkdir -p temp_verify
+          
+          # Unzip the APK to check contents
+          unzip -q "${APK_FILENAME}" -d temp_verify
+          
+          # Check if problematic metadata files exist
+          echo "Checking for problematic metadata..."
+          if grep -q "!!brut.androlib.meta.MetaInfo" temp_verify/META-INF/* 2>/dev/null; then
+            echo "⚠️ Warning: Found problematic metadata tag in META-INF"
+          else
+            echo "✅ No problematic metadata found in META-INF"
           fi
           
-          # Search for any other potential problematic files
-          find extracted -name "*.yml" -exec grep -l "!!brut.androlib.meta.MetaInfo" {} \; | while read file; do
-            echo "Fixing $file..."
-            sed -i 's/!!brut.androlib.meta.MetaInfo//' "$file"
-          done
+          # Check in any other potential locations
+          if find temp_verify -type f -name "*.yml" | xargs grep -l "!!brut.androlib.meta.MetaInfo" 2>/dev/null; then
+            echo "⚠️ Warning: Found problematic metadata tag in YML files"
+          else
+            echo "✅ No problematic metadata found in YML files"
+          fi
           
-          # Repackage the APK
-          echo "Repackaging APK..."
-          apktool b extracted -o unsigned.apk
-          
-          # Restore the keystore for signing
-          echo "Preparing keystore for signing..."
-          KEYSTORE_FILE="keystore.jks"
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "$KEYSTORE_FILE"
-          test -s "$KEYSTORE_FILE" || { echo "❌ Keystore file missing or empty after decode"; exit 1; }
-          
-          # Sign the APK using the keystore
-          echo "Signing fixed APK..."
-          # Use the environment variable APKSIGNER_PATH set in previous step
-          "$APKSIGNER_PATH" sign --ks "$KEYSTORE_FILE" \
-            --ks-key-alias "$SIGNING_KEY_ALIAS" \
-            --ks-pass "pass:$SIGNING_STORE_PASSWORD" \
-            --key-pass "pass:$SIGNING_KEY_PASSWORD" \
-            --out "fixed_signed.apk" \
-            "unsigned.apk"
-          
-          # Verify the signature
-          "$APKSIGNER_PATH" verify --verbose "fixed_signed.apk"
-          
-          # Copy the fixed APK back to replace the original
-          echo "Replacing original APK with fixed version..."
-          cp "fixed_signed.apk" "../${APK_FILENAME}"
-          
-          # Clean up sensitive files
-          rm -f "$KEYSTORE_FILE"
-          
+          # Clean up
+          rm -rf temp_verify
           cd ..
-          echo "APK metadata cleanup complete."
           
-          # Clean up temporary files
-          rm -rf ./apk_fix
-      
       # --- Publish ---
       - name: Publish to Zapstore
         env:
