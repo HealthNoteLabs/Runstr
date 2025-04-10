@@ -284,12 +284,25 @@ jobs:
           curl -L -o zapstore "$ZAP_CLI_URL"
           chmod +x zapstore
           sudo mv zapstore /usr/local/bin/
-          zapstore --version || echo "Zapstore CLI installed but version check failed."
+          zapstore --version || { echo "❌ Zapstore CLI install verification failed."; exit 1; }
 
-          echo "Installing apktool..."
-          # Allow apktool install to fail non-critically if needed
-          yes | zapstore install apktool || echo "⚠️ apktool install via zapstore failed or timed out."
-          # Add a check if apktool command exists afterwards if crucial
+          echo "Attempting to install apktool via zapstore..."
+          # Try zapstore install first, but fallback to manual if it fails
+          yes | zapstore install apktool || {
+            echo "⚠️ apktool install via zapstore failed. Falling back to manual install..."
+            # Use version 2.9.3 like in the voca example
+            curl -L -o apktool.jar https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar || { echo "❌ Failed to download apktool.jar"; exit 1; }
+            curl -L -o apktool https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool || { echo "❌ Failed to download apktool wrapper script"; exit 1; }
+            chmod +x apktool apktool.jar
+            sudo mv apktool /usr/local/bin/
+            sudo mv apktool.jar /usr/local/bin/ # Ensure jar is also in a standard location
+            echo "✅ Manual apktool installation attempted."
+          }
+
+          # Mandatory verification: Ensure apktool command works after install attempt
+          echo "Verifying apktool installation..."
+          apktool --version || { echo "❌ apktool verification failed after attempting installation."; exit 1; }
+          echo "✅ apktool is available."
 
       - name: Install Android apksigner tool
         run: |
