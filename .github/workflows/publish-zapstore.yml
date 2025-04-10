@@ -20,8 +20,8 @@ jobs:
     outputs:
       # Output whether a release was created by semantic-release
       released: ${{ steps.semantic_release.outputs.released || 'false' }}
-      # Output the version determined by semantic-release (or fallback)
-      new_version: ${{ steps.semantic_release.outputs.new_version || steps.read_package_version.outputs.version }}
+      # Output the final version determined (semantic or package.json)
+      build_version: ${{ steps.determine_build_version.outputs.build_version }}
       # Output the final APK path for artifact upload/download
       apk_path: ${{ steps.prepare_artifact.outputs.apk_path }}
 
@@ -271,13 +271,15 @@ jobs:
       - name: Download APK artifact
         uses: actions/download-artifact@v4
         with:
-          name: runstr-apk-${{ needs.release_and_build.outputs.new_version }}
+          # Use the consistent build_version output from the previous job
+          name: runstr-apk-${{ needs.release_and_build.outputs.build_version }}
           path: ./release # Download into a release directory
 
       - name: Download CHANGELOG artifact
         uses: actions/download-artifact@v4
         with:
-          name: changelog-${{ needs.release_and_build.outputs.new_version }}
+          # Use the consistent build_version output from the previous job
+          name: changelog-${{ needs.release_and_build.outputs.build_version }}
           path: ./release # Download into the same directory
 
       - name: List downloaded files
@@ -318,7 +320,7 @@ jobs:
       # --- Prepare Zapstore Metadata ---
       - name: Create zapstore.yaml and Extract Release Notes
         run: |
-          VERSION=${{ needs.release_and_build.outputs.new_version }}
+          VERSION=${{ needs.release_and_build.outputs.build_version }}
           # Use the raw GitHub URL for the logo in the main branch
           RUNSTR_ICON_URL="https://raw.githubusercontent.com/TheWildHustle/Nostr-Run-Club/main/runstr-logo.png"
           # APK_NAME="runstr-${VERSION}.apk" # We will find the actual name instead
@@ -401,7 +403,7 @@ jobs:
         env:
           NSEC: ${{ secrets.NSEC }}
           APKSIGNER_PATH: ${{ env.APKSIGNER_PATH }}
-          VERSION: ${{ needs.release_and_build.outputs.new_version }}
+          VERSION: ${{ needs.release_and_build.outputs.build_version }}
         run: |
           cd ./release # Navigate into the directory with assets
 
@@ -440,5 +442,5 @@ jobs:
       - name: ✅ Notify success
         if: ${{ success() }}
         run: |
-          echo "🎉 RUNSTR v${{ needs.release_and_build.outputs.new_version }} published to Zapstore!"
+          echo "🎉 RUNSTR v${{ needs.release_and_build.outputs.build_version }} published to Zapstore!"
           echo "🔗 https://zapstore.dev/app/runstr"
