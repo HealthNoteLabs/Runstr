@@ -2,7 +2,7 @@ import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-export function FloatingMusicPlayer() {
+export const FloatingMusicPlayer = () => {
   const { 
     currentTrack, 
     isPlaying, 
@@ -14,7 +14,7 @@ export function FloatingMusicPlayer() {
   const [expanded, setExpanded] = useState(false);
   const navigate = useNavigate();
   
-  if (!currentTrack) return <span className="text-sm">Run with Nostr</span>;
+  if (!currentTrack) return <span></span>;
 
   return (
     <div className={`${expanded ? 'header-player-expanded' : 'header-player-collapsed'}`}>

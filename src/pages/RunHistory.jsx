@@ -326,25 +326,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     <div className="run-history">
       <div className="stats-overview">
         <h2>{getActivityText('history')}</h2>
-        <div className="flex justify-center my-4">
-          <div className="flex rounded-full bg-[#1a222e] p-1">
-            <button 
-              className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'km' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-              onClick={() => navigate('/settings')}
-            >
-              Kilometers
-            </button>
-            <button 
-              className={`px-6 py-2 rounded-full text-sm ${distanceUnit === 'mi' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}
-              onClick={() => navigate('/settings')}
-            >
-              Miles
-            </button>
-          </div>
-          <p className="text-xs text-gray-400 mt-1">
-            (change in settings)
-          </p>
-        </div>
         <button 
           className="profile-btn" 
           onClick={() => navigate('/profile')}

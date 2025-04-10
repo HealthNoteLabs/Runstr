@@ -16,7 +16,7 @@ export const useTeams = () => {
   return context;
 };
 
-export function TeamsProvider({ children }) {
+export const TeamsProvider = ({ children }) => {
   // Get Nostr context
   const { publicKey: nostrPublicKey } = useContext(NostrContext);
   
@@ -52,79 +52,71 @@ export function TeamsProvider({ children }) {
     syncNostrUser();
   }, [nostrPublicKey]);
 
-  // Load teams data initially
-  useEffect(() => {
-    const loadTeamsData = () => {
-      try {
-        const allTeams = teamsDataService.getAllTeams();
-        setTeams(allTeams);
-        
-        if (currentUser) {
-          const userTeams = teamsDataService.getUserTeams(currentUser);
-          setMyTeams(userTeams);
-        }
-        
-        setLoading(false);
-      } catch (error) {
-        console.error('Error loading teams data:', error);
-        setError('Failed to load teams data. Please try again later.');
-        setLoading(false);
-      }
-    };
-    
-    loadTeamsData();
-    
-    // Add listener for data changes
-    teamsDataService.addListener(handleDataChange);
-    
-    // Cleanup
-    return () => {
-      teamsDataService.removeListener(handleDataChange);
-    };
-  }, [currentUser]);
-
-  // Handle data changes from service
-  const handleDataChange = useCallback((dataType, data) => {
-    switch (dataType) {
-      case 'teams':
-        setTeams(data);
-        if (currentUser) {
-          const userTeams = teamsDataService.getUserTeams(currentUser);
-          setMyTeams(userTeams);
-        }
-        break;
-      case 'memberships':
-        if (currentUser) {
-          const userTeams = teamsDataService.getUserTeams(currentUser);
-          setMyTeams(userTeams);
-        }
-        if (selectedTeam) {
-          const members = teamsDataService.getMemberships(selectedTeam.id);
-          setTeamMembers(members);
-        }
-        break;
-      case 'messages':
-        if (selectedTeam) {
-          const messages = teamsDataService.getTeamMessages(selectedTeam.id);
-          setTeamMessages(messages);
-        }
-        break;
-      case 'challenges':
-        if (selectedTeam) {
-          const challenges = teamsDataService.getTeamChallenges(selectedTeam.id);
-          setTeamChallenges(challenges);
-        }
-        break;
-      case 'pinnedPosts':
-        if (selectedTeam) {
-          const pinned = teamsDataService.getPinnedPosts(selectedTeam.id);
-          setPinnedPosts(pinned);
-        }
-        break;
-      default:
-        break;
+  // Define the fetchTeams function
+  const fetchTeams = useCallback(() => {
+    try {
+      const allTeams = teamsDataService.getAllTeams();
+      setTeams(allTeams);
+    } catch (err) {
+      console.error('Error fetching teams:', err);
+      setError('Failed to load teams');
     }
-  }, [currentUser, selectedTeam]);
+  }, []);
+
+  // Define the fetchMyTeams function
+  const fetchMyTeams = useCallback(() => {
+    if (currentUser) {
+      try {
+        const userTeams = teamsDataService.getTeamsByUserId(currentUser);
+        setMyTeams(userTeams);
+      } catch (err) {
+        console.error('Error fetching user teams:', err);
+        setError('Failed to load your teams');
+      }
+    } else {
+      setMyTeams([]);
+    }
+  }, [currentUser]);
+  
+  // Initialize the context
+  useEffect(() => {
+    // Clear any existing demo data
+    const teamsStorageKey = 'runstr_teams';
+    const membershipStorageKey = 'runstr_team_memberships';
+    const teamMessagesKey = 'runstr_team_messages';
+    const pinnedPostsKey = 'runstr_pinned_posts';
+    const teamChallengesKey = 'runstr_team_challenges';
+    
+    // Check if this is the first run after update to remove demo data
+    const demoRemoved = localStorage.getItem('runstr_demo_removed');
+    if (!demoRemoved) {
+      localStorage.removeItem(teamsStorageKey);
+      localStorage.removeItem(membershipStorageKey);
+      localStorage.removeItem(teamMessagesKey);
+      localStorage.removeItem(pinnedPostsKey);
+      localStorage.removeItem(teamChallengesKey);
+      localStorage.setItem('runstr_demo_removed', 'true');
+    }
+    
+    // Initialize the services
+    teamsDataService.initialize();
+    
+    // Load initial data
+    fetchTeams();
+    fetchMyTeams();
+    
+    // Add event listeners
+    teamsDataService.addListener('teams', fetchTeams);
+    teamsDataService.addListener('myTeams', fetchMyTeams);
+    teamsDataService.addListener('error', (error) => setError(error));
+    
+    return () => {
+      // Remove event listeners on cleanup
+      teamsDataService.removeListener('teams', fetchTeams);
+      teamsDataService.removeListener('myTeams', fetchMyTeams);
+      teamsDataService.removeListener('error', (error) => setError(error));
+    };
+  }, [currentUser, fetchTeams, fetchMyTeams]); // Re-initialize when user changes
 
   // Select a team
   const selectTeam = useCallback((teamId) => {

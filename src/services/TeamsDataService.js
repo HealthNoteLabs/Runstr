@@ -692,158 +692,8 @@ class TeamsDataService {
    * Initialize sample data for demonstration purposes
    */
   initializeSampleData() {
-    // Only initialize if no data exists
-    const existingTeams = this.getAllTeams();
-    if (existingTeams.length > 0) {
-      return;
-    }
-    
-    // Create sample teams
-    const sampleTeams = [
-      {
-        id: '1',
-        name: 'Morning Runners Club',
-        description: 'A club for early risers who prefer to run at dawn. Join us for morning motivation and start your day with energy!',
-        imageUrl: 'https://images.unsplash.com/photo-1541625602330-2277a4c46182?q=80&w=200&h=200&auto=format&fit=crop',
-        createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days ago
-        creatorId: 'user1',
-        memberCount: 8,
-        isPublic: true
-      },
-      {
-        id: '2',
-        name: 'Marathon Training Squad',
-        description: 'Serious runners preparing for upcoming marathons. We share training plans, nutrition tips, and motivate each other.',
-        imageUrl: 'https://images.unsplash.com/photo-1540539234-c14a20fb7c7b?q=80&w=200&h=200&auto=format&fit=crop',
-        createdAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(), // 60 days ago
-        creatorId: 'user2',
-        memberCount: 12,
-        isPublic: true
-      },
-      {
-        id: '3',
-        name: 'Trail Runners',
-        description: 'For those who prefer dirt paths to pavement. We explore local trails, share route maps, and embrace nature.',
-        imageUrl: 'https://images.unsplash.com/photo-1520027055974-b9da36b9173f?q=80&w=200&h=200&auto=format&fit=crop',
-        createdAt: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(), // 45 days ago
-        creatorId: 'user3',
-        memberCount: 5,
-        isPublic: true
-      }
-    ];
-    
-    // Create sample memberships
-    const sampleMemberships = [
-      {
-        id: 'm1',
-        teamId: '1',
-        userId: 'user1',
-        role: 'admin',
-        joinedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: 'm2',
-        teamId: '1',
-        userId: 'user4',
-        role: 'member',
-        joinedAt: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: 'm3',
-        teamId: '2',
-        userId: 'user2',
-        role: 'admin',
-        joinedAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: 'm4',
-        teamId: '3',
-        userId: 'user3',
-        role: 'admin',
-        joinedAt: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString()
-      }
-    ];
-    
-    // Create sample messages
-    const sampleMessages = [
-      {
-        id: 'msg1',
-        teamId: '1',
-        userId: 'user1',
-        content: 'Welcome to the Morning Runners Club! Introduce yourself and share your morning running routine.',
-        timestamp: new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: 'msg2',
-        teamId: '1',
-        userId: 'user4',
-        content: 'Hi everyone! I usually run at 6 AM for about 5K. Looking forward to sharing this journey with you all!',
-        timestamp: new Date(Date.now() - 24 * 24 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: 'msg3',
-        teamId: '2',
-        userId: 'user2',
-        content: 'Our marathon training plan for this month is now available. Check the pinned post for details!',
-        timestamp: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString()
-      }
-    ];
-    
-    // Create sample pinned posts
-    const samplePinnedPosts = [
-      {
-        id: 'pin1',
-        teamId: '1',
-        title: 'Club Guidelines',
-        content: 'Welcome to the Morning Runners Club! Please remember to: 1) Be respectful to all members, 2) Share your achievements, 3) Support others in their goals.',
-        creatorId: 'user1',
-        pinnedAt: new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: 'pin2',
-        teamId: '2',
-        title: 'Marathon Training Plan',
-        content: 'Our 16-week marathon training plan is now available. We will focus on building endurance in the first 8 weeks and then transition to speed work.',
-        creatorId: 'user2',
-        pinnedAt: new Date(Date.now() - 59 * 24 * 60 * 60 * 1000).toISOString()
-      }
-    ];
-    
-    // Create sample challenges
-    const sampleChallenges = [
-      {
-        id: 'ch1',
-        teamId: '1',
-        title: '5-Day Streak Challenge',
-        description: 'Run at least 2km every morning for 5 consecutive days. Share your progress daily!',
-        creatorId: 'user1',
-        createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-        startDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-        endDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-        participants: ['user1', 'user4']
-      },
-      {
-        id: 'ch2',
-        teamId: '2',
-        title: 'Half Marathon Prep',
-        description: 'Complete a 15km run this weekend to prepare for our upcoming half marathon.',
-        creatorId: 'user2',
-        createdAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
-        startDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-        endDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
-        participants: ['user2']
-      }
-    ];
-    
-    // Save sample data to localStorage
-    localStorage.setItem(this.teamsStorageKey, JSON.stringify(sampleTeams));
-    localStorage.setItem(this.membershipStorageKey, JSON.stringify(sampleMemberships));
-    localStorage.setItem(this.teamMessagesKey, JSON.stringify(sampleMessages));
-    localStorage.setItem(this.pinnedPostsKey, JSON.stringify(samplePinnedPosts));
-    localStorage.setItem(this.teamChallengesKey, JSON.stringify(sampleChallenges));
-    
-    // Notify listeners
-    this.notifyListeners('teams', sampleTeams);
+    // Don't initialize any sample data
+    return;
   }
 
   /**
@@ -869,6 +719,46 @@ class TeamsDataService {
    */
   isNostrIntegrationEnabled() {
     return this.nostrEnabled;
+  }
+
+  initialize() {
+    // Clear all demo data first
+    this.clearAllDemoData();
+    
+    // Initialize empty storage if not exists
+    if (!localStorage.getItem(this.teamsStorageKey)) {
+      localStorage.setItem(this.teamsStorageKey, JSON.stringify([]));
+    }
+    
+    if (!localStorage.getItem(this.membershipStorageKey)) {
+      localStorage.setItem(this.membershipStorageKey, JSON.stringify([]));
+    }
+    
+    if (!localStorage.getItem(this.teamMessagesKey)) {
+      localStorage.setItem(this.teamMessagesKey, JSON.stringify([]));
+    }
+    
+    if (!localStorage.getItem(this.pinnedPostsKey)) {
+      localStorage.setItem(this.pinnedPostsKey, JSON.stringify([]));
+    }
+    
+    if (!localStorage.getItem(this.teamChallengesKey)) {
+      localStorage.setItem(this.teamChallengesKey, JSON.stringify([]));
+    }
+  }
+
+  /**
+   * Clear all demo data from localStorage
+   */
+  clearAllDemoData() {
+    // Force clear any existing data to remove demos
+    localStorage.removeItem(this.teamsStorageKey);
+    localStorage.removeItem(this.membershipStorageKey);
+    localStorage.removeItem(this.teamMessagesKey);
+    localStorage.removeItem(this.pinnedPostsKey);
+    localStorage.removeItem(this.teamChallengesKey);
+    
+    console.log('All demo team data has been cleared');
   }
 }
 

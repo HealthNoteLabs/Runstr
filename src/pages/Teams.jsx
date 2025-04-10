@@ -113,7 +113,7 @@ export const Teams = () => {
         <div>
           <h2 className="text-xl font-semibold mb-4">My Clubs</h2>
           
-          {!(currentUser || publicKey) ? (
+          {!currentUser ? (
             <div className="text-center py-8 bg-[#1a222e] rounded-lg">
               <p className="text-gray-400 mb-4">Please log in to see your clubs</p>
             </div>
@@ -123,17 +123,17 @@ export const Teams = () => {
               <p className="mt-4 text-gray-400">Loading your clubs...</p>
             </div>
           ) : myTeams.length > 0 ? (
-            <div className="grid gap-4">
+            <div className="space-y-4">
               {myTeams.map(team => (
                 <TeamItem key={team.id} team={team} />
               ))}
             </div>
           ) : (
             <div className="text-center py-8 bg-[#1a222e] rounded-lg">
-              <p className="text-gray-400 mb-4">You haven&apos;t joined any clubs yet</p>
+              <p className="text-gray-400 mb-4">You haven&apos;t joined any clubs yet.</p>
               <button
                 onClick={() => setActiveTab('allTeams')}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+                className="bg-blue-600 text-white py-2 px-6 rounded-lg"
               >
                 Discover Clubs
               </button>
@@ -145,13 +145,13 @@ export const Teams = () => {
         <div>
           <h2 className="text-xl font-semibold mb-4">Discover Clubs</h2>
           
-          <div className="mb-4">
+          <div className="mb-6">
             <input
               type="text"
-              placeholder="Search clubs..."
+              placeholder="Search for clubs..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full p-3 bg-[#1a222e] border border-gray-700 rounded-lg"
             />
           </div>
           
@@ -161,14 +161,26 @@ export const Teams = () => {
               <p className="mt-4 text-gray-400">Loading clubs...</p>
             </div>
           ) : filteredTeams.length > 0 ? (
-            <div className="grid gap-4">
+            <div className="space-y-4">
               {filteredTeams.map(team => (
                 <TeamItem key={team.id} team={team} />
               ))}
             </div>
           ) : (
             <div className="text-center py-8 bg-[#1a222e] rounded-lg">
-              <p className="text-gray-400">No clubs found</p>
+              <p className="text-gray-400 mb-4">
+                {searchQuery.trim() 
+                  ? `No clubs found matching "${searchQuery}"`
+                  : `No clubs available yet. ${currentUser ? 'Be the first to create one!' : 'Log in to create a club!'}`}
+              </p>
+              {currentUser && !searchQuery.trim() && (
+                <Link 
+                  to="/teams/create"
+                  className="inline-block bg-blue-600 text-white py-2 px-6 rounded-lg"
+                >
+                  Create a Club
+                </Link>
+              )}
             </div>
           )}
         </div>
