@@ -12,11 +12,6 @@ on:
       - updates1-release-prep
   # Enable manual trigger for the Zapstore publish step confirmation
   workflow_dispatch:
-    inputs:
-      confirm_zapstore_publish:
-        description: "Type 'YES' to publish the built APK to Zapstore (only affects manual runs)."
-        required: true # Optional, only needed if you manually trigger to force a publish
-        default: 'YES'
 
 jobs:
   # ================= Release & Build Job =================
@@ -273,7 +268,7 @@ jobs:
       success() &&
       (
         (github.event_name == 'push' && needs.release_and_build.outputs.released == 'true') ||
-        (github.event_name == 'workflow_dispatch' && github.event.inputs.confirm_zapstore_publish == 'YES')
+        github.event_name == 'workflow_dispatch'
       )
     runs-on: ubuntu-latest
     # Add environment for manual approval
