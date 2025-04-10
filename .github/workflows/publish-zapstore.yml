@@ -260,12 +260,13 @@ jobs:
   # ================= Zapstore Publish Job =================
   publish_zapstore:
     needs: release_and_build # Depends on the release and build job
-    # Conditional Run:
-    # Only run if semantic-release actually created a release in the previous job.
     runs-on: ubuntu-latest
     # Add environment for manual approval
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download APK artifact
         uses: actions/download-artifact@v4
         with:
