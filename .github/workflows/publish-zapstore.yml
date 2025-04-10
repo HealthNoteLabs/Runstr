@@ -430,6 +430,77 @@ jobs:
           echo "Contents of ./release after cleanup:"
           ls -l ./release
           
+      # --- Fix APK Metadata ---
+      - name: Clean problematic metadata from APK
+        env:
+          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          cd ./release
+          echo "Fixing APK metadata to avoid !!brut.androlib.meta.MetaInfo error..."
+          
+          # Create temp directory
+          mkdir -p ./apk_fix
+          cd ./apk_fix
+          
+          # Extract APK using apktool
+          echo "Extracting APK..."
+          apktool d "../${APK_FILENAME}" -o extracted -f
+          
+          # Remove problematic file or fix it
+          echo "Removing or fixing problematic meta files..."
+          if [ -f "extracted/apktool.yml" ]; then
+            # Option 1: Remove the file entirely if not needed
+            rm "extracted/apktool.yml"
+            echo "Removed extracted/apktool.yml"
+            
+            # Option 2 (alternative): Fix the file by removing the problematic tag
+            # sed -i 's/!!brut.androlib.meta.MetaInfo//' "extracted/apktool.yml"
+          fi
+          
+          # Search for any other potential problematic files
+          find extracted -name "*.yml" -exec grep -l "!!brut.androlib.meta.MetaInfo" {} \; | while read file; do
+            echo "Fixing $file..."
+            sed -i 's/!!brut.androlib.meta.MetaInfo//' "$file"
+          done
+          
+          # Repackage the APK
+          echo "Repackaging APK..."
+          apktool b extracted -o unsigned.apk
+          
+          # Restore the keystore for signing
+          echo "Preparing keystore for signing..."
+          KEYSTORE_FILE="keystore.jks"
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "$KEYSTORE_FILE"
+          test -s "$KEYSTORE_FILE" || { echo "❌ Keystore file missing or empty after decode"; exit 1; }
+          
+          # Sign the APK using the keystore
+          echo "Signing fixed APK..."
+          # Use the environment variable APKSIGNER_PATH set in previous step
+          "$APKSIGNER_PATH" sign --ks "$KEYSTORE_FILE" \
+            --ks-key-alias "$SIGNING_KEY_ALIAS" \
+            --ks-pass "pass:$SIGNING_STORE_PASSWORD" \
+            --key-pass "pass:$SIGNING_KEY_PASSWORD" \
+            --out "fixed_signed.apk" \
+            "unsigned.apk"
+          
+          # Verify the signature
+          "$APKSIGNER_PATH" verify --verbose "fixed_signed.apk"
+          
+          # Copy the fixed APK back to replace the original
+          echo "Replacing original APK with fixed version..."
+          cp "fixed_signed.apk" "../${APK_FILENAME}"
+          
+          # Clean up sensitive files
+          rm -f "$KEYSTORE_FILE"
+          
+          cd ..
+          echo "APK metadata cleanup complete."
+          
+          # Clean up temporary files
+          rm -rf ./apk_fix
+      
       # --- Publish ---
       - name: Publish to Zapstore
         env:
