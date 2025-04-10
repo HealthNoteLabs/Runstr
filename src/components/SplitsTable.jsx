@@ -26,22 +26,32 @@ const SplitsTable = ({ splits, distanceUnit = 'km' }) => {
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-700">
-          {splits.map((split, index) => (
-            <tr key={index} className="hover:bg-gray-700">
-              <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-200">
-                {index + 1}
-              </td>
-              <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-200">
-                {distanceUnit === 'km' ? '1 km' : '1 mi'}
-              </td>
-              <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-200">
-                {formatTime(split.time)}
-              </td>
-              <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-200">
-                {formatPace(split.pace, distanceUnit)}
-              </td>
-            </tr>
-          ))}
+          {splits.map((split, index) => {
+            // Calculate individual split time rather than using cumulative time
+            const prevSplitTime = index > 0 ? splits[index - 1].time : 0;
+            const splitTime = split.time - prevSplitTime;
+            
+            // Calculate the pace based on the individual split time
+            // For a standard unit (1km or 1mi), pace is just the time it took to complete that unit
+            const paceMinutes = splitTime / 60; // Convert seconds to minutes
+            
+            return (
+              <tr key={index} className="hover:bg-gray-700">
+                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-200">
+                  {index + 1}
+                </td>
+                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-200">
+                  {distanceUnit === 'km' ? '1 km' : '1 mi'}
+                </td>
+                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-200">
+                  {formatTime(splitTime)}
+                </td>
+                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-200">
+                  {formatPace(paceMinutes, distanceUnit)}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useTeams } from '../contexts/TeamsContext';
+import { NostrContext } from '../contexts/NostrContext';
 
 export const TeamDetail = () => {
   const { teamId } = useParams();
@@ -21,6 +22,8 @@ export const TeamDetail = () => {
     joinChallenge,
     clearError
   } = useTeams();
+  
+  const { publicKey } = useContext(NostrContext);
   
   const [activeTab, setActiveTab] = useState('overview');
   const [messageText, setMessageText] = useState('');
@@ -61,10 +64,7 @@ export const TeamDetail = () => {
   
   // Handle joining a team
   const handleJoinTeam = async () => {
-    if (!currentUser) {
-      // Show authentication required message
-      return;
-    }
+    if (!currentUser && !publicKey) return;
     
     setIsJoining(true);
     try {
@@ -81,17 +81,11 @@ export const TeamDetail = () => {
   
   // Handle leaving a team
   const handleLeaveTeam = async () => {
-    if (!currentUser) {
-      return; // User must be logged in
-    }
-    
-    if (window.confirm('Are you sure you want to leave this club?')) {
+    if (confirm('Are you sure you want to leave this club?')) {
       setIsLeaving(true);
       try {
         const success = await leaveTeam(teamId);
-        if (!success) {
-          throw new Error('Failed to leave club');
-        } else {
+        if (success) {
           navigate('/teams');
         }
       } catch (err) {
@@ -103,15 +97,20 @@ export const TeamDetail = () => {
   };
   
   // Handle sending a message
-  const handleSendMessage = (e) => {
+  const handleSendMessage = async (e) => {
     e.preventDefault();
     
-    if (!currentUser || !messageText.trim()) {
-      return;
-    }
+    if (!messageText.trim() || !currentUser) return;
     
-    sendMessage(teamId, messageText);
-    setMessageText('');
+    setIsJoining(true);
+    try {
+      await sendMessage(teamId, messageText.trim());
+      setMessageText('');
+    } catch (err) {
+      console.error('Error sending message:', err);
+    } finally {
+      setIsJoining(false);
+    }
   };
   
   // Format date for display
@@ -216,13 +215,23 @@ export const TeamDetail = () => {
             <span className="text-3xl font-bold">{selectedTeam.name.charAt(0)}</span>
           </div>
         )}
-        <h1 className="text-2xl font-bold mb-2 text-center">{selectedTeam.name}</h1>
-        <p className="text-gray-400 mb-4">
-          {selectedTeam.memberCount || teamMembers?.length || 0} member{(selectedTeam.memberCount || teamMembers?.length || 0) !== 1 ? 's' : ''}
-        </p>
+        <div className="flex-1">
+          <div className="flex items-center">
+            <h1 className="text-2xl font-bold">{selectedTeam.name}</h1>
+            {selectedTeam.hasNostrGroup && (
+              <span className="ml-2 bg-purple-900/50 text-purple-400 text-xs px-2 py-1 rounded">
+                Nostr Enabled
+              </span>
+            )}
+          </div>
+          
+          <p className="text-gray-400 mb-2">
+            {selectedTeam.memberCount || teamMembers?.length || 0} member{(selectedTeam.memberCount || teamMembers?.length || 0) !== 1 ? 's' : ''}
+          </p>
+        </div>
         
         {/* Join/Leave Button */}
-        {currentUser ? (
+        {currentUser || publicKey ? (
           isMember ? (
             <button
               onClick={handleLeaveTeam}

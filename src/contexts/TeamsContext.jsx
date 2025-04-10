@@ -1,6 +1,8 @@
 import { createContext, useState, useEffect, useCallback, useContext } from 'react';
 import PropTypes from 'prop-types';
 import teamsDataService from '../services/TeamsDataService';
+import { NostrContext } from './NostrContext';
+import { getUserPublicKey } from '../utils/nostrClient';
 
 // Create context
 export const TeamsContext = createContext();
@@ -15,6 +17,9 @@ export const useTeams = () => {
 };
 
 export function TeamsProvider({ children }) {
+  // Get Nostr context
+  const { publicKey: nostrPublicKey } = useContext(NostrContext);
+  
   // Teams state
   const [teams, setTeams] = useState([]);
   const [myTeams, setMyTeams] = useState([]);
@@ -28,6 +33,24 @@ export function TeamsProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(() => {
     return localStorage.getItem('currentUser') || null;
   });
+  
+  // Nostr integration state
+  const [nostrIntegrationEnabled, setNostrIntegrationEnabled] = useState(() => {
+    return teamsDataService.isNostrIntegrationEnabled();
+  });
+
+  // Use Nostr public key as current user if available
+  useEffect(() => {
+    const syncNostrUser = async () => {
+      if (nostrPublicKey) {
+        // If we have a Nostr public key, use it as the current user
+        setCurrentUser(nostrPublicKey);
+        localStorage.setItem('currentUser', nostrPublicKey);
+      }
+    };
+    
+    syncNostrUser();
+  }, [nostrPublicKey]);
 
   // Load teams data initially
   useEffect(() => {
@@ -137,20 +160,26 @@ export function TeamsProvider({ children }) {
   }, []);
 
   // Create a team
-  const createTeam = useCallback((teamData) => {
+  const createTeam = useCallback(async (teamData) => {
     try {
       if (!currentUser) {
         throw new Error('You must be logged in to create a team');
       }
       
-      const newTeam = teamsDataService.createTeam({
+      // Check if Nostr authentication is required
+      const userPubkey = await getUserPublicKey();
+      if (nostrIntegrationEnabled && !userPubkey) {
+        throw new Error('Nostr authentication is required to create a club with Nostr integration');
+      }
+      
+      const newTeam = await teamsDataService.createTeam({
         ...teamData,
         creatorId: currentUser,
       });
       
       if (newTeam) {
         // Add creator as admin
-        teamsDataService.addMember(newTeam.id, currentUser, 'admin');
+        await teamsDataService.addMember(newTeam.id, currentUser, 'admin');
         return newTeam;
       }
       
@@ -160,16 +189,25 @@ export function TeamsProvider({ children }) {
       setError(error.message || 'Failed to create team');
       return null;
     }
-  }, [currentUser]);
+  }, [currentUser, nostrIntegrationEnabled]);
 
   // Join a team
-  const joinTeam = useCallback((teamId) => {
+  const joinTeam = useCallback(async (teamId) => {
     try {
       if (!currentUser) {
         throw new Error('You must be logged in to join a team');
       }
       
-      const success = teamsDataService.addMember(teamId, currentUser);
+      // Check if Nostr authentication is required for teams with Nostr groups
+      const team = teamsDataService.getTeamById(teamId);
+      if (team && team.hasNostrGroup) {
+        const userPubkey = await getUserPublicKey();
+        if (!userPubkey) {
+          throw new Error('Nostr authentication is required to join this club');
+        }
+      }
+      
+      const success = await teamsDataService.addMember(teamId, currentUser);
       return success;
     } catch (error) {
       console.error('Error joining team:', error);
@@ -205,13 +243,22 @@ export function TeamsProvider({ children }) {
   }, [currentUser, selectedTeam]);
 
   // Send message to team chat
-  const sendMessage = useCallback((teamId, content) => {
+  const sendMessage = useCallback(async (teamId, content) => {
     try {
       if (!currentUser) {
         throw new Error('You must be logged in to send a message');
       }
       
-      const message = teamsDataService.addTeamMessage(teamId, currentUser, content);
+      // Check if Nostr authentication is required for teams with Nostr groups
+      const team = teamsDataService.getTeamById(teamId);
+      if (team && team.hasNostrGroup) {
+        const userPubkey = await getUserPublicKey();
+        if (!userPubkey) {
+          throw new Error('Nostr authentication is required to send messages in this club');
+        }
+      }
+      
+      const message = await teamsDataService.addTeamMessage(teamId, currentUser, content);
       return message;
     } catch (error) {
       console.error('Error sending message:', error);
@@ -307,6 +354,17 @@ export function TeamsProvider({ children }) {
     setError(null);
   }, []);
 
+  // Toggle Nostr integration
+  const toggleNostrIntegration = useCallback((enabled) => {
+    try {
+      teamsDataService.setNostrIntegration(enabled);
+      setNostrIntegrationEnabled(enabled);
+    } catch (error) {
+      console.error('Error toggling Nostr integration:', error);
+      setError('Failed to update Nostr integration settings');
+    }
+  }, []);
+
   // Context value
   const value = {
     teams,
@@ -319,6 +377,7 @@ export function TeamsProvider({ children }) {
     loading,
     error,
     currentUser,
+    nostrIntegrationEnabled,
     selectTeam,
     createTeam,
     joinTeam,
@@ -328,7 +387,8 @@ export function TeamsProvider({ children }) {
     createChallenge,
     joinChallenge,
     setUser,
-    clearError
+    clearError,
+    toggleNostrIntegration
   };
 
   return (

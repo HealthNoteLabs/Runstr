@@ -3,6 +3,9 @@
  * Centralized service for handling teams/clubs data
  */
 
+import nip29Bridge from './NIP29Bridge';
+import { getUserPublicKey } from '../utils/nostrClient';
+
 class TeamsDataService {
   constructor() {
     this.teamsStorageKey = 'teamsData';
@@ -11,6 +14,103 @@ class TeamsDataService {
     this.teamChallengesKey = 'teamChallenges';
     this.pinnedPostsKey = 'teamPinnedPosts';
     this.listeners = [];
+    
+    // Nostr integration state
+    this.isNip29Initialized = false;
+    this.nostrEnabled = localStorage.getItem('nostr_groups_enabled') === 'true';
+    
+    // Initialize Nostr bridge if enabled
+    if (this.nostrEnabled) {
+      this._initializeNostrBridge();
+    }
+  }
+  
+  /**
+   * Initialize the Nostr bridge for NIP29 group synchronization
+   * @private
+   */
+  async _initializeNostrBridge() {
+    try {
+      if (this.isNip29Initialized) return;
+      
+      // Initialize the NIP29 bridge
+      const success = await nip29Bridge.initialize();
+      
+      if (success) {
+        this.isNip29Initialized = true;
+        
+        // Add listener for incoming Nostr messages
+        nip29Bridge.addListener(this._handleNostrEvent.bind(this));
+        
+        console.log('NIP29 bridge initialized successfully');
+      } else {
+        console.warn('Failed to initialize NIP29 bridge');
+      }
+    } catch (error) {
+      console.error('Error initializing NIP29 bridge:', error);
+    }
+  }
+  
+  /**
+   * Handle events from the Nostr bridge
+   * @param {string} eventType - Type of Nostr event
+   * @param {Object} data - Event data
+   * @private
+   */
+  _handleNostrEvent(eventType, data) {
+    try {
+      if (eventType === 'incoming_message' || eventType === 'sync_message') {
+        const { clubId, event } = data;
+        
+        // Handle incoming message from Nostr
+        if (clubId && event) {
+          // Check if we already have this message (prevent duplicates)
+          const allMessages = this.getTeamMessages(clubId);
+          const nostrMessageId = `nostr:${event.id}`;
+          
+          // Check if we already have this message
+          if (!allMessages.some(msg => msg.id === nostrMessageId)) {
+            // Add the message to our local storage
+            this._addNostrMessageToClub(clubId, event);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error handling Nostr event:', error);
+    }
+  }
+  
+  /**
+   * Add a message from Nostr to the local club storage
+   * @param {string} clubId - Club ID
+   * @param {Object} nostrEvent - Nostr event
+   * @private
+   */
+  _addNostrMessageToClub(clubId, nostrEvent) {
+    try {
+      const messages = this.getTeamMessages(clubId);
+      
+      const newMessage = {
+        id: `nostr:${nostrEvent.id}`,
+        teamId: clubId,
+        userId: nostrEvent.pubkey,
+        content: nostrEvent.content,
+        timestamp: new Date(nostrEvent.created_at * 1000).toISOString(),
+        fromNostr: true,
+        nostrEventId: nostrEvent.id
+      };
+      
+      const allMessages = localStorage.getItem(this.teamMessagesKey);
+      const allMessagesParsed = allMessages ? JSON.parse(allMessages) : [];
+      
+      const updatedMessages = [...allMessagesParsed.filter(m => m.teamId !== clubId), ...messages, newMessage];
+      localStorage.setItem(this.teamMessagesKey, JSON.stringify(updatedMessages));
+      
+      // Notify listeners
+      this.notifyListeners('messages', updatedMessages);
+    } catch (error) {
+      console.error('Error adding Nostr message to club:', error);
+    }
   }
 
   /**
@@ -47,7 +147,7 @@ class TeamsDataService {
    * @param {Object} teamData - Team data to save
    * @returns {Object} The saved team with generated ID
    */
-  createTeam(teamData) {
+  async createTeam(teamData) {
     try {
       const teams = this.getAllTeams();
       
@@ -56,12 +156,40 @@ class TeamsDataService {
         id: teamData.id || Date.now() + '-' + Math.random().toString(36).substr(2, 9),
         createdAt: teamData.createdAt || new Date().toISOString(),
         members: teamData.members || [],
-        ...teamData
+        ...teamData,
+        hasNostrGroup: false // Add Nostr group status field
       };
       
       // Add to teams array
       const updatedTeams = [...teams, newTeam];
       localStorage.setItem(this.teamsStorageKey, JSON.stringify(updatedTeams));
+      
+      // If Nostr integration is enabled, create a NIP29 group
+      if (this.nostrEnabled && this.isNip29Initialized) {
+        try {
+          // Create Nostr group
+          const groupData = await nip29Bridge.createGroupForClub(newTeam);
+          
+          if (groupData) {
+            // Update team with Nostr group ID
+            newTeam.hasNostrGroup = true;
+            newTeam.nostrGroupId = groupData.groupId;
+            
+            // Update in storage
+            const updatedTeamsWithNostr = updatedTeams.map(t => 
+              t.id === newTeam.id ? newTeam : t
+            );
+            
+            localStorage.setItem(this.teamsStorageKey, JSON.stringify(updatedTeamsWithNostr));
+            
+            // Notify listeners of the update
+            this.notifyListeners('teams', updatedTeamsWithNostr);
+          }
+        } catch (error) {
+          console.error('Error creating Nostr group for team:', error);
+          // Continue with centralized team creation even if Nostr fails
+        }
+      }
       
       // Notify listeners
       this.notifyListeners('teams', updatedTeams);
@@ -172,7 +300,7 @@ class TeamsDataService {
    * @param {string} role - Role of the user in the team (member, admin)
    * @returns {boolean} Success status
    */
-  addMember(teamId, userId, role = 'member') {
+  async addMember(teamId, userId, role = 'member') {
     try {
       const memberships = this.getMemberships();
       
@@ -199,6 +327,22 @@ class TeamsDataService {
         this.updateTeam(teamId, { 
           memberCount: (team.memberCount || 0) + 1
         });
+      }
+      
+      // If Nostr integration is enabled and the team has a Nostr group, add user to the group
+      if (this.nostrEnabled && this.isNip29Initialized && team && team.hasNostrGroup) {
+        try {
+          // Get user's Nostr pubkey
+          const userPubkey = await getUserPublicKey();
+          
+          if (userPubkey) {
+            // Add user to Nostr group
+            await nip29Bridge.addUserToGroup(teamId, userPubkey);
+          }
+        } catch (error) {
+          console.error('Error adding user to Nostr group:', error);
+          // Continue with centralized membership even if Nostr fails
+        }
       }
       
       // Notify listeners
@@ -270,7 +414,7 @@ class TeamsDataService {
    * @param {string} content - Message content
    * @returns {Object} The created message object
    */
-  addTeamMessage(teamId, userId, content) {
+  async addTeamMessage(teamId, userId, content) {
     try {
       const messages = this.getTeamMessages(teamId);
       
@@ -287,6 +431,23 @@ class TeamsDataService {
       
       const updatedMessages = [...allMessagesParsed.filter(m => m.teamId !== teamId), ...messages, newMessage];
       localStorage.setItem(this.teamMessagesKey, JSON.stringify(updatedMessages));
+      
+      // If Nostr integration is enabled and the team has a Nostr group, send message to the group
+      const team = this.getTeamById(teamId);
+      if (this.nostrEnabled && this.isNip29Initialized && team && team.hasNostrGroup) {
+        try {
+          // Get user's Nostr pubkey
+          const userPubkey = await getUserPublicKey();
+          
+          if (userPubkey) {
+            // Send message to Nostr group
+            await nip29Bridge.sendMessageToGroup(teamId, content, userPubkey);
+          }
+        } catch (error) {
+          console.error('Error sending message to Nostr group:', error);
+          // Continue with centralized message even if Nostr fails
+        }
+      }
       
       // Notify listeners
       this.notifyListeners('messages', updatedMessages);
@@ -684,9 +845,34 @@ class TeamsDataService {
     // Notify listeners
     this.notifyListeners('teams', sampleTeams);
   }
+
+  /**
+   * Enable or disable Nostr integration
+   * @param {boolean} enabled - Whether Nostr integration should be enabled
+   */
+  setNostrIntegration(enabled) {
+    try {
+      this.nostrEnabled = enabled;
+      localStorage.setItem('nostr_groups_enabled', enabled ? 'true' : 'false');
+      
+      if (enabled && !this.isNip29Initialized) {
+        this._initializeNostrBridge();
+      }
+    } catch (error) {
+      console.error('Error setting Nostr integration:', error);
+    }
+  }
+
+  /**
+   * Check if Nostr integration is enabled
+   * @returns {boolean} Whether Nostr integration is enabled
+   */
+  isNostrIntegrationEnabled() {
+    return this.nostrEnabled;
+  }
 }
 
-// Create singleton instance
+// Create and export singleton instance
 const teamsDataService = new TeamsDataService();
 
 // Initialize sample data

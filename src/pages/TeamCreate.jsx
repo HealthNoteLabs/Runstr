@@ -1,34 +1,31 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useTeams } from '../contexts/TeamsContext';
+import { TeamsContext } from '../contexts/TeamsContext';
+import { NostrContext } from '../contexts/NostrContext';
 
 export const TeamCreate = () => {
   const navigate = useNavigate();
-  const { createTeam, error, clearError, currentUser } = useTeams();
+  const { createTeam, error, clearError, currentUser, nostrIntegrationEnabled } = useContext(TeamsContext);
+  const { publicKey, requestNostrPermissions } = useContext(NostrContext);
   
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    imageUrl: '',
-    isPublic: true
+    isPublic: true,
+    enableNostr: nostrIntegrationEnabled
   });
   
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Redirect if not logged in
+  // Redirect to teams page if not logged in
   useEffect(() => {
-    if (!currentUser) {
-      // Set a small delay to allow the UI to render first
-      const timer = setTimeout(() => {
-        navigate('/teams');
-      }, 1500);
-      
-      return () => clearTimeout(timer);
+    if (!currentUser && !publicKey) {
+      navigate('/teams');
     }
-  }, [currentUser, navigate]);
+  }, [currentUser, publicKey, navigate]);
   
-  // Handle input change
+  // Handle form input changes
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
@@ -41,73 +38,53 @@ export const TeamCreate = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Form validation
-    if (!formData.name.trim()) {
-      setFormError('Club name is required');
-      return;
-    }
-    
-    // Validate name length
-    if (formData.name.trim().length < 3) {
-      setFormError('Club name must be at least 3 characters long');
-      return;
-    }
-    
-    if (formData.name.trim().length > 50) {
-      setFormError('Club name cannot exceed 50 characters');
-      return;
-    }
-    
-    // Validate description
-    if (formData.description.trim().length > 500) {
-      setFormError('Description cannot exceed 500 characters');
-      return;
-    }
-    
-    // Validate image URL if provided
-    if (formData.imageUrl && !isValidUrl(formData.imageUrl)) {
-      setFormError('Please enter a valid image URL');
-      return;
-    }
-    
-    if (!currentUser) {
-      setFormError('You must be logged in to create a club');
-      return;
-    }
-    
-    // Clear errors
-    setFormError('');
-    clearError();
-    setIsSubmitting(true);
-    
     try {
+      setIsSubmitting(true);
+      setFormError('');
+      clearError();
+      
+      // Validate form
+      if (!formData.name.trim()) {
+        setFormError('Club name is required');
+        setIsSubmitting(false);
+        return;
+      }
+      
+      // Check if Nostr permissions are needed but not granted
+      if (formData.enableNostr && !publicKey) {
+        const hasPermission = await requestNostrPermissions();
+        if (!hasPermission) {
+          setFormError('Nostr permissions are required to create a club with Nostr integration');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+      
       // Create the team
-      const newTeam = await createTeam(formData);
+      const newTeam = await createTeam({
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        isPublic: formData.isPublic,
+        enableNostr: formData.enableNostr,
+        createdAt: new Date().toISOString()
+      });
       
       if (newTeam) {
-        // Navigate to the new team's page
+        // Navigate to the new team page
         navigate(`/teams/${newTeam.id}`);
       } else {
-        setFormError('Failed to create club. Please try again.');
+        setFormError('Failed to create team. Please try again.');
       }
-    } catch (err) {
-      setFormError(err.message || 'An error occurred while creating the club');
+    } catch (error) {
+      console.error('Error creating team:', error);
+      setFormError(error.message || 'An unexpected error occurred');
     } finally {
       setIsSubmitting(false);
     }
   };
   
-  // Validate URL
-  const isValidUrl = (urlString) => {
-    try {
-      new URL(urlString);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  
-  if (!currentUser) {
+  // Render loading state or redirect if not logged in
+  if (!currentUser && !publicKey) {
     return (
       <div className="px-4 pt-6 text-center">
         <h1 className="text-2xl font-bold mb-6">Access Denied</h1>
@@ -143,7 +120,7 @@ export const TeamCreate = () => {
       {/* Create team form */}
       <form onSubmit={handleSubmit} className="bg-[#1a222e] rounded-lg p-6">
         <div className="mb-4">
-          <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-1">
+          <label htmlFor="name" className="block text-sm font-medium mb-2">
             Club Name *
           </label>
           <input
@@ -153,17 +130,13 @@ export const TeamCreate = () => {
             value={formData.name}
             onChange={handleChange}
             placeholder="Enter club name"
-            className="w-full p-3 bg-[#111827] border border-gray-700 rounded-lg"
+            className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             required
-            maxLength={50}
           />
-          <p className="mt-1 text-xs text-gray-500">
-            {formData.name.length}/50 characters
-          </p>
         </div>
         
         <div className="mb-4">
-          <label htmlFor="description" className="block text-sm font-medium text-gray-300 mb-1">
+          <label htmlFor="description" className="block text-sm font-medium mb-2">
             Description
           </label>
           <textarea
@@ -171,63 +144,61 @@ export const TeamCreate = () => {
             name="description"
             value={formData.description}
             onChange={handleChange}
-            placeholder="What&apos;s this club about?"
-            className="w-full p-3 bg-[#111827] border border-gray-700 rounded-lg min-h-[100px]"
-            maxLength={500}
+            placeholder="Describe your club (optional)"
+            rows={4}
+            className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <p className="mt-1 text-xs text-gray-500">
-            {formData.description.length}/500 characters
-          </p>
-        </div>
-        
-        <div className="mb-4">
-          <label htmlFor="imageUrl" className="block text-sm font-medium text-gray-300 mb-1">
-            Club Image URL
-          </label>
-          <input
-            type="url"
-            id="imageUrl"
-            name="imageUrl"
-            value={formData.imageUrl}
-            onChange={handleChange}
-            placeholder="https://example.com/image.jpg"
-            className="w-full p-3 bg-[#111827] border border-gray-700 rounded-lg"
-          />
-          <p className="mt-1 text-xs text-gray-500">
-            Enter a URL for your club&apos;s image (optional)
-          </p>
         </div>
         
         <div className="mb-6">
-          <div className="flex items-center">
+          <label className="flex items-center">
             <input
               type="checkbox"
-              id="isPublic"
               name="isPublic"
               checked={formData.isPublic}
               onChange={handleChange}
-              className="h-4 w-4 text-blue-600 rounded"
+              className="mr-2 h-4 w-4"
             />
-            <label htmlFor="isPublic" className="ml-2 block text-sm text-gray-300">
-              Make this club public (anyone can join)
-            </label>
-          </div>
+            <span className="text-sm">
+              Make this club publicly discoverable
+            </span>
+          </label>
         </div>
         
-        <div className="flex justify-end space-x-4">
+        {nostrIntegrationEnabled && (
+          <div className="mb-6 p-4 bg-purple-900/20 border border-purple-800 rounded-lg">
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                name="enableNostr"
+                checked={formData.enableNostr}
+                onChange={handleChange}
+                className="mr-2 h-4 w-4"
+              />
+              <span>
+                Enable Nostr integration for this club
+              </span>
+            </label>
+            <p className="mt-2 text-xs text-gray-400">
+              This will create a corresponding NIP29 group on the Nostr network,
+              allowing interoperability with other Nostr clients.
+              {!publicKey && " Requires Nostr authentication."}
+            </p>
+          </div>
+        )}
+        
+        <div className="flex justify-end">
           <button
             type="button"
             onClick={() => navigate('/teams')}
-            className="px-4 py-2 text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-800"
+            className="px-4 py-2 mr-2 bg-gray-700 text-white rounded-lg"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={isSubmitting}
-            className={`px-4 py-2 bg-blue-600 text-white rounded-lg ${
-              isSubmitting ? 'opacity-60 cursor-not-allowed' : 'hover:bg-blue-700'
-            }`}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50"
           >
             {isSubmitting ? 'Creating...' : 'Create Club'}
           </button>
