@@ -243,15 +243,15 @@ jobs:
           retention-days: 7
 
       - name: Upload CHANGELOG artifact
-        # Only upload if a release happened and CHANGELOG.md exists
-        if: steps.semantic_release.outputs.released == 'true' && steps.semantic_release.outcome == 'success'
+        # Always upload CHANGELOG.md if it exists and the job reaches this point
         uses: actions/upload-artifact@v4
         with:
            name: changelog-${{ steps.determine_build_version.outputs.build_version }}
            path: CHANGELOG.md
+           if-no-files-found: warn # Don't fail if CHANGELOG.md is somehow missing
            retention-days: 7
 
-      - name: 🧹 Clean up Keystore
+      - name: �� Clean up Keystore
         if: ${{ always() }} # Always run this step
         run: |
           echo "Removing keystore file..."
