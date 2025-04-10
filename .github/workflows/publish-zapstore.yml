@@ -117,8 +117,13 @@ jobs:
           echo "Version from package.json: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      # --- Build Web Assets ---
+      # Build the web assets BEFORE syncing with Capacitor
+      - name: Build Web App
+        run: npm run build
+
       # --- Capacitor Sync ---
-      # Sync web assets AFTER potential package.json version update
+      # Sync web assets AFTER potential package.json version update and AFTER web build
       - name: Sync Capacitor Android Project
         run: npx cap sync android
 
