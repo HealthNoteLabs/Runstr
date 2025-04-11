@@ -9,7 +9,6 @@ on:
       # Prereleases/builds from updates1 (adjust branch name and prerelease config in .releaserc if needed)
       - updates1
       # Explicitly add the current working branch for testing visibility
-      - updates1-release-prep
   # Enable manual trigger for the Zapstore publish step confirmation
   workflow_dispatch:
     inputs:
