@@ -201,41 +201,156 @@ jobs:
           echo "build_version=$BUILD_VERSION" >> $GITHUB_OUTPUT
 
       # --- Build ---
-      - name: Build Release APK
+      # Changed to packageRelease to build unsigned APK first
+      - name: Build Unsigned Release APK Package
+        run: |
+          cd android
+          BUILD_VERSION=${{ steps.determine_build_version.outputs.build_version }}
+          echo "Building Unsigned Release APK package version $BUILD_VERSION..."
+          # Only package, don't assemble/sign yet
+          ./gradlew packageRelease \
+            -PappVersionName=$BUILD_VERSION # Still pass version name
+          echo "Unsigned APK location: android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          cd ..
+
+      # --- Clean Metadata from Unsigned APK ---
+      - name: Clean Metadata from Unsigned APK
+        id: clean_apk
+        run: |
+          UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          if [[ ! -f "$UNSIGNED_APK" ]]; then
+            echo "❌ Unsigned APK not found at $UNSIGNED_APK"
+            exit 1
+          fi
+          echo "Running cleaning script on $UNSIGNED_APK"
+          # Grant execute permissions to the script
+          chmod +x .github/scripts/clean_apk_metadata.sh
+          # Run the script, it will output the path to the cleaned APK
+          .github/scripts/clean_apk_metadata.sh "$UNSIGNED_APK"
+
+      # --- Align Cleaned APK ---
+      - name: Find zipalign
+        id: find_zipalign
+        run: |
+          # Find zipalign in the installed Android SDK build-tools
+          # Assuming setup-android action puts build-tools on PATH or typical location
+          # Or use the path from the setup-android action if it provides one
+          ZIPALIGN_PATH=$(find "$ANDROID_SDK_ROOT/build-tools" -name zipalign -type f | sort -r | head -n 1)
+          if [ -z "$ZIPALIGN_PATH" ]; then
+            echo "❌ zipalign not found in SDK build-tools."
+            # Fallback: Try finding it on PATH
+            if command -v zipalign &> /dev/null; then
+              ZIPALIGN_PATH=$(command -v zipalign)
+              echo "Found zipalign on PATH: $ZIPALIGN_PATH"
+            else
+              echo "❌ zipalign also not found on PATH. Cannot proceed."
+              exit 1
+            fi
+          fi
+          echo "Using zipalign at: $ZIPALIGN_PATH"
+          echo "zipalign_path=$ZIPALIGN_PATH" >> $GITHUB_OUTPUT
+
+      - name: Align Cleaned APK
+        id: align_apk
+        run: |
+          CLEANED_UNSIGNED_APK="${{ steps.clean_apk.outputs.cleaned_apk_path }}"
+          ALIGNED_APK_PATH="${CLEANED_UNSIGNED_APK%.apk}-aligned.apk" # Output filename
+          ZIPALIGN_CMD="${{ steps.find_zipalign.outputs.zipalign_path }}"
+
+          if [ ! -f "$CLEANED_UNSIGNED_APK" ]; then
+            echo "❌ Cleaned unsigned APK not found: $CLEANED_UNSIGNED_APK"
+            exit 1
+          fi
+
+          echo "Aligning $CLEANED_UNSIGNED_APK to $ALIGNED_APK_PATH"
+          "$ZIPALIGN_CMD" -v 4 "$CLEANED_UNSIGNED_APK" "$ALIGNED_APK_PATH"
+
+          if [ ! -f "$ALIGNED_APK_PATH" ]; then
+            echo "❌ Failed to create aligned APK at $ALIGNED_APK_PATH"
+            exit 1
+          fi
+          echo "✅ APK aligned: $ALIGNED_APK_PATH"
+          echo "aligned_apk_path=$ALIGNED_APK_PATH" >> $GITHUB_OUTPUT
+
+      # --- Sign Cleaned, Aligned APK ---
+      - name: Find apksigner
+        id: find_apksigner
+        run: |
+          # Find apksigner similar to zipalign
+          APKSIGNER_PATH=$(find "$ANDROID_SDK_ROOT/build-tools" -name apksigner -type f | sort -r | head -n 1)
+          if [ -z "$APKSIGNER_PATH" ]; then
+            echo "❌ apksigner not found in SDK build-tools."
+            # Fallback: Try finding it on PATH
+            if command -v apksigner &> /dev/null; then
+              APKSIGNER_PATH=$(command -v apksigner)
+              echo "Found apksigner on PATH: $APKSIGNER_PATH"
+            else 
+              echo "❌ apksigner also not found on PATH. Cannot proceed."
+              exit 1
+            fi
+          fi
+          echo "Using apksigner at: $APKSIGNER_PATH"
+          echo "apksigner_path=$APKSIGNER_PATH" >> $GITHUB_OUTPUT
+
+      - name: Sign Final APK
+        id: sign_apk
         env:
           SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
-          cd android
-          BUILD_VERSION=${{ steps.determine_build_version.outputs.build_version }}
-          echo "Building Release APK version $BUILD_VERSION..."
-          # Pass signing config via command line properties
-          ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=$(realpath ./app/runstr-release-key.keystore) \
-            -Pandroid.injected.signing.store.password="$SIGNING_STORE_PASSWORD" \
-            -Pandroid.injected.signing.key.alias="$SIGNING_KEY_ALIAS" \
-            -Pandroid.injected.signing.key.password="$SIGNING_KEY_PASSWORD" \
-            -PappVersionName=$BUILD_VERSION # Pass final version to build
-          cd ..
+          ALIGNED_APK="${{ steps.align_apk.outputs.aligned_apk_path }}"
+          # Define final output name, similar to what assembleRelease would produce
+          FINAL_SIGNED_APK="android/app/build/outputs/apk/release/app-release.apk"
+          APKSIGNER_CMD="${{ steps.find_apksigner.outputs.apksigner_path }}"
+          KEYSTORE_FILE="$GITHUB_WORKSPACE/android/app/runstr-release-key.keystore"
+
+          if [ ! -f "$ALIGNED_APK" ]; then
+            echo "❌ Aligned APK not found for signing: $ALIGNED_APK"
+            exit 1
+          fi
+          if [ ! -f "$KEYSTORE_FILE" ]; then
+            echo "❌ Keystore file not found: $KEYSTORE_FILE"
+            exit 1
+          fi
+
+          echo "Signing $ALIGNED_APK using $KEYSTORE_FILE..."
+          "$APKSIGNER_CMD" sign \
+            --ks "$KEYSTORE_FILE" \
+            --ks-key-alias "$SIGNING_KEY_ALIAS" \
+            --ks-pass pass:"$SIGNING_STORE_PASSWORD" \
+            --key-pass pass:"$SIGNING_KEY_PASSWORD" \
+            --out "$FINAL_SIGNED_APK" \
+            "$ALIGNED_APK"
+
+          if [ ! -f "$FINAL_SIGNED_APK" ]; then
+            echo "❌ Failed to create signed APK at $FINAL_SIGNED_APK"
+            exit 1
+          fi
+          echo "✅ Final signed APK created: $FINAL_SIGNED_APK"
+          echo "final_apk_path=$FINAL_SIGNED_APK" >> $GITHUB_OUTPUT
 
       # --- Prepare Artifact ---
+      # Now uses the final signed APK from the previous step
       - name: Prepare release directory and Rename APK
         id: prepare_artifact
         run: |
           mkdir -p ./release
           VERSION=${{ steps.determine_build_version.outputs.build_version }}
-          APK_ORIGINAL="android/app/build/outputs/apk/release/app-release.apk"
+          # Use the output from the sign_apk step
+          APK_ORIGINAL="${{ steps.sign_apk.outputs.final_apk_path }}"
           APK_RENAMED="./release/runstr-${VERSION}.apk" # Consistent naming
 
           if [[ ! -f "$APK_ORIGINAL" ]]; then
-            echo "❌ Built APK not found at $APK_ORIGINAL"
+            echo "❌ Final signed APK not found at $APK_ORIGINAL"
             exit 1
           fi
 
           echo "Moving $APK_ORIGINAL to $APK_RENAMED"
           mv "$APK_ORIGINAL" "$APK_RENAMED"
-          echo "✅ APK prepared: $APK_RENAMED"
+          # Clean up intermediate files (optional, runner cleans anyway)
+          rm -f ${{ steps.clean_apk.outputs.cleaned_apk_path }} ${{ steps.align_apk.outputs.aligned_apk_path }}
+          echo "✅ Final APK prepared: $APK_RENAMED"
           echo "apk_path=$APK_RENAMED" >> $GITHUB_OUTPUT # Output path
 
       - name: Validate APK file
