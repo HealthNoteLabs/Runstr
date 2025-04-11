@@ -459,7 +459,7 @@ jobs:
         run: ls -lR ./release
 
       # --- Install Zapstore Tools ---
-      - name: Install ZapStore CLI and apktool
+      - name: Install ZapStore CLI
         run: |
           echo "Installing Zapstore CLI..."
           ZAP_CLI_URL="https://cdn.zapstore.dev/0d684425c4bbd3fdecc58f7bf7fc55366d71b8ded9d68b3bbfcb3fcca1072325"
@@ -469,14 +469,15 @@ jobs:
           zapstore --version || { echo "❌ Zapstore CLI install failed."; exit 1; }
           echo "✅ Zapstore CLI installed."
 
-          echo "Installing apktool via apt..."
-          sudo apt-get update -y
-          sudo apt-get install -y apktool || { echo "❌ apktool install via apt failed."; exit 1; }
-          echo "✅ apktool installed via apt."
+          # Removing apktool installation as an experiment
+          # echo "Installing apktool via apt..."
+          # sudo apt-get update -y
+          # sudo apt-get install -y apktool || { echo "❌ apktool install via apt failed."; exit 1; }
+          # echo "✅ apktool installed via apt."
 
-          # Verify apktool installation
-          apktool --version || { echo "❌ apktool command not found or failed after install."; exit 1; }
-          echo "✅ apktool verified."
+          # Verify apktool installation - Removed as apktool is not installed
+          # apktool --version || { echo "❌ apktool command not found or failed after install."; exit 1; }
+          # echo "✅ apktool verified."
 
       - name: Install Android apksigner tool
         run: |
@@ -569,141 +570,6 @@ jobs:
           echo "Contents of ./release after cleanup:"
           ls -l ./release
       
-      # --- Clean APK Metadata ---
-      - name: Clean APK Metadata
-        env:
-          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        run: |
-          cd ./release
-          
-          echo "Creating backup of original APK..."
-          cp "${APK_FILENAME}" "original_${APK_FILENAME}"
-          
-          echo "Creating temporary directory..."
-          mkdir -p temp_meta
-          
-          # Use a more robust approach to clean the APK
-          # Extract the APK to a temporary directory
-          mkdir -p clean_apk_contents
-          unzip -q "${APK_FILENAME}" -d clean_apk_contents
-
-          # Find and remove ALL YAML files that might contain problematic metadata
-          echo "Removing all .yml files from APK..."
-          find clean_apk_contents -name "*.yml" -type f -delete
-          find clean_apk_contents -name "*.yaml" -type f -delete
-          
-          # Special handling for apktool.yml which is most often the cause
-          rm -f clean_apk_contents/apktool.yml
-          rm -f clean_apk_contents/META-INF/apktool.yml
-          
-          # Remove signature files since we'll need to re-sign anyway
-          echo "Removing existing signature files..."
-          rm -rf clean_apk_contents/META-INF/*.RSA
-          rm -rf clean_apk_contents/META-INF/*.SF
-          rm -rf clean_apk_contents/META-INF/*.MF
-          
-          echo "Creating cleaned unsigned APK..."
-          # Create a new, clean APK without any YML files
-          cd clean_apk_contents
-          zip -r -q "../clean_unsigned_${APK_FILENAME}" ./*
-          cd ..
-          
-          # Check if we need to re-sign
-          echo "Verifying if we need to re-sign the APK..."
-          # Save the clean unsigned APK for reference
-          mv "clean_unsigned_${APK_FILENAME}" "unsigned_${APK_FILENAME}"
-          
-          if [ -f "../android/app/runstr-release-key.keystore" ]; then
-            echo "Keystore found, re-signing the APK..."
-            
-            # Re-sign the APK using the same key
-            "$APKSIGNER_PATH" sign \
-              --ks "../android/app/runstr-release-key.keystore" \
-              --ks-key-alias "$SIGNING_KEY_ALIAS" \
-              --ks-pass "pass:$SIGNING_STORE_PASSWORD" \
-              --key-pass "pass:$SIGNING_KEY_PASSWORD" \
-              --out "clean_${APK_FILENAME}" \
-              "unsigned_${APK_FILENAME}"
-              
-            if [ $? -eq 0 ]; then
-              echo "✅ APK re-signed successfully"
-              # Replace the original APK with the cleaned and signed version
-              mv "clean_${APK_FILENAME}" "${APK_FILENAME}"
-            else
-              echo "⚠️ Re-signing failed, using original APK for safety"
-              # Keep original APK since signing failed
-              cp "original_${APK_FILENAME}" "${APK_FILENAME}"
-            fi
-          else
-            echo "⚠️ Keystore not found, using original APK for safety"
-            # Keep original APK since we can't re-sign
-            cp "original_${APK_FILENAME}" "${APK_FILENAME}"
-          fi
-          
-          # Clean up
-          rm -rf temp_meta clean_apk_contents
-          
-          echo "✅ APK metadata cleaning process completed"
-          cd ..
-      
-      # --- Verify Cleaned APK ---
-      - name: Verify Cleaned APK
-        run: |
-          cd ./release
-          
-          echo "Verifying APK is free from problematic metadata..."
-          
-          # Create a temporary directory for verification
-          mkdir -p verify_apk
-          
-          # Try to extract ANY yml files to see if we missed any
-          unzip -q "${APK_FILENAME}" "*.yml" -d verify_apk 2>/dev/null || true
-          unzip -q "${APK_FILENAME}" "META-INF/*.yml" -d verify_apk 2>/dev/null || true
-          
-          # Check if any YML files were found
-          if [ -n "$(find verify_apk -type f -name "*.yml" 2>/dev/null)" ]; then
-            echo "⚠️ Warning: Some YAML files still present in APK after cleaning!"
-            # Check specifically for the problematic tag
-            if grep -q "!!brut.androlib.meta.MetaInfo" verify_apk/*/*.yml 2>/dev/null || grep -q "!!brut.androlib.meta.MetaInfo" verify_apk/*.yml 2>/dev/null; then
-              echo "❌ ERROR: Problematic '!!brut.androlib.meta.MetaInfo' tag still found in APK after cleaning!"
-              echo "Attempting emergency deeper cleaning..."
-              
-              # More aggressive cleaning attempt as a last resort
-              mkdir -p emergency_clean
-              unzip -q "${APK_FILENAME}" -d emergency_clean
-              find emergency_clean -name "*.yml" -o -name "*.yaml" -type f -delete
-              
-              # Create a fresh APK without ANY yml files
-              cd emergency_clean
-              zip -r -q "../emergency_${APK_FILENAME}" ./*
-              cd ..
-              
-              # Replace the APK with this emergency cleaned version
-              mv "emergency_${APK_FILENAME}" "${APK_FILENAME}"
-              rm -rf emergency_clean
-              
-              echo "Emergency cleaning completed. Proceeding with caution."
-            else
-              echo "YML files found but do not contain problematic tags. Proceeding with caution."
-            fi
-          else
-            echo "✅ Verification passed - no problematic metadata found in APK"
-          fi
-          
-          # Final check of APK validity
-          if ! unzip -l "${APK_FILENAME}" | grep -q AndroidManifest.xml; then
-            echo "❌ Error: APK appears invalid after cleaning (no AndroidManifest.xml found)"
-            # Restore the original APK as a fallback
-            cp "original_${APK_FILENAME}" "${APK_FILENAME}"
-            echo "Restored original APK due to validation failure."
-          fi
-          
-          # Clean up
-          rm -rf verify_apk
-          cd ..
-          
       # --- Publish ---
       - name: Publish to Zapstore
         env:
