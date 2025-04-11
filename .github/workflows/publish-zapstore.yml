@@ -220,19 +220,37 @@ jobs:
             -Pandroid.injected.signing.key.alias="$SIGNING_KEY_ALIAS" \
             -Pandroid.injected.signing.key.password="$SIGNING_KEY_PASSWORD" \
             -PappVersionName=$BUILD_VERSION # Still pass version name
-          echo "Unsigned APK location: android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          echo "Unsigned APK location (expected): android/app/build/outputs/apk/release/app-release-unsigned.apk"
           cd ..
+
+      # --- DEBUG: List build output directory ---
+      - name: List APK Output Directory
+        run: |
+          echo "Listing contents of android/app/build/outputs/apk/release/"
+          # Use find to be more robust, list details, ignore errors if dir doesn't exist yet
+          find android/app/build/outputs/apk/release/ -maxdepth 1 -ls || echo "Directory android/app/build/outputs/apk/release/ not found or empty."
 
       # --- Clean Metadata from Unsigned APK ---
       - name: Clean Metadata from Unsigned APK
         id: clean_apk
         run: |
           UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          echo "Checking for unsigned APK at: $UNSIGNED_APK"
+          # Add listing here too for redundancy before the check
+          echo "Listing contents of android/app/build/outputs/apk/release/ before check:"
+          ls -lha android/app/build/outputs/apk/release/ || echo "Directory android/app/build/outputs/apk/release/ not found or empty during check."
+
           if [[ ! -f "$UNSIGNED_APK" ]]; then
             echo "❌ Unsigned APK not found at $UNSIGNED_APK"
+            # Add a broader search just in case
+            echo "Searching for *unsigned.apk in android/app/build/outputs/..."
+            find android/app/build/outputs -name '*unsigned.apk' -ls
+            # Also list the whole outputs directory structure
+            echo "Full structure of android/app/build/outputs/:"
+            ls -R android/app/build/outputs/
             exit 1
           fi
-          echo "Running cleaning script on $UNSIGNED_APK"
+          echo "✅ Found unsigned APK. Running cleaning script on $UNSIGNED_APK"
           # Grant execute permissions to the script
           chmod +x .github/scripts/clean_apk_metadata.sh
           # Run the script, it will output the path to the cleaned APK
