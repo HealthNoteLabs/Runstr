@@ -510,66 +510,113 @@ jobs:
       - name: Create zapstore.yaml and Basic Release Notes
         run: |
           VERSION=${{ needs.release_and_build.outputs.build_version }}
-          # Use the raw GitHub URL for the logo in the main branch - KEEP THIS AS IS FOR NOW, but ideally use local copy
-          RUNSTR_ICON_URL="https://raw.githubusercontent.com/TheWildHustle/Nostr-Run-Club/main/runstr-logo.png"
-          ICON_FILENAME="runstr_logo.png" # Consistent icon filename
+          # Define filenames and paths
+          ROOT_ZAPSTORE_YAML="$GITHUB_WORKSPACE/zapstore.yaml"
+          ROOT_LOGO_PNG="$GITHUB_WORKSPACE/runstr-logo.png"
+          RELEASE_DIR="./release" # Use variable for clarity
+          ICON_FILENAME="runstr_logo.png" # Consistent icon filename in release dir
           NOTES_FILENAME="release_notes.md"
-          ZAPSTORE_YAML_FILENAME="zapstore.yaml" # Define filename
+          ZAPSTORE_YAML_FILENAME="zapstore.yaml" # Filename in release dir
 
-          cd ./release # Work inside the release directory
+          echo "=== Preparing Metadata in $RELEASE_DIR ==="
+          echo "Version: $VERSION"
+          echo "Release Directory: $RELEASE_DIR"
+          echo "Expected Root Zapstore Config: $ROOT_ZAPSTORE_YAML"
+          echo "Expected Root Logo: $ROOT_LOGO_PNG"
 
-          # Find the actual APK file downloaded into this directory
+          cd $RELEASE_DIR # Work inside the release directory
+          echo "Current directory: $(pwd)"
+
+          # --- Find APK ---
+          echo "--- Finding APK file ---"
           ACTUAL_APK_FILE=$(find . -maxdepth 1 -name 'runstr-*.apk' -print -quit)
           if [ -z "$ACTUAL_APK_FILE" ]; then
-            echo "❌ Downloaded APK file (runstr-*.apk) not found in ./release directory!"
+            echo "❌ Downloaded APK file (runstr-*.apk) not found in $RELEASE_DIR directory!"
+            ls -lR . # List contents for debugging
             exit 1
           fi
-          # Get just the filename (basename)
           ACTUAL_APK_FILENAME=$(basename "$ACTUAL_APK_FILE")
-          echo "Found APK: $ACTUAL_APK_FILENAME"
+          echo "✅ Found APK: $ACTUAL_APK_FILENAME (full path: $(pwd)/$ACTUAL_APK_FILENAME)"
 
-          # Copy the existing zapstore.yaml from the repository root
-          echo "Copying existing zapstore.yaml from workspace root..."
-          cp "$GITHUB_WORKSPACE/$ZAPSTORE_YAML_FILENAME" "./$ZAPSTORE_YAML_FILENAME"
-          if [ ! -f "./$ZAPSTORE_YAML_FILENAME" ]; then
-            echo "Error: Failed to copy $ZAPSTORE_YAML_FILENAME from repository root."
-            # Optionally fail the job if the file is essential
-            # exit 1
-            # Or provide a default minimal one as fallback? For now, just warn/error.
-          else
-             echo "✅ Copied $ZAPSTORE_YAML_FILENAME."
+          # --- Copy and Verify zapstore.yaml ---
+          echo "--- Processing $ZAPSTORE_YAML_FILENAME ---"
+          echo "Checking for root config: $ROOT_ZAPSTORE_YAML"
+          if [ ! -f "$ROOT_ZAPSTORE_YAML" ]; then
+              echo "❌ Root $ZAPSTORE_YAML_FILENAME not found at $ROOT_ZAPSTORE_YAML!"
+              exit 1
           fi
-
-          # Create BASIC release notes (REPLACED EXTRACTION LOGIC)
-          echo "Creating basic release notes..."
-          echo "# Release v$VERSION" > "$NOTES_FILENAME"
-          echo "See repository CHANGELOG.md for full details." >> "$NOTES_FILENAME"
-          echo "✅ Basic notes created for v$VERSION."
-
-          # Copy the local logo file into the release directory
-          echo "Copying local runstr-logo.png to ./release/$ICON_FILENAME"
-          # Ensure the source path is correct relative to GITHUB_WORKSPACE
-          cp "$GITHUB_WORKSPACE/runstr-logo.png" "./$ICON_FILENAME" 
-          if [ ! -f "./$ICON_FILENAME" ]; then
-            echo "Error: Failed to copy runstr-logo.png to release directory."
+          echo "Copying $ROOT_ZAPSTORE_YAML to $(pwd)/$ZAPSTORE_YAML_FILENAME"
+          cp "$ROOT_ZAPSTORE_YAML" "./$ZAPSTORE_YAML_FILENAME"
+          if [ ! -f "./$ZAPSTORE_YAML_FILENAME" ]; then
+            echo "❌ Error: Failed to copy $ZAPSTORE_YAML_FILENAME to $(pwd)"
             exit 1
           fi
+          echo "✅ Copied $ZAPSTORE_YAML_FILENAME to $(pwd)"
+          echo "--- Original $ZAPSTORE_YAML_FILENAME contents ---"
+          cat "./$ZAPSTORE_YAML_FILENAME"
+          echo "------------------------------------------"
 
-          # Set the actual discovered filename for the publish step
+          # --- Copy and Verify Logo ---
+          echo "--- Processing $ICON_FILENAME ---"
+          echo "Checking for root logo: $ROOT_LOGO_PNG"
+          if [ ! -f "$ROOT_LOGO_PNG" ]; then
+              echo "❌ Root logo file not found at $ROOT_LOGO_PNG!"
+              exit 1
+          fi
+          echo "Copying $ROOT_LOGO_PNG to $(pwd)/$ICON_FILENAME"
+          cp "$ROOT_LOGO_PNG" "./$ICON_FILENAME"
+          if [ ! -f "./$ICON_FILENAME" ]; then
+            echo "❌ Error: Failed to copy $ICON_FILENAME to $(pwd)"
+            exit 1
+          fi
+          echo "✅ Copied $ICON_FILENAME to $(pwd)"
+
+          # --- Modify zapstore.yaml to use local icon ---
+          echo "--- Modifying $ZAPSTORE_YAML_FILENAME to use local icon: $ICON_FILENAME ---"
+          # Replace the line containing 'url:' under 'icons:' with the local filename
+          # Using simple sed; adjust if your yaml structure is more complex
+          # This assumes the icon section looks somewhat like:
+          # icons:
+          #   - url: https://...
+          #     type: image/png
+          # It will replace the url line with 'file: runstr_logo.png'
+          sed -i "/icons:/,/^[^[:space:]]/{ s|url:.*|file: $ICON_FILENAME|g }" "./$ZAPSTORE_YAML_FILENAME"
+          echo "✅ Modified $ZAPSTORE_YAML_FILENAME."
+          echo "--- Modified $ZAPSTORE_YAML_FILENAME contents ---"
+          cat "./$ZAPSTORE_YAML_FILENAME"
+          echo "-------------------------------------------"
+
+
+          # --- Create Release Notes ---
+          echo "--- Creating Release Notes ($NOTES_FILENAME) ---"
+          echo "# Release v$VERSION" > "$NOTES_FILENAME"
+          echo "" >> "$NOTES_FILENAME"
+          echo "See repository CHANGELOG.md for full details." >> "$NOTES_FILENAME"
+          # Check if notes file was created
+          if [ ! -f "./$NOTES_FILENAME" ]; then
+             echo "❌ Error: Failed to create $NOTES_FILENAME in $(pwd)"
+             exit 1
+          fi
+          echo "✅ Created $NOTES_FILENAME:"
+          cat "$NOTES_FILENAME"
+
+          # --- Set Environment Variables ---
+          echo "--- Setting Environment Variables ---"
+          echo "Setting APK_FILENAME=$ACTUAL_APK_FILENAME"
           echo "APK_FILENAME=$ACTUAL_APK_FILENAME" >> $GITHUB_ENV
+          echo "Setting ICON_FILENAME=$ICON_FILENAME"
           echo "ICON_FILENAME=$ICON_FILENAME" >> $GITHUB_ENV
+          echo "Setting NOTES_FILENAME=$NOTES_FILENAME"
           echo "NOTES_FILENAME=$NOTES_FILENAME" >> $GITHUB_ENV
-          # We no longer directly use zapstore.yaml filename in the publish command itself
-          # but it's good practice to check it exists.
+          echo "✅ Environment variables set."
 
-          echo "✅ Metadata (copied), icon, and basic release notes prepared in ./release directory."
-          echo "--- Copied Zapstore Config (${ZAPSTORE_YAML_FILENAME}) ---"
-          # Optionally cat the copied file for verification
-          # cat "${ZAPSTORE_YAML_FILENAME}"
-          echo "--- Release Notes (${NOTES_FILENAME}) ---"
-          cat "${NOTES_FILENAME}"
-          echo "-------------------------------------"
+          # --- Final Check ---
+          echo "--- Final contents of $RELEASE_DIR before exiting step ---"
+          ls -lR .
+          echo "----------------------------------------------------------"
+
           cd .. # Return to workspace root
+          echo "Current directory after returning: $(pwd)"
 
       # --- APKTool Decode for Debugging ---
       - name: Decode APK and Log apktool.yml Before Publish
