@@ -457,6 +457,11 @@ jobs:
           echo "Installing apktool via zapstore CLI (attempt 1)..."
           if yes | zapstore install apktool; then
             echo "✅ apktool installed via zapstore CLI."
+            # Add the install directory to the PATH for the current step
+            ZAPSTORE_BIN_DIR="/home/runner/.zapstore"
+            echo "Adding $ZAPSTORE_BIN_DIR to PATH"
+            export PATH="$ZAPSTORE_BIN_DIR:$PATH"
+            echo "Updated PATH: $PATH"
           else
             echo "⚠️ apktool install via zapstore failed. Falling back to manual install..."
             APKTOOL_VERSION="2.9.3" # Use a known compatible version
