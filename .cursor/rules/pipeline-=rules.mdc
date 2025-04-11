@@ -1,0 +1,7 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Only lok at publish-zapstore.yaml
+Never change zapstore publish flags unless you've checked the cli docs
