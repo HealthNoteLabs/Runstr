@@ -213,13 +213,9 @@ jobs:
           BUILD_VERSION=${{ steps.determine_build_version.outputs.build_version }}
           echo "Building Unsigned Release APK package version $BUILD_VERSION..."
           # Only package, don't assemble/sign yet
-          # Pass signing config via command line properties - required by packageRelease if signingConfig is set for release type
+          # Remove signing config props, as signingConfig is removed from build.gradle
           ./gradlew packageRelease \
-            -Pandroid.injected.signing.store.file=$(realpath ./app/runstr-release-key.keystore) \
-            -Pandroid.injected.signing.store.password="$SIGNING_STORE_PASSWORD" \
-            -Pandroid.injected.signing.key.alias="$SIGNING_KEY_ALIAS" \
-            -Pandroid.injected.signing.key.password="$SIGNING_KEY_PASSWORD" \
-            -PappVersionName=$BUILD_VERSION # Still pass version name
+            -PappVersionName=$BUILD_VERSION # Just pass version name
           echo "Unsigned APK location (expected): android/app/build/outputs/apk/release/app-release-unsigned.apk"
           cd ..
 
