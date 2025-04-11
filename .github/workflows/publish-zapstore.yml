@@ -75,15 +75,6 @@ jobs:
           echo "✅ apktool installed via apt."
           apktool --version || { echo "❌ apktool command not found or failed after install."; exit 1; }
 
-        
-      - name: Install apktool for cleaning # Add apktool install here
-        run: |
-          echo "Installing apktool via apt..."
-          sudo apt-get update -y
-          sudo apt-get install -y apktool || { echo "❌ apktool install via apt failed."; exit 1; }
-          echo "✅ apktool installed via apt."
-          apktool --version || { echo "❌ apktool command not found or failed after install."; exit 1; }
-
       # --- Semantic Release ---
       # This step determines the version, generates changelog, updates package.json, commits, and tags
       - name: Run Semantic Release
@@ -243,50 +234,6 @@ jobs:
           # Use find to be more robust, list details, ignore errors if dir doesn't exist yet
           find android/app/build/outputs/apk/release/ -maxdepth 1 -ls || echo "Directory android/app/build/outputs/apk/release/ not found or empty."
 
-      # --- Clean Metadata from Unsigned APK ---
-      # Use apktool directly for cleaning
-      - name: Clean Metadata from Unsigned APK using apktool
-        id: clean_apk_apktool # Rename ID for clarity
-        run: |
-          UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
-          DECODED_DIR="apk_decoded"
-          CLEANED_UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned-cleaned.apk"
-          
-          echo "Checking for unsigned APK at: $UNSIGNED_APK"
-          if [[ ! -f "$UNSIGNED_APK" ]]; then
-            echo "❌ Unsigned APK not found at $UNSIGNED_APK. Listing contents..."
-            ls -R android/app/build/outputs/
-            exit 1
-          fi
-          
-          echo "✅ Found unsigned APK. Cleaning using apktool..."
-          echo "Decoding $UNSIGNED_APK to $DECODED_DIR..."
-          apktool d "$UNSIGNED_APK" -o "$DECODED_DIR" -f || { echo "❌ apktool decode failed"; exit 1; }
-          
-          # Remove the problematic metadata file
-          if [ -f "$DECODED_DIR/apktool.yml" ]; then
-             echo "Removing $DECODED_DIR/apktool.yml..."
-             rm "$DECODED_DIR/apktool.yml"
-          else
-             echo "No apktool.yml found in decoded directory."
-          fi
-          
-          # Rebuild the APK without the metadata file
-          echo "Rebuilding cleaned APK to $CLEANED_UNSIGNED_APK..."
-          apktool b "$DECODED_DIR" -o "$CLEANED_UNSIGNED_APK" || { echo "❌ apktool build failed"; exit 1; }
-          
-          if [ ! -f "$CLEANED_UNSIGNED_APK" ]; then
-             echo "❌ Failed to create cleaned unsigned APK at $CLEANED_UNSIGNED_APK"
-             exit 1
-          fi
-          
-          # Cleanup decoded directory
-          rm -rf "$DECODED_DIR"
-          
-          echo "✅ APK cleaned using apktool. Output: $CLEANED_UNSIGNED_APK"
-          echo "cleaned_apk_path=$CLEANED_UNSIGNED_APK" >> $GITHUB_OUTPUT
-
-      # --- Align Cleaned APK ---
       # --- Align APK (using original unsigned APK) ---
       - name: Find zipalign
         id: find_zipalign
@@ -312,9 +259,6 @@ jobs:
       - name: Align APK
         id: align_apk
         run: |
-          # Use the output path from the apktool cleaning step
-          CLEANED_UNSIGNED_APK="${{ steps.clean_apk_apktool.outputs.cleaned_apk_path }}"
-          ALIGNED_APK_PATH="${CLEANED_UNSIGNED_APK%.apk}-aligned.apk" # Output filename
           # Use the original unsigned APK path directly
           UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
           # Define output path for the aligned APK
@@ -413,7 +357,6 @@ jobs:
           echo "Moving $APK_ORIGINAL to $APK_RENAMED"
           mv "$APK_ORIGINAL" "$APK_RENAMED"
           # Clean up intermediate files (optional, runner cleans anyway)
-          rm -f ${{ steps.clean_apk_apktool.outputs.cleaned_apk_path }} ${{ steps.align_apk.outputs.aligned_apk_path }}
           rm -f ${{ steps.align_apk.outputs.aligned_apk_path }}
           echo "✅ Final APK prepared: $APK_RENAMED"
           echo "apk_path=$APK_RENAMED" >> $GITHUB_OUTPUT # Output path
@@ -500,8 +443,7 @@ jobs:
         run: ls -lR ./release
 
       # --- Install Zapstore Tools ---
-      - name: Install ZapStore CLI and apktool # Restore apktool to name
-      - name: Install ZapStore CLI and apktool # Restore apktool to name
+      - name: Install ZapStore CLI and apktool # Keep one valid version of this step
         run: |
           echo "Installing Zapstore CLI..."
           ZAP_CLI_URL="https://cdn.zapstore.dev/0d684425c4bbd3fdecc58f7bf7fc55366d71b8ded9d68b3bbfcb3fcca1072325"
@@ -516,15 +458,7 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y apktool || { echo "❌ apktool install via apt failed."; exit 1; }
           echo "✅ apktool installed via apt."
-          # Restore apktool installation
-          echo "Installing apktool via apt..."
-          sudo apt-get update -y
-          sudo apt-get install -y apktool || { echo "❌ apktool install via apt failed."; exit 1; }
-          echo "✅ apktool installed via apt."
 
-          # Restore apktool verification
-          apktool --version || { echo "❌ apktool command not found or failed after install."; exit 1; }
-          echo "✅ apktool verified."
           # Restore apktool verification
           apktool --version || { echo "❌ apktool command not found or failed after install."; exit 1; }
           echo "✅ apktool verified."
@@ -548,32 +482,7 @@ jobs:
           chmod +x "$APKSIGNER_PATH"
 
       # --- Find aapt2 for inspection ---
-      - name: Find aapt2
-        id: find_aapt2
-        run: |
-          # Find aapt2 similar to apksigner
-          AAPT2_PATH=$(find /tmp/build-tools -name aapt2 -type f | head -n 1)
-          if [ -z "$AAPT2_PATH" ]; then
-            echo "❌ aapt2 not found in downloaded build tools."
-            # Attempt to find in SDK ROOT as fallback
-            ALT_AAPT2_PATH=$(find "$ANDROID_SDK_ROOT/build-tools" -name aapt2 -type f | sort -r | head -n 1)
-            if [ -n "$ALT_AAPT2_PATH" ]; then
-               AAPT2_PATH="$ALT_AAPT2_PATH"
-               echo "Found aapt2 in SDK build-tools: $AAPT2_PATH"
-            else
-               echo "❌ aapt2 also not found in SDK build-tools. Cannot proceed with badging."
-               # Don't exit, allow publish to attempt anyway, but store empty path
-               AAPT2_PATH=""
-            fi
-          fi
-          if [ -n "$AAPT2_PATH" ]; then
-             echo "Using aapt2 at: $AAPT2_PATH"
-             chmod +x "$AAPT2_PATH"
-          fi
-          echo "aapt2_path=$AAPT2_PATH" >> $GITHUB_OUTPUT
-
-      # --- Find aapt2 for inspection ---
-      - name: Find aapt2
+      - name: Find aapt2 # Keep one valid version of this step
         id: find_aapt2
         run: |
           # Find aapt2 similar to apksigner
@@ -702,17 +611,25 @@ jobs:
       - name: Inspect APK Badging before Publish
         if: steps.find_aapt2.outputs.aapt2_path != '' # Only run if aapt2 was found
         env:
-           # Get APK filename from the previous step's env var
-           APK_FILENAME_ENV: ${{ env.APK_FILENAME }} 
+           # Get APK filename from the decode step's env var
+           APK_FILENAME_ENV: ${{ steps.decode_for_debug.outputs.APK_FILENAME_FOR_PUBLISH || env.APK_FILENAME }} 
         run: |
            cd ./release
            AAPT2_CMD="${{ steps.find_aapt2.outputs.aapt2_path }}"
-           APK_FILE="$APK_FILENAME_ENV" # Use the env var passed down
+           # Use the env var passed down from decode step
+           APK_FILE="$APK_FILENAME_ENV" 
 
            if [ -z "$APK_FILE" ]; then
-             echo "❌ APK_FILENAME environment variable not set or empty."
-             exit 1
+             echo "❌ APK_FILENAME_ENV environment variable not set or empty."
+             # Fallback to finding it again if needed? Better to rely on the previous step.
+             APK_FILE=$(find . -maxdepth 1 -name 'runstr-*.apk' -print -quit)
+             if [ -z "$APK_FILE" ]; then
+                echo "❌ Fallback failed: APK file (runstr-*.apk) not found in ./release directory for inspection."
+                exit 1
+             fi
+             echo "Used fallback to find APK: $APK_FILE"
            fi
+           
            if [ ! -f "$APK_FILE" ]; then
              echo "❌ APK file '$APK_FILE' not found in ./release directory for inspection."
              exit 1
@@ -731,8 +648,9 @@ jobs:
           VERSION: ${{ needs.release_and_build.outputs.build_version }}
           # Get APK filename from the decode step's env var
           APK_FILENAME: ${{ steps.decode_for_debug.outputs.APK_FILENAME_FOR_PUBLISH || env.APK_FILENAME }}
-          ICON_FILENAME: ${{ env.ICON_FILENAME }}
-          NOTES_FILENAME: ${{ env.NOTES_FILENAME }}
+          # Make sure these are still available or set earlier in this job
+          ICON_FILENAME: ${{ env.ICON_FILENAME || 'runstr_logo.png' }} 
+          NOTES_FILENAME: ${{ env.NOTES_FILENAME || 'release_notes.md' }} 
         run: |
           cd ./release # Navigate into the directory with assets
 
@@ -754,10 +672,9 @@ jobs:
           test -f "${NOTES_FILENAME}" || { echo "❌ Notes file '${NOTES_FILENAME}' not found!"; exit 1; }
 
           # Verify APK has a signature (optional check)
-          # Verify APK has a signature (optional check)
           if [ -f "${APK_FILENAME}" ]; then
             echo "Checking APK signature..."
-            if unzip -l "${APK_FILENAME}" | grep -q "META-INF/.*\.RSA"; then
+            if unzip -l "${APK_FILENAME}" | grep -q "META-INF/.*\\.RSA"; then
               echo "✅ APK appears to be signed (found .RSA files)"
             else
               echo "⚠️ Warning: APK may not be properly signed (no .RSA files found)"
@@ -788,6 +705,7 @@ jobs:
             if echo "$PUBLISH_OUTPUT" | grep -q "invalid apk metadata"; then
                echo "Failure seems related to APK metadata as suspected."
             fi
+             # Consider adding more error checks based on output
             exit $PUBLISH_EXIT_CODE # Ensure the step fails with the original exit code
           else
             echo "✅ Successfully published version ${VERSION} to Zapstore!"
