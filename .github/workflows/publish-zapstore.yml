@@ -280,63 +280,86 @@ jobs:
           echo "✅ APK aligned: $ALIGNED_APK_PATH"
           echo "aligned_apk_path=$ALIGNED_APK_PATH" >> $GITHUB_OUTPUT
 
-      # --- Sign Cleaned, Aligned APK ---
-      - name: Find apksigner
-        id: find_apksigner
-        run: |
-          # Find apksigner similar to zipalign
-          APKSIGNER_PATH=$(find "$ANDROID_SDK_ROOT/build-tools" -name apksigner -type f | sort -r | head -n 1)
-          if [ -z "$APKSIGNER_PATH" ]; then
-            echo "❌ apksigner not found in SDK build-tools."
-            # Fallback: Try finding it on PATH
-            if command -v apksigner &> /dev/null; then
-              APKSIGNER_PATH=$(command -v apksigner)
-              echo "Found apksigner on PATH: $APKSIGNER_PATH"
-            else 
-              echo "❌ apksigner also not found on PATH. Cannot proceed."
-              exit 1
-            fi
-          fi
-          echo "Using apksigner at: $APKSIGNER_PATH"
-          echo "apksigner_path=$APKSIGNER_PATH" >> $GITHUB_OUTPUT
-
-      - name: Sign Final APK
+      # --- Sign APK
+      - name: Sign APK
         id: sign_apk
-        env:
-          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
-          ALIGNED_APK="${{ steps.align_apk.outputs.aligned_apk_path }}"
-          # Define final output name, similar to what assembleRelease would produce
-          FINAL_SIGNED_APK="android/app/build/outputs/apk/release/app-release.apk"
-          APKSIGNER_CMD="${{ steps.find_apksigner.outputs.apksigner_path }}"
-          KEYSTORE_FILE="$GITHUB_WORKSPACE/android/app/runstr-release-key.keystore"
+          # Extract version from build.gradle
+          VERSION=$(grep versionName ../../android/app/build.gradle | sed 's/versionName "\(.*\)"/\1/')
+          echo "Extracted version: $VERSION"
 
-          if [ ! -f "$ALIGNED_APK" ]; then
-            echo "❌ Aligned APK not found for signing: $ALIGNED_APK"
+          # Define paths
+          KEYSTORE_PATH="$GITHUB_WORKSPACE/my-release-key.keystore"
+          SIGNED_APK_PATH="./release/app-release.apk" # Use a fixed name initially
+          FINAL_APK_PATH="./release/runstr-${VERSION}.apk"
+
+          # Check if keystore file exists
+          if [ ! -f "$KEYSTORE_PATH" ]; then
+            echo "Keystore file not found at $KEYSTORE_PATH"
             exit 1
           fi
-          if [ ! -f "$KEYSTORE_FILE" ]; then
-            echo "❌ Keystore file not found: $KEYSTORE_FILE"
-            exit 1
-          fi
 
-          echo "Signing $ALIGNED_APK using $KEYSTORE_FILE..."
-          "$APKSIGNER_CMD" sign \
-            --ks "$KEYSTORE_FILE" \
-            --ks-key-alias "$SIGNING_KEY_ALIAS" \
-            --ks-pass pass:"$SIGNING_STORE_PASSWORD" \
-            --key-pass pass:"$SIGNING_KEY_PASSWORD" \
-            --out "$FINAL_SIGNED_APK" \
-            "$ALIGNED_APK"
+          # Print debug info
+          echo "Signing APK: android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          echo "Using Keystore: $KEYSTORE_PATH"
+          echo "Output Signed APK: $SIGNED_APK_PATH"
 
-          if [ ! -f "$FINAL_SIGNED_APK" ]; then
-            echo "❌ Failed to create signed APK at $FINAL_SIGNED_APK"
+          # Use apksigner for signing
+          "$ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner" sign \
+            --ks "$KEYSTORE_PATH" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass pass:"$KEYSTORE_PASSWORD" \
+            --key-pass pass:"$KEY_PASSWORD" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --out "$SIGNED_APK_PATH" \
+            android/app/build/outputs/apk/release/app-release-unsigned.apk
+
+          # Verify the signature
+          "$ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner" verify "$SIGNED_APK_PATH"
+          echo "✅ APK signed and verified successfully."
+
+          # Rename the signed APK to include the version
+          mv "$SIGNED_APK_PATH" "$FINAL_APK_PATH"
+          echo "Renamed signed APK to $FINAL_APK_PATH"
+
+          # Set output for artifact name
+          echo "apk_name=runstr-${VERSION}.apk" >> $GITHUB_OUTPUT
+          echo "apk_path=$FINAL_APK_PATH" >> $GITHUB_OUTPUT
+
+      - name: Validate APK Metadata
+        id: validate_metadata
+        run: |
+          APK_PATH="${{ steps.sign_apk.outputs.apk_path }}"
+          echo "Validating metadata for $APK_PATH"
+          PACKAGE=$(aapt2 dump badging "$APK_PATH" | grep "package:" | awk '{print $2}' | cut -d"'" -f2)
+          VERSION_NAME=$(aapt2 dump badging "$APK_PATH" | grep "versionName=" | cut -d"'" -f2)
+          VERSION_CODE=$(aapt2 dump badging "$APK_PATH" | grep "versionCode=" | cut -d"'" -f2)
+
+          if [ -z "$PACKAGE" ] || [ -z "$VERSION_NAME" ] || [ -z "$VERSION_CODE" ]; then
+            echo "❌ APK missing required metadata (package/versionName/versionCode)"
+            aapt2 dump badging "$APK_PATH" # Print details for debugging
             exit 1
+          else
+            echo "✅ APK Metadata:"
+            echo "   Package: $PACKAGE"
+            echo "   Version Name: $VERSION_NAME"
+            echo "   Version Code: $VERSION_CODE"
           fi
-          echo "✅ Final signed APK created: $FINAL_SIGNED_APK"
-          echo "final_apk_path=$FINAL_SIGNED_APK" >> $GITHUB_OUTPUT
+          # Optionally, pass these to outputs if needed later
+          echo "package_name=$PACKAGE" >> $GITHUB_OUTPUT
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+
+      - name: Verify Artifact Before Upload
+        id: verify_before_upload
+        run: |
+          APK_PATH="${{ steps.sign_apk.outputs.apk_path }}"
+          echo "Calculating SHA256 for $APK_PATH before upload..."
+          # Calculate and output the hash (first field of sha256sum output)
+          HASH=$(sha256sum "$APK_PATH" | awk '{ print $1 }')
+          echo "SHA256: $HASH"
+          echo "apk_hash=$HASH" >> $GITHUB_OUTPUT
 
       # --- Prepare Artifact ---
       # Now uses the final signed APK from the previous step
@@ -346,7 +369,7 @@ jobs:
           mkdir -p ./release
           VERSION=${{ steps.determine_build_version.outputs.build_version }}
           # Use the output from the sign_apk step
-          APK_ORIGINAL="${{ steps.sign_apk.outputs.final_apk_path }}"
+          APK_ORIGINAL="${{ steps.sign_apk.outputs.apk_path }}"
           APK_RENAMED="./release/runstr-${VERSION}.apk" # Consistent naming
 
           if [[ ! -f "$APK_ORIGINAL" ]]; then
@@ -439,10 +462,41 @@ jobs:
           name: runstr-apk-${{ needs.release_and_build.outputs.build_version }}
           path: ./release # Download into a release directory
 
+      - name: Verify Artifact After Download
+        id: verify_after_download
+        run: |
+          cd ./release
+          # Find the downloaded APK
+          APK_FILE=$(find . -maxdepth 1 -name 'runstr-*.apk' -print -quit)
+          if [ -z "$APK_FILE" ]; then
+            echo "❌ Downloaded APK file (runstr-*.apk) not found in ./release directory!"
+            exit 1
+          fi
+          ACTUAL_APK_FILENAME=$(basename "$APK_FILE")
+          echo "Verifying SHA256 for $ACTUAL_APK_FILENAME..."
+          # Calculate hash of the downloaded file
+          DOWNLOADED_HASH=$(sha256sum "$ACTUAL_APK_FILENAME" | awk '{ print $1 }')
+          # Get the expected hash from the build job's output
+          EXPECTED_HASH="${{ needs.release_and_build.outputs.apk_hash }}"
+
+          echo "  Expected SHA256: $EXPECTED_HASH"
+          echo "  Downloaded SHA256: $DOWNLOADED_HASH"
+
+          if [[ "$DOWNLOADED_HASH" == "$EXPECTED_HASH" ]]; then
+            echo "✅ SHA256 Hashes match!"
+          else
+            echo "❌ SHA256 Hashes DO NOT match!"
+            exit 1
+          fi
+          # Pass the verified filename for subsequent steps
+          echo "APK_FILENAME=$ACTUAL_APK_FILENAME" >> $GITHUB_ENV
+          cd ..
+
       - name: List downloaded files
         run: ls -lR ./release
 
       # --- Install Zapstore Tools ---
+      - name: Install ZapStore CLI and apktool # Keep one valid version of this step
       - name: Install ZapStore CLI and apktool # Keep one valid version of this step
         run: |
           echo "Installing Zapstore CLI..."
@@ -505,6 +559,13 @@ jobs:
              chmod +x "$AAPT2_PATH"
           fi
           echo "aapt2_path=$AAPT2_PATH" >> $GITHUB_OUTPUT
+
+      - name: Install yq for YAML parsing
+        run: |
+          echo "Installing yq..."
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq && sudo chmod +x /usr/bin/yq
+          yq --version || { echo "❌ yq install failed."; exit 1; }
+          echo "✅ yq installed."
 
       # --- Prepare Zapstore Metadata ---
       - name: Create zapstore.yaml and Basic Release Notes
@@ -571,6 +632,66 @@ jobs:
           echo "-------------------------------------"
           cd .. # Return to workspace root
 
+      - name: Validate zapstore.yaml against APK Metadata
+        id: validate_zapstore_config
+        env:
+           APK_FILENAME: ${{ env.APK_FILENAME }} # Get from verify step
+        run: |
+          cd ./release
+          ZAPSTORE_YAML="./zapstore.yaml"
+          APK_FILE="./${APK_FILENAME}" # Use the verified filename
+
+          if [ ! -f "$ZAPSTORE_YAML" ]; then
+             echo "⚠️ zapstore.yaml not found in release directory, skipping validation."
+             # Decide if this should be a failure or just a warning
+             exit 0 # Or exit 1 to fail
+          fi
+          if [ ! -f "$APK_FILE" ]; then
+             echo "❌ APK file $APK_FILE not found for validation."
+             exit 1
+          fi
+
+          echo "Validating $ZAPSTORE_YAML against $APK_FILE..."
+
+          # Extract Package Name from APK using aapt2 (assuming it was found)
+          AAPT2_CMD="${{ steps.find_aapt2.outputs.aapt2_path }}"
+          APK_PACKAGE_NAME=""
+          if [[ -n "$AAPT2_CMD" && -x "$AAPT2_CMD" ]]; then
+             APK_PACKAGE_NAME=$("$AAPT2_CMD" dump badging "$APK_FILE" | grep "package:" | awk '{print $2}' | cut -d"'" -f2)
+          else
+             echo "⚠️ aapt2 not found or executable, cannot extract package name from APK for validation."
+             # Allow to proceed but log warning
+          fi
+
+          # Extract app_id from zapstore.yaml using yq
+          YAML_APP_ID=$(yq e '.app_id' "$ZAPSTORE_YAML")
+
+          echo "  APK Package Name: $APK_PACKAGE_NAME (extracted via aapt2)"
+          echo "  zapstore.yaml app_id: $YAML_APP_ID"
+
+          if [[ -n "$APK_PACKAGE_NAME" && "$APK_PACKAGE_NAME" != "$YAML_APP_ID" ]]; then
+             echo "❌ Mismatch: APK package name ('$APK_PACKAGE_NAME') does not match app_id ('$YAML_APP_ID') in $ZAPSTORE_YAML!"
+             # Decide whether to fail the build here
+             # exit 1
+             echo "⚠️ Continuing despite mismatch..." # Currently warning only
+          elif [[ -n "$APK_PACKAGE_NAME" ]]; then
+             echo "✅ APK package name matches zapstore.yaml app_id."
+          else
+             echo "ℹ️ Could not compare app_id as APK package name was not extracted."
+          fi
+
+          # Optional: Validate version (needs version from build job)
+          # YAML_VERSION=$(yq e '.version' "$ZAPSTORE_YAML")
+          # BUILD_VERSION="${{ needs.release_and_build.outputs.build_version }}"
+          # echo "  Build Version: $BUILD_VERSION"
+          # echo "  zapstore.yaml version: $YAML_VERSION"
+          # if [[ "$BUILD_VERSION" != "$YAML_VERSION" ]]; then
+          #    echo "❌ Mismatch: Build version ('$BUILD_VERSION') does not match version ('$YAML_VERSION') in $ZAPSTORE_YAML!"
+          #    # exit 1
+          # fi
+
+          cd .. # Return to workspace root
+
       # --- APKTool Decode for Debugging ---
       - name: Decode APK and Log apktool.yml Before Publish
         id: decode_for_debug
@@ -613,9 +734,13 @@ jobs:
         env:
            # Get APK filename from the decode step's env var
            APK_FILENAME_ENV: ${{ steps.decode_for_debug.outputs.APK_FILENAME_FOR_PUBLISH || env.APK_FILENAME }} 
+           # Get APK filename from the decode step's env var
+           APK_FILENAME_ENV: ${{ steps.decode_for_debug.outputs.APK_FILENAME_FOR_PUBLISH || env.APK_FILENAME }} 
         run: |
            cd ./release
            AAPT2_CMD="${{ steps.find_aapt2.outputs.aapt2_path }}"
+           # Use the env var passed down from decode step
+           APK_FILE="$APK_FILENAME_ENV" 
            # Use the env var passed down from decode step
            APK_FILE="$APK_FILENAME_ENV" 
 
@@ -628,7 +753,16 @@ jobs:
                 exit 1
              fi
              echo "Used fallback to find APK: $APK_FILE"
+             echo "❌ APK_FILENAME_ENV environment variable not set or empty."
+             # Fallback to finding it again if needed? Better to rely on the previous step.
+             APK_FILE=$(find . -maxdepth 1 -name 'runstr-*.apk' -print -quit)
+             if [ -z "$APK_FILE" ]; then
+                echo "❌ Fallback failed: APK file (runstr-*.apk) not found in ./release directory for inspection."
+                exit 1
+             fi
+             echo "Used fallback to find APK: $APK_FILE"
            fi
+           
            
            if [ ! -f "$APK_FILE" ]; then
              echo "❌ APK file '$APK_FILE' not found in ./release directory for inspection."
@@ -648,6 +782,9 @@ jobs:
           VERSION: ${{ needs.release_and_build.outputs.build_version }}
           # Get APK filename from the decode step's env var
           APK_FILENAME: ${{ steps.decode_for_debug.outputs.APK_FILENAME_FOR_PUBLISH || env.APK_FILENAME }}
+          # Make sure these are still available or set earlier in this job
+          ICON_FILENAME: ${{ env.ICON_FILENAME || 'runstr_logo.png' }} 
+          NOTES_FILENAME: ${{ env.NOTES_FILENAME || 'release_notes.md' }} 
           # Make sure these are still available or set earlier in this job
           ICON_FILENAME: ${{ env.ICON_FILENAME || 'runstr_logo.png' }} 
           NOTES_FILENAME: ${{ env.NOTES_FILENAME || 'release_notes.md' }} 
@@ -674,6 +811,7 @@ jobs:
           # Verify APK has a signature (optional check)
           if [ -f "${APK_FILENAME}" ]; then
             echo "Checking APK signature..."
+            if unzip -l "${APK_FILENAME}" | grep -q "META-INF/.*\\.RSA"; then
             if unzip -l "${APK_FILENAME}" | grep -q "META-INF/.*\\.RSA"; then
               echo "✅ APK appears to be signed (found .RSA files)"
             else
@@ -705,6 +843,7 @@ jobs:
             if echo "$PUBLISH_OUTPUT" | grep -q "invalid apk metadata"; then
                echo "Failure seems related to APK metadata as suspected."
             fi
+             # Consider adding more error checks based on output
              # Consider adding more error checks based on output
             exit $PUBLISH_EXIT_CODE # Ensure the step fails with the original exit code
           else
