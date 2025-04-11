@@ -453,14 +453,28 @@ jobs:
           zapstore --version || { echo "❌ Zapstore CLI install failed."; exit 1; }
           echo "✅ Zapstore CLI installed."
 
-          # Restore apktool installation
-          echo "Installing apktool via apt..."
-          sudo apt-get update -y
-          sudo apt-get install -y apktool || { echo "❌ apktool install via apt failed."; exit 1; }
-          echo "✅ apktool installed via apt."
+          # Install apktool using zapstore CLI first, fallback to manual
+          echo "Installing apktool via zapstore CLI (attempt 1)..."
+          if yes | zapstore install apktool; then
+            echo "✅ apktool installed via zapstore CLI."
+          else
+            echo "⚠️ apktool install via zapstore failed. Falling back to manual install..."
+            APKTOOL_VERSION="2.9.3" # Use a known compatible version
+            APKTOOL_JAR_URL="https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_${APKTOOL_VERSION}.jar"
+            APKTOOL_WRAPPER_URL="https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool"
+            echo "Downloading apktool jar from $APKTOOL_JAR_URL"
+            curl -L -o apktool.jar "$APKTOOL_JAR_URL" || { echo "❌ Failed to download apktool jar"; exit 1; }
+            echo "Downloading apktool wrapper script from $APKTOOL_WRAPPER_URL"
+            curl -L -o apktool "$APKTOOL_WRAPPER_URL" || { echo "❌ Failed to download apktool wrapper"; exit 1; }
+            chmod +x apktool
+            sudo mv apktool /usr/local/bin/
+            sudo mv apktool.jar /usr/local/bin/
+            echo "✅ apktool manually installed to /usr/local/bin/"
+          fi
 
-          # Restore apktool verification
-          apktool --version || { echo "❌ apktool command not found or failed after install."; exit 1; }
+          # Verify apktool installation
+          echo "Verifying apktool version..."
+          apktool --version || { echo "❌ apktool command not found or failed after install attempts."; exit 1; }
           echo "✅ apktool verified."
 
       - name: Install Android apksigner tool
