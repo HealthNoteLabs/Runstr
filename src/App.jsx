@@ -9,6 +9,7 @@ import { ActivityModeProvider } from './contexts/ActivityModeContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { MenuBar } from './components/MenuBar';
 import { initializeNostr } from './utils/nostr';
+import { debugNIP29, fixNIP29Settings } from './debug-nip29';
 import './App.css';
 
 // Lazy load components
@@ -24,6 +25,18 @@ const App = () => {
   useEffect(() => {
     const preloadNostr = async () => {
       console.log('Preloading Nostr connection on app launch');
+      
+      // Run NIP29 diagnostics
+      console.log('Running NIP29 diagnostics...');
+      const diagnostics = debugNIP29();
+      console.log('NIP29 diagnostics result:', diagnostics);
+      
+      // Fix NIP29 settings if needed
+      if (!diagnostics.nip29Enabled) {
+        console.log('NIP29 is not enabled, fixing settings...');
+        fixNIP29Settings();
+      }
+      
       await initializeNostr();
       
       // Prefetch run feed data using dynamic import to avoid circular dependencies

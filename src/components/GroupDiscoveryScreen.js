@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import NIP29Bridge from '../services/NIP29Bridge';
+import { ensureNIP29Enabled } from '../utils/androidStorage';
+
+// Ensure NIP29 is enabled
+ensureNIP29Enabled();
 
 // Initialize the bridge
 const nip29Bridge = new NIP29Bridge();

@@ -11,6 +11,8 @@
 
 import { SimplePool } from 'nostr-tools';
 import { getUserPublicKey, createAndPublishEvent } from '../utils/nostrClient';
+import { Platform } from '../utils/react-native-shim';
+import { ensureNIP29Enabled, isNIP29Enabled } from '../utils/androidStorage';
 
 // NIP-29 event kinds
 const NIP29_KINDS = {
@@ -44,7 +46,7 @@ const NIP29_VALIDATION_RULES = {
           typeof metadata.name === 'string' &&
           metadata.name.length > 0
         );
-      } catch (_) {
+      } catch {
         return false;
       }
     }
@@ -56,7 +58,7 @@ const NIP29_VALIDATION_RULES = {
       try {
         const metadata = JSON.parse(content);
         return typeof metadata === 'object';
-      } catch (_) {
+      } catch {
         return false;
       }
     }
@@ -136,22 +138,33 @@ const openDatabase = () => {
 
 class NIP29Bridge {
   constructor() {
-    this.pool = new SimplePool();
-    this.relays = [
-      'wss://relay.damus.io',
-      'wss://nos.lol',
-      'wss://relay.nostr.band',
-      'wss://relay.snort.social',
-      'wss://relay.0xchat.com'  // Specialized relay with strong NIP-29 support
-    ];
-    this.subscriptions = new Map();
-    this.listeners = [];
-    this.processInterval = null;
-    this.syncInterval = null;
-    this.isInitialized = false;
+    // For Android, always consider NIP29 as enabled
+    if (Platform.OS === 'android') {
+      this.enabled = true;
+      this.initialized = false;
+      this.db = null;
+      this.listeners = [];
+      this.processingQueue = [];
+      this.isProcessing = false;
+      this.initializeDb();
+      return;
+    }
     
-    // Mapping between club IDs and Nostr group IDs
-    this.clubToGroupMap = new Map();
+    // For other platforms, check settings
+    // Ensure NIP29 is enabled before initializing
+    if (!isNIP29Enabled()) {
+      console.log('NIP29 is not enabled. Bridge will not function.');
+      this.enabled = false;
+      return;
+    }
+    
+    this.enabled = true;
+    this.initialized = false;
+    this.db = null;
+    this.listeners = [];
+    this.processingQueue = [];
+    this.isProcessing = false;
+    this.initializeDb();
   }
 
   /**
@@ -159,19 +172,68 @@ class NIP29Bridge {
    * @returns {Promise<boolean>} Success status
    */
   async initialize() {
-    if (this.isInitialized) return true;
-    
     try {
+      await this.ensureNIP29Enabled();
+      
+      // Make sure the flag is set correctly
+      const isEnabled = localStorage.getItem('nostr_groups_enabled') === 'true';
+      if (!isEnabled && Platform.OS === 'android') {
+        console.log('[NIP29Bridge] Enforcing NIP29 enabled for Android');
+        localStorage.setItem('nostr_groups_enabled', 'true');
+      }
+      
+      // If still not enabled after our attempts, exit
+      if (localStorage.getItem('nostr_groups_enabled') !== 'true') {
+        console.log('[NIP29Bridge] NIP29 integration disabled');
+        return false;
+      }
+      
+      // Continue with normal initialization
+      const publicKey = await getUserPublicKey();
+      if (!publicKey) {
+        console.log('NIP29Bridge: Cannot initialize without public key');
+        return false;
+      }
+      
+      console.log('Initializing NIP29Bridge...');
+      
       // Load club-to-group mappings from storage
       this.loadMappings();
+      
+      // Verify that WebSockets are available
+      if (typeof WebSocket === 'undefined') {
+        console.error('WebSocket not available, NIP29Bridge cannot initialize');
+        return false;
+      }
+      
+      // Test connection to at least one relay
+      let connectedToAnyRelay = false;
+      for (const relay of this.relays) {
+        try {
+          const connection = this.pool.ensureRelay(relay);
+          if (connection) {
+            console.log(`Connected to relay: ${relay}`);
+            connectedToAnyRelay = true;
+            break;
+          }
+        } catch (error) {
+          console.warn(`Failed to connect to relay: ${relay}`, error);
+        }
+      }
+      
+      if (!connectedToAnyRelay) {
+        console.error('Failed to connect to any relays, NIP29Bridge initialization failed');
+        return false;
+      }
       
       // Start background processing
       this.startBackgroundProcessing();
       
       this.isInitialized = true;
+      console.log('NIP29Bridge initialized successfully');
       return true;
     } catch (error) {
-      console.error('Failed to initialize NIP29Bridge:', error);
+      console.error('NIP29Bridge: Failed to initialize', error);
       return false;
     }
   }
@@ -1587,8 +1649,76 @@ class NIP29Bridge {
     
     console.log(`Cleaned up subscriptions for group ${groupId}`);
   }
+
+  async getMessages(channelId, limit = 20, since, until) {
+    if (!channelId) {
+      throw new Error('Channel ID is required to get messages');
+    }
+
+    try {
+      // Get the group ID for this channel
+      const groupId = this.getGroupIdForClub(channelId);
+      if (!groupId) {
+        console.log('NIP29Bridge: No group found for channel ID', channelId);
+        return [];
+      }
+
+      // Create filter for fetching messages
+      const filter = {
+        kinds: [9730, 9731],
+        '#e': [groupId],
+        limit: limit
+      };
+
+      // Add time constraints if provided
+      if (since) {
+        filter.since = since;
+      }
+      if (until) {
+        filter.until = until;
+      }
+
+      // Fetch events
+      const events = await this.pool.list(this.relays, [filter]);
+      
+      // Process and return the events as messages
+      return events.map(event => {
+        return {
+          id: event.id,
+          pubkey: event.pubkey,
+          created_at: event.created_at,
+          content: event.content,
+          groupId: groupId,
+          channelId: channelId,
+          kind: event.kind,
+          tags: event.tags
+        };
+      });
+    } catch (error) {
+      console.error('NIP29Bridge: Error fetching messages', error);
+      return [];
+    }
+  }
+
+  async ensureNIP29Enabled() {
+    // For Android, ensure NIP29 is always enabled
+    if (Platform.OS === 'android') {
+      localStorage.setItem('nostr_groups_enabled', 'true');
+      return true;
+    }
+    
+    // For other platforms, check localStorage
+    if (localStorage.getItem('nostr_groups_enabled') !== 'true') {
+      localStorage.setItem('nostr_groups_enabled', 'true');
+    }
+    
+    return localStorage.getItem('nostr_groups_enabled') === 'true';
+  }
 }
 
 // Create and export singleton instance
 const nip29Bridge = new NIP29Bridge();
-export default nip29Bridge; 
+export default nip29Bridge;
+
+// Export the function for use in other files
+export { ensureNIP29Enabled }; 

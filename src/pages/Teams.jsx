@@ -4,6 +4,8 @@ import { TeamItem } from '../components/TeamItem';
 import { TeamsContext } from '../contexts/TeamsContext';
 import { NostrContext } from '../contexts/NostrContext';
 import { TeamSettings } from '../components/TeamSettings';
+import { testGroupDiscovery } from '../debug-nip29';
+import nip29Bridge from '../services/NIP29Bridge';
 
 export const Teams = () => {
   const { 
@@ -20,6 +22,8 @@ export const Teams = () => {
   const [activeTab, setActiveTab] = useState('myTeams');
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredTeams, setFilteredTeams] = useState([]);
+  const [testResults, setTestResults] = useState(null);
+  const [testing, setTesting] = useState(false);
   
   // Filter teams based on search query
   useEffect(() => {
@@ -36,6 +40,79 @@ export const Teams = () => {
       }
     }
   }, [teams, searchQuery, activeTab]);
+  
+  // Handle test button click
+  const handleTestClick = async () => {
+    try {
+      setTesting(true);
+      setTestResults(null);
+      
+      console.log('Running NIP29 group discovery test...');
+      
+      // First check if NIP29 is enabled
+      const nip29Enabled = localStorage.getItem('nostr_groups_enabled') === 'true';
+      if (!nip29Enabled) {
+        localStorage.setItem('nostr_groups_enabled', 'true');
+        console.log('NIP29 was not enabled. Enabled it now.');
+      }
+      
+      // Test direct relay discovery
+      const directResults = await testGroupDiscovery();
+      console.log('Direct discovery results:', directResults);
+      
+      // Try to discover running groups using the bridge if available
+      let bridgeResults = { error: 'NIP29Bridge not initialized' };
+      
+      if (nip29Bridge && nip29Bridge.initialized) {
+        try {
+          console.log('Testing NIP29Bridge.discoverRunningGroups()...');
+          const groups = await nip29Bridge.discoverRunningGroups();
+          bridgeResults = { 
+            success: groups && groups.length > 0,
+            count: groups ? groups.length : 0,
+            groups: groups 
+          };
+          console.log('Bridge discovery results:', bridgeResults);
+        } catch (bridgeError) {
+          console.error('Error in bridge discovery:', bridgeError);
+          bridgeResults = { error: bridgeError.message };
+        }
+      } else {
+        console.log('Attempting to initialize NIP29Bridge...');
+        try {
+          await nip29Bridge.initialize();
+          
+          if (nip29Bridge.initialized) {
+            const groups = await nip29Bridge.discoverRunningGroups();
+            bridgeResults = { 
+              success: groups && groups.length > 0,
+              count: groups ? groups.length : 0,
+              groups: groups 
+            };
+          }
+        } catch (initError) {
+          console.error('Error initializing bridge:', initError);
+          bridgeResults.error = `Initialization failed: ${initError.message}`;
+        }
+      }
+      
+      // Combine results
+      setTestResults({
+        timestamp: new Date().toISOString(),
+        directDiscovery: directResults,
+        bridgeDiscovery: bridgeResults,
+        settings: {
+          nip29Enabled: localStorage.getItem('nostr_groups_enabled') === 'true',
+          initialized: nip29Bridge ? nip29Bridge.initialized : false
+        }
+      });
+    } catch (error) {
+      console.error('Error running test:', error);
+      setTestResults({ error: error.message });
+    } finally {
+      setTesting(false);
+    }
+  };
   
   return (
     <div className="px-4 pt-6">
@@ -129,7 +206,11 @@ export const Teams = () => {
             </div>
           ) : (
             <div className="text-center py-8 bg-[#1a222e] rounded-lg">
-              <p className="text-gray-400 mb-4">You haven&apos;t joined any clubs yet.</p>
+              <p className="text-gray-400 mb-4">
+                {currentUser 
+                  ? 'You haven&apos;t joined any clubs yet.'
+                  : 'Log in to join or create clubs.'}
+              </p>
               <button
                 onClick={() => setActiveTab('allTeams')}
                 className="bg-blue-600 text-white py-2 px-6 rounded-lg"
@@ -172,12 +253,68 @@ export const Teams = () => {
                   : `No clubs available yet. ${currentUser ? 'Be the first to create one!' : 'Log in to create a club!'}`}
               </p>
               {currentUser && !searchQuery.trim() && (
-                <Link 
-                  to="/teams/create"
-                  className="inline-block bg-blue-600 text-white py-2 px-6 rounded-lg"
-                >
-                  Create a Club
-                </Link>
+                <div className="space-y-4">
+                  <Link 
+                    to="/teams/create"
+                    className="inline-block bg-blue-600 text-white py-2 px-6 rounded-lg"
+                  >
+                    Create a Club
+                  </Link>
+                  
+                  {/* Test button */}
+                  <div className="mt-6 pt-6 border-t border-gray-700">
+                    <button
+                      onClick={handleTestClick}
+                      disabled={testing}
+                      className="inline-block bg-purple-700 text-white py-2 px-6 rounded-lg"
+                    >
+                      {testing ? 'Testing...' : 'Test NIP29 Groups'}
+                    </button>
+                  </div>
+                  
+                  {/* Test results */}
+                  {testResults && (
+                    <div className="mt-4 p-4 bg-[#0c1524] border border-gray-700 rounded-lg text-left">
+                      <h3 className="text-lg font-semibold mb-2">NIP29 Test Results</h3>
+                      
+                      <div className="mb-3">
+                        <p><strong>NIP29 Enabled:</strong> {testResults.settings.nip29Enabled ? 'Yes' : 'No'}</p>
+                        <p><strong>Bridge Initialized:</strong> {testResults.settings.initialized ? 'Yes' : 'No'}</p>
+                      </div>
+                      
+                      <h4 className="font-medium mb-1">Direct Relay Query:</h4>
+                      {testResults.directDiscovery.error ? (
+                        <p className="text-red-400">{testResults.directDiscovery.error}</p>
+                      ) : (
+                        <p>Found {testResults.directDiscovery.count || 0} groups</p>
+                      )}
+                      
+                      <h4 className="font-medium mt-3 mb-1">Bridge Discovery:</h4>
+                      {testResults.bridgeDiscovery.error ? (
+                        <p className="text-red-400">{testResults.bridgeDiscovery.error}</p>
+                      ) : (
+                        <p>Found {testResults.bridgeDiscovery.count || 0} groups</p>
+                      )}
+                      
+                      {/* Suggested action */}
+                      <div className="mt-4 pt-3 border-t border-gray-700">
+                        <h4 className="font-medium mb-2">Suggested action:</h4>
+                        {testResults.directDiscovery.count > 0 && testResults.bridgeDiscovery.count === 0 ? (
+                          <div>
+                            <p className="text-yellow-400">Groups exist but app can't find them.</p>
+                            <p className="mt-1">Try restarting the app or clearing browser storage.</p>
+                          </div>
+                        ) : testResults.directDiscovery.count === 0 ? (
+                          <p>No NIP29 groups found on any relays. This may be a relay connectivity issue.</p>
+                        ) : testResults.bridgeDiscovery.count > 0 ? (
+                          <p className="text-green-400">NIP29 groups found! There may be a display issue.</p>
+                        ) : (
+                          <p>Please check browser console for more diagnostic information.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}

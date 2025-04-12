@@ -5,6 +5,8 @@
 
 import nip29Bridge from './NIP29Bridge';
 import { getUserPublicKey } from '../utils/nostrClient';
+import { Platform } from '../utils/react-native-shim';
+import { ensureNIP29Enabled, isNIP29Enabled } from '../utils/androidStorage';
 
 class TeamsDataService {
   constructor() {
@@ -15,9 +17,22 @@ class TeamsDataService {
     this.pinnedPostsKey = 'teamPinnedPosts';
     this.listeners = [];
     
+    // On Android, always ensure NIP29 is enabled first thing
+    if (Platform.OS === 'android') {
+      ensureNIP29Enabled();
+    }
+    
     // Nostr integration state
     this.isNip29Initialized = false;
-    this.nostrEnabled = localStorage.getItem('nostr_groups_enabled') === 'true';
+    
+    // For Android, directly force nostrEnabled to true
+    if (Platform.OS === 'android') {
+      this.nostrEnabled = true;
+      localStorage.setItem('nostr_groups_enabled', 'true');
+    } else {
+      // For other platforms, read from localStorage
+      this.nostrEnabled = localStorage.getItem('nostr_groups_enabled') === 'true';
+    }
     
     // Initialize Nostr bridge if enabled
     if (this.nostrEnabled) {
@@ -812,6 +827,15 @@ class TeamsDataService {
     
     if (!localStorage.getItem(this.teamChallengesKey)) {
       localStorage.setItem(this.teamChallengesKey, JSON.stringify([]));
+    }
+    
+    // Ensure Nostr groups are enabled by default
+    if (localStorage.getItem('nostr_groups_enabled') === null) {
+      localStorage.setItem('nostr_groups_enabled', 'true');
+      this.nostrEnabled = true;
+      
+      // Initialize the Nostr bridge
+      this._initializeNostrBridge();
     }
   }
 
