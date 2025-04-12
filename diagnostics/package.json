@@ -1,0 +1,22 @@
+{
+  "name": "nip29-diagnostics",
+  "version": "1.0.0",
+  "description": "Diagnostic tool for testing NIP29 group functionality in RUNSTR",
+  "main": "nip29-diagnostics.js",
+  "scripts": {
+    "test": "node nip29-diagnostics.js",
+    "start": "node nip29-diagnostics.js"
+  },
+  "dependencies": {
+    "colors": "^1.4.0",
+    "node-fetch": "^3.3.2",
+    "nostr-tools": "^1.13.1",
+    "ws": "^8.18.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "private": true,
+  "author": "RUNSTR Team",
+  "license": "MIT"
+}
