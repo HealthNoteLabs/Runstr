@@ -1,0 +1,38 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Guidelines for AI Code Assistance with RUNSTR App
+
+## Understanding Verification
+1. Before writing any code, summarize your understanding of the requested feature in 2-3 sentences
+2. Identify which existing components will be affected by the changes
+3. Ask clarifying questions about any ambiguous requirements before proceeding
+
+## Code Modification Rules
+1. Do not modify core tracking functionality (GPS, distance calculation, timing mechanisms)
+2. Preserve all existing data structures and only extend them when explicitly instructed
+3. Never remove existing features or UI elements unless specifically requested
+4. When suggesting new components, verify they don't conflict with existing naming conventions
+5. Focus only on the specific feature requested and avoid suggesting unrelated "improvements"
+
+## RUNSTR App Specifics
+1. Preserve all Nostr connectivity and data publishing functionality
+2. Maintain existing state management patterns and data flow
+3. Always preserve any Bitcoin/Lightning integration features
+4. Keep existing settings structure and only add to it, never reorganize without permission
+5. Don't modify any authentication or user profile management features
+
+## Implementation Approach
+1. First suggest changes to data models/types
+2. Then show UI component modifications
+3. Finally demonstrate context/state management changes
+4. Provide all code in context (show where in the file it belongs)
+5. Flag any potential conflicts or edge cases that need consideration
+
+## Before Submitting
+1. Review the code for consistency with the existing codebase style
+2. Verify the changes address ONLY what was requested
+3. List any files that will be modified by your suggestion
+4. Highlight any assumptions you made that should be verified

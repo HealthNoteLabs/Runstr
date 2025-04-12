@@ -1,0 +1,883 @@
+/* Run Club Styles - Optimized for Android */
+.team-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+  color: #fff;
+}
+
+.team-tabs {
+  display: flex;
+  border-bottom: 1px solid #444;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling for Android */
+  padding-bottom: 4px;
+  scrollbar-width: none; /* Hide scrollbar for Firefox */
+  -ms-overflow-style: none; /* Hide scrollbar for IE and Edge */
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Hide scrollbar for Chrome/Safari */
+.team-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* Add fade indicators for horizontal scroll */
+.team-tabs::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: 30px;
+  background: linear-gradient(to right, rgba(36, 36, 36, 0), rgba(36, 36, 36, 0.8));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.team-tabs.has-overflow::after {
+  opacity: 1;
+}
+
+.tab-button {
+  padding: 12px 20px; /* Larger tap target for mobile */
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  color: #fff;
+  position: relative;
+  min-width: 80px; /* Minimum width for better tapping */
+  text-align: center;
+  transition: background-color 0.2s;
+  white-space: nowrap; /* Prevent text wrapping */
+  flex-shrink: 0; /* Prevent tab shrinking */
+}
+
+.tab-button.active {
+  color: #ffffff; /* Ensure text is white, not blue */
+  background-color: rgba(58, 134, 255, 0.8); /* Semi-transparent blue background */
+  border-radius: 6px 6px 0 0; /* Rounded top corners */
+  font-weight: 600; /* Make text slightly bolder when active */
+  box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1); /* Subtle shadow for depth */
+}
+
+.tab-button.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 100%;
+  height: 3px; /* Thicker indicator for better visibility on mobile */
+  background-color: #3a86ff;
+  display: none; /* Hide the underline since we're using background color */
+}
+
+.tab-content {
+  background-color: #242424;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  padding: 16px;
+  color: #fff;
+}
+
+/* Team items - Mobile optimized */
+.teams-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.team-item {
+  display: flex;
+  padding: 16px;
+  border-radius: 8px;
+  background-color: #333;
+  border: 1px solid #444;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 80px; /* Minimum height for better tapping */
+}
+
+.team-item:active {
+  background-color: #444; /* Android active state */
+  transform: scale(0.98);
+}
+
+.team-item.has-new-messages {
+  border-left: 4px solid #3a86ff;
+}
+
+.team-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  overflow: hidden;
+  margin-right: 15px;
+  flex-shrink: 0;
+}
+
+.team-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.team-avatar.large {
+  width: 100px;
+  height: 100px;
+}
+
+.team-info {
+  flex: 1;
+}
+
+.team-name {
+  margin: 0 0 5px;
+  font-size: 16px;
+  color: #fff;
+}
+
+.team-description {
+  margin: 0 0 10px;
+  color: #aaa;
+  font-size: 14px;
+}
+
+.team-meta {
+  font-size: 12px;
+  color: #888;
+}
+
+.new-badge {
+  background-color: #3a86ff;
+  color: white;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-left: auto;
+  align-self: flex-start;
+}
+
+/* Forms - Mobile optimized */
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: #fff;
+  font-size: 16px;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 12px; /* Larger input areas for touchscreens */
+  border-radius: 4px;
+  border: 1px solid #444;
+  background-color: #333;
+  color: #fff;
+  font-size: 16px; /* Better for mobile readability */
+}
+
+.form-group textarea {
+  min-height: 100px; /* Taller textareas for mobile */
+}
+
+.search-container {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.search-container input {
+  flex: 1;
+  padding: 12px; /* Larger input areas for touch */
+  border-radius: 4px;
+  border: 1px solid #444;
+  background-color: #333;
+  color: #fff;
+  font-size: 16px;
+}
+
+.search-container button,
+.cta-buttons button,
+.invite-button {
+  background-color: #3a86ff;
+  color: white;
+  border: none;
+  padding: 12px 16px; /* Larger tap targets */
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 16px;
+  min-width: 80px; /* Minimum width for tapping */
+}
+
+.search-container button:active,
+.cta-buttons button:active,
+.invite-button:active {
+  background-color: #2a75e8;
+  transform: scale(0.98);
+}
+
+.no-teams {
+  text-align: center;
+  padding: 30px;
+}
+
+.cta-buttons {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  margin-top: 20px;
+  flex-wrap: wrap; /* Wrap on small screens */
+}
+
+.team-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.team-picture {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-bottom: 15px;
+}
+
+.team-profile-tab h2,
+.my-teams-tab h2,
+.join-team-tab h2,
+.create-team-tab h2 {
+  color: #fff;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.invite-section {
+  background-color: #333;
+  padding: 20px;
+  border-radius: 8px;
+  margin-top: 30px;
+}
+
+.invite-section h3 {
+  color: #fff;
+  margin-top: 0;
+}
+
+.invite-form {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+  flex-wrap: wrap; /* Wrap on very small screens */
+}
+
+.invite-input {
+  flex: 1;
+  padding: 12px;
+  border-radius: 4px;
+  border: 1px solid #444;
+  background-color: #242424;
+  color: #fff;
+  min-width: 200px;
+  font-size: 16px;
+}
+
+.invite-tip {
+  margin-top: 15px;
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+.invite-success {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: rgba(40, 167, 69, 0.2);
+  border: 1px solid #28a745;
+  border-radius: 4px;
+  color: #28a745;
+}
+
+.invite-error {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: rgba(220, 53, 69, 0.2);
+  border: 1px solid #dc3545;
+  border-radius: 4px;
+  color: #dc3545;
+}
+
+.loading {
+  text-align: center;
+  padding: 30px;
+  color: #fff;
+  font-size: 1.1rem;
+}
+
+.error-message {
+  background-color: rgba(255, 0, 0, 0.2);
+  color: #ff5252;
+  padding: 15px;
+  margin: 15px 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 0, 0, 0.3);
+  text-align: center;
+  font-weight: 500;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Form buttons - Android optimized */
+.primary-button, 
+.create-team-button {
+  background-color: #3a86ff;
+  color: white;
+  font-weight: 600;
+  padding: 14px 20px; /* Taller buttons for Android */
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background-color 0.2s;
+  display: block;
+  margin: 20px auto;
+  min-width: 200px;
+  -webkit-tap-highlight-color: transparent; /* Remove tap highlight on Android */
+}
+
+.primary-button:active,
+.create-team-button:active {
+  background-color: #2a75e8;
+  transform: scale(0.98);
+}
+
+.primary-button:disabled,
+.create-team-button:disabled {
+  background-color: #666;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Form hint */
+.form-hint {
+  display: block;
+  color: #aaa;
+  font-size: 0.85rem;
+  margin-top: 5px;
+  font-style: italic;
+}
+
+/* No results message */
+.no-results {
+  text-align: center;
+  background-color: #333;
+  padding: 20px;
+  border-radius: 8px;
+  margin: 20px 0;
+  color: #aaa;
+}
+
+/* Search results */
+.search-results {
+  margin-top: 20px;
+}
+
+/* Chat - Mobile optimized */
+.team-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.team-details {
+  flex: 1;
+}
+
+.chat-container {
+  border: 1px solid #444;
+  border-radius: 8px;
+  overflow: hidden;
+  height: calc(100vh - 250px); /* Adjust for mobile height */
+  display: flex;
+  flex-direction: column;
+}
+
+.messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 15px;
+  background-color: #242424;
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on Android */
+  max-height: calc(100vh - 350px); /* Better height for mobile */
+}
+
+.no-messages {
+  text-align: center;
+  color: #888;
+  padding: 40px 0;
+}
+
+.message {
+  margin-bottom: 15px;
+  max-width: 85%; /* Wider on mobile */
+  padding: 1px; /* Prevent margin collapse */
+}
+
+.message.my-message {
+  margin-left: auto;
+  background-color: #3a86ff22;
+  border-radius: 18px 18px 0 18px;
+}
+
+.message:not(.my-message) {
+  background-color: #333;
+  border-radius: 18px 18px 18px 0;
+}
+
+.message-header {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 4px;
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 10px 0 10px;
+}
+
+.author-name {
+  font-weight: 500;
+}
+
+.message-content {
+  padding: 10px 15px;
+  border-radius: inherit;
+  word-break: break-word;
+}
+
+.message-input-container {
+  display: flex;
+  padding: 12px;
+  background-color: #333;
+  border-top: 1px solid #444;
+}
+
+.message-input-container textarea {
+  flex: 1;
+  padding: 12px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  font-size: 16px; /* Better size for mobile input */
+  resize: none;
+  min-height: 50px;
+  max-height: 100px;
+  background-color: #242424;
+  color: #fff;
+}
+
+.message-input-container button {
+  margin-left: 10px;
+  padding: 0 20px;
+  background-color: #3a86ff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 80px;
+  min-height: 50px;
+}
+
+.message-input-container button:disabled {
+  background-color: #666;
+  cursor: not-allowed;
+}
+
+/* Message options - Optimized for touch */
+.message-options {
+  position: relative;
+}
+
+.options-toggle {
+  background: none;
+  border: none;
+  font-size: 18px; /* Larger for touch */
+  cursor: pointer;
+  color: #888;
+  padding: 4px 10px;
+  border-radius: 4px;
+  min-width: 40px;
+  min-height: 30px;
+}
+
+.options-toggle:active {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.options-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  background-color: #333;
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+  min-width: 140px;
+  overflow: hidden;
+  border: 1px solid #444;
+}
+
+.options-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 12px 15px; /* Larger touch targets */
+  cursor: pointer;
+  font-size: 14px;
+  color: #fff;
+}
+
+.options-menu button:active {
+  background-color: #444;
+}
+
+/* Mobile-specific adjustments */
+@media (max-width: 480px) {
+  .team-tabs {
+    padding-bottom: 8px;
+  }
+  
+  .tab-button {
+    padding: 10px 15px;
+    font-size: 14px;
+    min-width: 70px;
+  }
+  
+  .team-item {
+    padding: 12px;
+  }
+  
+  .team-avatar {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .team-name {
+    font-size: 15px;
+  }
+  
+  .message {
+    max-width: 90%;
+  }
+  
+  .invite-form {
+    flex-direction: column;
+  }
+  
+  .invite-button {
+    margin-top: 10px;
+  }
+  
+  /* Ensure buttons don't overflow on small screens */
+  .action-button,
+  .share-btn,
+  .delete-btn {
+    padding: 8px 10px;
+    min-width: 0;
+    font-size: 13px;
+    flex-basis: calc(33.333% - 10px);
+  }
+  
+  /* For smallest screens, adjust layout further */
+  @media (max-width: 350px) {
+    .run-actions {
+      gap: 5px;
+    }
+    
+    .action-button,
+    .share-btn,
+    .delete-btn {
+      padding: 6px 8px;
+      font-size: 12px;
+      flex-basis: calc(50% - 5px);
+    }
+  }
+}
+
+/* Medium screens */
+@media (min-width: 481px) and (max-width: 768px) {
+  .teams-list {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+}
+
+.run-club-container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.loading-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.loading-spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid rgba(100, 108, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #646cff;
+  animation: spin 1s linear infinite;
+  margin-bottom: 15px;
+}
+
+.error-message {
+  background-color: rgba(255, 90, 90, 0.2);
+  border: 1px solid rgba(255, 90, 90, 0.4);
+  border-radius: 8px;
+  padding: 20px;
+  margin: 20px 0;
+  text-align: center;
+}
+
+.error-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 15px;
+}
+
+.retry-button, .diagnose-button {
+  background-color: #646cff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 15px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.diagnose-button {
+  background-color: #444;
+}
+
+.diagnostic-info {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.no-posts-message {
+  background-color: rgba(100, 108, 255, 0.1);
+  border: 1px solid rgba(100, 108, 255, 0.3);
+  border-radius: 8px;
+  padding: 30px 20px;
+  margin: 20px 0;
+  text-align: center;
+}
+
+/* Debug overlay styles */
+.debug-toggle {
+  position: fixed;
+  bottom: 10px;
+  right: 10px;
+  background: rgba(0,0,0,0.7);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  z-index: 1000;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+}
+
+.debug-overlay {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0,0,0,0.9);
+  color: white;
+  padding: 15px;
+  z-index: 999;
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 2px solid #646cff;
+  font-family: monospace;
+  font-size: 14px;
+}
+
+.debug-overlay h3 {
+  margin: 0 0 10px 0;
+  color: #646cff;
+  font-size: 16px;
+}
+
+.debug-overlay p {
+  margin: 5px 0;
+  line-height: 1.4;
+}
+
+.debug-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.debug-button {
+  background: #646cff;
+  border: none;
+  color: white;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.debug-button.secondary {
+  background: #444;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Load more button styles */
+.load-more-container {
+  display: flex;
+  justify-content: center;
+  margin: 20px 0 30px;
+  width: 100%;
+}
+
+.load-more-button {
+  background-color: #4176ff;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.load-more-button:hover {
+  background-color: #3060db;
+}
+
+.load-more-button:disabled {
+  background-color: #a0b1d9;
+  cursor: not-allowed;
+}
+
+/* Message spacing and padding improvements */
+.message {
+  margin-bottom: 15px;
+  max-width: 85%; /* Wider on mobile */
+  padding: 1px; /* Prevent margin collapse */
+}
+
+.message.my-message {
+  margin-left: auto;
+  background-color: #3a86ff22;
+  border-radius: 18px 18px 0 18px;
+}
+
+.message:not(.my-message) {
+  background-color: #333;
+  border-radius: 18px 18px 18px 0;
+}
+
+.message-header {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 4px;
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 10px 0 10px;
+}
+
+.message-content {
+  padding: 10px 15px;
+  border-radius: inherit;
+  word-break: break-word;
+}
+
+/* Fix button alignment and spacing in action groups */
+.run-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-top: 15px;
+  flex-wrap: wrap;
+  padding: 0 5px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.action-button,
+.share-btn,
+.delete-btn {
+  padding: 8px 12px;
+  font-size: 14px;
+  border-radius: 6px;
+  min-width: auto;
+  max-width: 100%;
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Text truncation with proper ellipsis */
+.team-description,
+.message-content,
+.club-description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2; /* Number of lines to show */
+  -webkit-box-orient: vertical;
+  line-height: 1.4;
+  max-height: 2.8em; /* line-height × line-clamp */
+}
+
+.expanded-text {
+  -webkit-line-clamp: unset;
+  max-height: none;
+}
+
+.read-more {
+  color: #3a86ff;
+  font-size: 0.85em;
+  margin-top: 4px;
+  display: inline-block;
+  cursor: pointer;
+} 
