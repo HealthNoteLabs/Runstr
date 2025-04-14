@@ -1,0 +1,367 @@
+# .github/workflows/debug-publish-zapstore.yml
+name: Debug Zapstore Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_name:
+        description: 'Name of the APK artifact to download (e.g., runstr-apk-0.1.0)'
+        required: true
+      version_to_publish:
+        description: 'Version string corresponding to the artifact (e.g., 0.1.0)'
+        required: true
+
+jobs:
+  # ================= Debug Zapstore Publish Job =================
+  debug_publish_zapstore:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4 # Checkout needed for zapstore.yaml and logo
+
+      - name: Download Specified APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ github.event.inputs.artifact_name }}
+          path: ./release # Download into a release directory
+
+      - name: List downloaded files
+        run: ls -lR ./release
+
+      # --- Install Zapstore Tools ---
+      # Copied directly from the main workflow
+      - name: Install ZapStore CLI and apktool
+        run: |
+          echo "Installing Zapstore CLI..."
+          ZAP_CLI_URL="https://cdn.zapstore.dev/0d684425c4bbd3fdecc58f7bf7fc55366d71b8ded9d68b3bbfcb3fcca1072325"
+          curl -L -o zapstore "$ZAP_CLI_URL"
+          chmod +x zapstore
+          sudo mv zapstore /usr/local/bin/
+          zapstore --version || { echo "❌ Zapstore CLI install failed."; exit 1; }
+          echo "✅ Zapstore CLI installed."
+
+          # Install apktool using zapstore CLI first, fallback to manual
+          echo "Installing apktool via zapstore CLI (attempt 1)..."
+          if yes | zapstore install apktool; then
+            echo "✅ apktool installed via zapstore CLI."
+            # Add the install directory to the PATH for the current step
+            ZAPSTORE_BIN_DIR="/home/runner/.zapstore"
+            echo "Adding $ZAPSTORE_BIN_DIR to PATH"
+            export PATH="$ZAPSTORE_BIN_DIR:$PATH"
+            echo "Updated PATH: $PATH"
+          else
+            echo "⚠️ apktool install via zapstore failed. Falling back to manual install..."
+            APKTOOL_VERSION="2.9.3" # Use a known compatible version
+            APKTOOL_JAR_URL="https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_${APKTOOL_VERSION}.jar"
+            APKTOOL_WRAPPER_URL="https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool"
+            echo "Downloading apktool jar from $APKTOOL_JAR_URL"
+            curl -L -o apktool.jar "$APKTOOL_JAR_URL" || { echo "❌ Failed to download apktool jar"; exit 1; }
+            echo "Downloading apktool wrapper script from $APKTOOL_WRAPPER_URL"
+            curl -L -o apktool "$APKTOOL_WRAPPER_URL" || { echo "❌ Failed to download apktool wrapper"; exit 1; }
+            chmod +x apktool
+            sudo mv apktool /usr/local/bin/
+            sudo mv apktool.jar /usr/local/bin/
+            echo "✅ apktool manually installed to /usr/local/bin/"
+          fi
+
+          # Verify apktool installation
+          echo "Verifying apktool version..."
+          apktool --version || { echo "❌ apktool command not found or failed after install attempts."; exit 1; }
+          echo "✅ apktool verified."
+
+      # Copied directly from the main workflow
+      - name: Install Android apksigner tool
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y unzip wget default-jre # JRE needed by apksigner
+          echo "Downloading Android Build Tools..."
+          # Use a known reliable version, adjust if needed
+          BUILD_TOOLS_VERSION="33.0.2"
+          wget -q https://dl.google.com/android/repository/build-tools_r${BUILD_TOOLS_VERSION}-linux.zip -O /tmp/build-tools.zip || \
+            { echo "❌ Failed to download Android Build Tools ${BUILD_TOOLS_VERSION}"; exit 1; }
+          unzip -q /tmp/build-tools.zip -d /tmp/build-tools
+          APKSIGNER_PATH=$(find /tmp/build-tools -name apksigner -type f | head -n 1)
+          if [ -z "$APKSIGNER_PATH" ]; then
+             echo "❌ apksigner not found in downloaded build tools."
+             exit 1
+          fi
+          echo "✅ apksigner found at: $APKSIGNER_PATH"
+          echo "APKSIGNER_PATH=$APKSIGNER_PATH" >> $GITHUB_ENV
+          chmod +x "$APKSIGNER_PATH"
+
+      # Copied directly from the main workflow
+      - name: Find aapt2
+        id: find_aapt2
+        run: |
+          # Find aapt2 similar to apksigner
+          AAPT2_PATH=$(find /tmp/build-tools -name aapt2 -type f | head -n 1)
+          if [ -z "$AAPT2_PATH" ]; then
+            echo "❌ aapt2 not found in downloaded build tools."
+            # Attempt to find in SDK ROOT as fallback
+            ALT_AAPT2_PATH=$(find "$ANDROID_SDK_ROOT/build-tools" -name aapt2 -type f | sort -r | head -n 1)
+            if [ -n "$ALT_AAPT2_PATH" ]; then
+               AAPT2_PATH="$ALT_AAPT2_PATH"
+               echo "Found aapt2 in SDK build-tools: $AAPT2_PATH"
+            else
+               echo "❌ aapt2 also not found in SDK build-tools. Cannot proceed with badging."
+               # Don't exit, allow publish to attempt anyway, but store empty path
+               AAPT2_PATH=""
+            fi
+          fi
+          if [ -n "$AAPT2_PATH" ]; then
+             echo "Using aapt2 at: $AAPT2_PATH"
+             chmod +x "$AAPT2_PATH"
+          fi
+          echo "aapt2_path=$AAPT2_PATH" >> $GITHUB_OUTPUT
+
+      # --- Prepare Zapstore Metadata ---
+      # Modified to use workflow input for version
+      - name: Create zapstore.yaml and Basic Release Notes
+        run: |
+          VERSION=${{ github.event.inputs.version_to_publish }} # Use input version
+          # Define filenames and paths (rest is same as main workflow)
+          ROOT_ZAPSTORE_YAML="$GITHUB_WORKSPACE/zapstore.yaml"
+          ROOT_LOGO_PNG="$GITHUB_WORKSPACE/runstr-logo.png"
+          RELEASE_DIR="./release" # Use variable for clarity
+          ICON_FILENAME="runstr_logo.png" # Consistent icon filename in release dir
+          NOTES_FILENAME="release_notes.md"
+          ZAPSTORE_YAML_FILENAME="zapstore.yaml" # Filename in release dir
+
+          echo "=== Preparing Metadata in $RELEASE_DIR ==="
+          echo "Version: $VERSION (from workflow input)"
+          echo "Release Directory: $RELEASE_DIR"
+          echo "Expected Root Zapstore Config: $ROOT_ZAPSTORE_YAML"
+          echo "Expected Root Logo: $ROOT_LOGO_PNG"
+
+          cd $RELEASE_DIR # Work inside the release directory
+          echo "Current directory: $(pwd)"
+
+          # --- Find APK ---
+          echo "--- Finding APK file ---"
+          # Assume APK is named runstr-*.apk within the downloaded artifact
+          ACTUAL_APK_FILE=$(find . -maxdepth 1 -name 'runstr-*.apk' -print -quit)
+          if [ -z "$ACTUAL_APK_FILE" ]; then
+            echo "❌ Downloaded APK file (runstr-*.apk) not found in $RELEASE_DIR directory!"
+            ls -lR . # List contents for debugging
+            exit 1
+          fi
+          ACTUAL_APK_FILENAME=$(basename "$ACTUAL_APK_FILE")
+          echo "✅ Found APK: $ACTUAL_APK_FILENAME (full path: $(pwd)/$ACTUAL_APK_FILENAME)"
+
+          # --- Copy and Verify zapstore.yaml ---
+          echo "--- Processing $ZAPSTORE_YAML_FILENAME ---"
+          echo "Checking for root config: $ROOT_ZAPSTORE_YAML"
+          if [ ! -f "$ROOT_ZAPSTORE_YAML" ]; then
+              echo "❌ Root $ZAPSTORE_YAML_FILENAME not found at $ROOT_ZAPSTORE_YAML!"
+              exit 1
+          fi
+          echo "Copying $ROOT_ZAPSTORE_YAML to $(pwd)/$ZAPSTORE_YAML_FILENAME"
+          cp "$ROOT_ZAPSTORE_YAML" "./$ZAPSTORE_YAML_FILENAME"
+          if [ ! -f "./$ZAPSTORE_YAML_FILENAME" ]; then
+            echo "❌ Error: Failed to copy $ZAPSTORE_YAML_FILENAME to $(pwd)"
+            exit 1
+          fi
+          echo "✅ Copied $ZAPSTORE_YAML_FILENAME to $(pwd)"
+          echo "--- Original $ZAPSTORE_YAML_FILENAME contents ---"
+          cat "./$ZAPSTORE_YAML_FILENAME"
+          echo "------------------------------------------"
+
+          # --- Copy and Verify Logo ---
+          echo "--- Processing $ICON_FILENAME ---"
+          echo "Checking for root logo: $ROOT_LOGO_PNG"
+          if [ ! -f "$ROOT_LOGO_PNG" ]; then
+              echo "❌ Root logo file not found at $ROOT_LOGO_PNG!"
+              exit 1
+          fi
+          echo "Copying $ROOT_LOGO_PNG to $(pwd)/$ICON_FILENAME"
+          cp "$ROOT_LOGO_PNG" "./$ICON_FILENAME"
+          if [ ! -f "./$ICON_FILENAME" ]; then
+            echo "❌ Error: Failed to copy $ICON_FILENAME to $(pwd)"
+            exit 1
+          fi
+          echo "✅ Copied $ICON_FILENAME to $(pwd)"
+
+          # --- Modify zapstore.yaml to use local icon ---
+          echo "--- Modifying $ZAPSTORE_YAML_FILENAME to use local icon: $ICON_FILENAME ---"
+          sed -i "/icons:/,/^[^[:space:]]/{ s|url:.*|file: $ICON_FILENAME|g }" "./$ZAPSTORE_YAML_FILENAME"
+          echo "✅ Modified $ZAPSTORE_YAML_FILENAME."
+          echo "--- Modified $ZAPSTORE_YAML_FILENAME contents ---"
+          cat "./$ZAPSTORE_YAML_FILENAME"
+          echo "-------------------------------------------"
+
+
+          # --- Create Release Notes ---
+          echo "--- Creating Release Notes ($NOTES_FILENAME) ---"
+          echo "# Release v$VERSION" > "$NOTES_FILENAME" # Use input version
+          echo "" >> "$NOTES_FILENAME"
+          echo "See repository CHANGELOG.md for full details." >> "$NOTES_FILENAME"
+          if [ ! -f "./$NOTES_FILENAME" ]; then
+             echo "❌ Error: Failed to create $NOTES_FILENAME in $(pwd)"
+             exit 1
+          fi
+          echo "✅ Created $NOTES_FILENAME:"
+          cat "$NOTES_FILENAME"
+
+          # --- Set Environment Variables ---
+          echo "--- Setting Environment Variables ---"
+          echo "Setting APK_FILENAME=$ACTUAL_APK_FILENAME"
+          echo "APK_FILENAME=$ACTUAL_APK_FILENAME" >> $GITHUB_ENV
+          echo "Setting ICON_FILENAME=$ICON_FILENAME"
+          echo "ICON_FILENAME=$ICON_FILENAME" >> $GITHUB_ENV
+          echo "Setting NOTES_FILENAME=$NOTES_FILENAME"
+          echo "NOTES_FILENAME=$NOTES_FILENAME" >> $GITHUB_ENV
+          # We also need the version available for the publish step
+          echo "Setting VERSION_TO_PUBLISH=$VERSION"
+          echo "VERSION_TO_PUBLISH=$VERSION" >> $GITHUB_ENV
+          echo "✅ Environment variables set."
+
+          # --- Final Check ---
+          echo "--- Final contents of $RELEASE_DIR before exiting step ---"
+          ls -lR .
+          echo "----------------------------------------------------------"
+
+          cd .. # Return to workspace root
+          echo "Current directory after returning: $(pwd)"
+
+      # --- APKTool Decode for Debugging ---
+      # Copied directly from the main workflow, uses env vars set above
+      - name: Decode APK and Log apktool.yml Before Publish
+        id: decode_for_debug
+        env:
+           APK_FILENAME_ENV: ${{ env.APK_FILENAME }} # Get from previous step env
+        run: |
+          cd ./release
+          # Use the env var passed down
+          ACTUAL_APK_FILENAME="$APK_FILENAME_ENV"
+          if [ -z "$ACTUAL_APK_FILENAME" ]; then
+            echo "❌ APK_FILENAME environment variable not set or empty."
+            exit 1
+          fi
+          DECODE_DIR="decoded_apk_debug"
+
+          echo "Decoding $ACTUAL_APK_FILENAME into $DECODE_DIR for inspection..."
+          apktool d "$ACTUAL_APK_FILENAME" -o "$DECODE_DIR" -f || echo "⚠️ apktool decode failed, attempting to continue..."
+
+          APKTOOL_YAML_PATH="$DECODE_DIR/apktool.yml"
+          if [ -f "$APKTOOL_YAML_PATH" ]; then
+             echo "--- Contents of $APKTOOL_YAML_PATH ---"
+             cat "$APKTOOL_YAML_PATH"
+             echo "------------------------------------"
+          else
+             echo "apktool.yml not found in $DECODE_DIR after decode attempt."
+          fi
+          # No need to set APK_FILENAME_FOR_PUBLISH, already set as APK_FILENAME
+          cd .. # Return to workspace root
+
+      # Copied directly from the main workflow
+      - name: Clean up potential intermediate files
+        run: |
+          echo "Cleaning up ./release directory..."
+          rm -f ./release/apktool.yml ./release/decoded_apk_debug/apktool.yml
+          rm -rf ./release/decoded_apk_debug
+          echo "Contents of ./release after cleanup:"
+          ls -l ./release
+
+      # Copied directly from the main workflow, uses env vars set above
+      - name: Inspect APK Badging before Publish
+        if: steps.find_aapt2.outputs.aapt2_path != '' # Only run if aapt2 was found
+        env:
+           APK_FILENAME_ENV: ${{ env.APK_FILENAME }} # Get from earlier step env
+        run: |
+           cd ./release
+           AAPT2_CMD="${{ steps.find_aapt2.outputs.aapt2_path }}"
+           # Use the env var passed down
+           APK_FILE="$APK_FILENAME_ENV"
+
+           if [ -z "$APK_FILE" ]; then
+             echo "❌ APK_FILENAME environment variable not set or empty."
+             exit 1
+           fi
+
+           if [ ! -f "$APK_FILE" ]; then
+             echo "❌ APK file '$APK_FILE' not found in ./release directory for inspection."
+             exit 1
+           fi
+
+           echo "--- Dumping badging info for $APK_FILE using $AAPT2_CMD ---"
+           "$AAPT2_CMD" dump badging "$APK_FILE" || echo "⚠️ Failed to dump badging info."
+           echo "---------------------------------------------------------"
+           cd .. # Return to workspace root
+
+      # --- Publish ---
+      # Modified to use workflow input for version
+      - name: Publish to Zapstore with Detailed Error Logging
+        env:
+          NSEC: ${{ secrets.NSEC }} # Assumes secret is available to this workflow
+          APKSIGNER_PATH: ${{ env.APKSIGNER_PATH }}
+          # Get vars from env set in metadata step
+          APK_FILENAME: ${{ env.APK_FILENAME }}
+          ICON_FILENAME: ${{ env.ICON_FILENAME }}
+          NOTES_FILENAME: ${{ env.NOTES_FILENAME }}
+          VERSION: ${{ env.VERSION_TO_PUBLISH }} # Use the specific version from input
+        run: |
+          cd ./release # Navigate into the directory with assets
+
+          # Re-check required env vars are set
+          if [ -z "$APK_FILENAME" ] || [ -z "$ICON_FILENAME" ] || [ -z "$NOTES_FILENAME" ] || [ -z "$VERSION" ]; then
+             echo "❌ Error: Missing required filename/version env vars"
+             echo "APK: $APK_FILENAME, ICON: $ICON_FILENAME, NOTES: $NOTES_FILENAME, VERSION: $VERSION"
+             exit 1
+          fi
+
+          echo "Publishing v${VERSION} (from input) to Zapstore using apksigner at $APKSIGNER_PATH..."
+          echo "Icon file: ${ICON_FILENAME}"
+          echo "APK file: ${APK_FILENAME}"
+          echo "Notes file: ${NOTES_FILENAME}"
+
+          # Check files exist before publishing
+          test -f "${ICON_FILENAME}" || { echo "❌ Icon file '${ICON_FILENAME}' not found!"; exit 1; }
+          test -f "${APK_FILENAME}" || { echo "❌ APK file '${APK_FILENAME}' not found!"; exit 1; }
+          test -f "${NOTES_FILENAME}" || { echo "❌ Notes file '${NOTES_FILENAME}' not found!"; exit 1; }
+
+          # Verify APK has a signature (optional check)
+          if [ -f "${APK_FILENAME}" ]; then
+            echo "Checking APK signature..."
+            if unzip -l "${APK_FILENAME}" | grep -q "META-INF/.*\\.RSA"; then
+              echo "✅ APK appears to be signed (found .RSA files)"
+            else
+              echo "⚠️ Warning: APK may not be properly signed (no .RSA files found)"
+            fi
+          fi
+
+          # Attempt to publish to Zapstore, capture output and exit code
+          echo "Attempting to publish to Zapstore..."
+          set +e # Prevent script from exiting immediately on error
+          # Use the VERSION env var which is set from the workflow input
+          PUBLISH_OUTPUT=$(APKSIGNER_PATH="$APKSIGNER_PATH" zapstore publish runstr \
+            --daemon-mode \
+            --overwrite-app \
+            --overwrite-release \
+            --icon "${ICON_FILENAME}" \
+            -n "${NOTES_FILENAME}" \
+            -a "${APK_FILENAME}" \
+            -v "${VERSION}" 2>&1) # Redirect stderr to stdout to capture all output
+          PUBLISH_EXIT_CODE=$?
+          set -e # Re-enable immediate exit on error
+
+          echo "--- Zapstore Publish Output --- ($PUBLISH_EXIT_CODE)"
+          echo "$PUBLISH_OUTPUT"
+          echo "-------------------------------"
+
+          if [ $PUBLISH_EXIT_CODE -ne 0 ]; then
+            echo "❌ Zapstore publish failed with exit code $PUBLISH_EXIT_CODE"
+            # Add more specific logging here if needed based on common errors
+            if echo "$PUBLISH_OUTPUT" | grep -q "invalid apk metadata"; then
+               echo "Failure seems related to APK metadata as suspected."
+            fi
+             # Consider adding more error checks based on output
+            exit $PUBLISH_EXIT_CODE # Ensure the step fails with the original exit code
+          else
+            echo "✅ Successfully published version ${VERSION} to Zapstore!"
+          fi
+
+      - name: ✅ Notify success
+        if: ${{ success() }}
+        run: |
+          echo "🎉 Debug publish workflow completed for v${{ github.event.inputs.version_to_publish }}!"
+          # Note: This doesn't guarantee successful publish, just that the workflow didn't exit with error before this step. Check logs.

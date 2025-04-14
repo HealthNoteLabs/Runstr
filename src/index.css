@@ -1,0 +1,282 @@
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #111827;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  
+  /* Custom properties for consistent sizing */
+  --vh: 1vh;
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+  --container-padding: 16px;
+  
+  /* Add custom properties for spacing and overflow handling */
+  --button-spacing: 8px;
+  --card-padding: 16px;
+  --border-radius: 8px;
+}
+
+/* Box sizing for all elements */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #111827;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  min-width: 320px;
+  min-height: 100vh;
+  /* Use the custom vh property for more accurate height on mobile */
+  min-height: calc(var(--vh, 1vh) * 100);
+  padding-top: 4rem;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  position: relative;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: none;
+  background-color: #111827;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: #111827;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #1a1a1a;
+  cursor: pointer;
+  transition: border-color 0.25s;
+  min-height: 44px; /* Ensure touch-friendly size */
+  min-width: 44px;
+  touch-action: manipulation;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+button:hover {
+  border-color: #646cff;
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+/* Ensure inputs are touch-friendly */
+input, 
+textarea, 
+select {
+  font-size: 16px; /* Prevent zoom on focus in iOS */
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+/* Fix for Android Chrome */
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Common container styles with overflow protection */
+.container, .card, .panel {
+  max-width: 100%;
+  overflow-x: hidden;
+  word-wrap: break-word;
+}
+
+/* Ensure all buttons stay within parent container */
+button, 
+.btn, 
+.action-button, 
+.share-btn, 
+.delete-btn {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+
+/* Improve container boundaries */
+.run-history-item,
+.run-club-container,
+.post-card,
+.team-item,
+.post-actions {
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Common text ellipsis pattern */
+.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.truncate-2-lines {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Improved scrolling for all scrollable containers */
+.scrollable {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+/* Hide scrollbars but maintain functionality */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  body {
+    padding-top: 3.5rem;
+  }
+  
+  button {
+    padding: 0.5em 1em;
+    font-size: 0.95em;
+  }
+  
+  .container, .card, .panel {
+    padding: 12px;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}
+
+/* Teams feature styles */
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(100, 108, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #646cff;
+  animation: spin 1s ease-in-out infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.team-tab-content {
+  overflow-y: auto;
+  max-height: calc(100vh - 300px);
+}
+
+.team-card {
+  transition: transform 0.2s ease-in-out;
+}
+
+.team-card:active {
+  transform: scale(0.98);
+}
+
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 300px;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+}
+
+.message-bubble {
+  max-width: 85%;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.message-bubble.sent {
+  background-color: rgba(59, 130, 246, 0.3);
+  margin-left: auto;
+}
+
+.message-bubble.received {
+  background-color: rgba(75, 85, 99, 0.3);
+}
+
+.challenge-card {
+  transition: all 0.2s ease;
+}
+
+.challenge-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}

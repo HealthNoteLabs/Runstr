@@ -1,0 +1,89 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# RUNSTR App Development Guidelines
+
+## Understanding Process
+1. Before writing any code, read the entire Memory Bank to understand context
+2. Summarize your understanding of the requested feature in 2-3 sentences
+3. Identify which existing components will be affected by the changes
+4. Ask clarifying questions about any ambiguous requirements before proceeding
+
+## Code Modification Principles
+1. Do not modify core tracking functionality (GPS, distance calculation, timing mechanisms)
+2. Preserve all existing data structures and only extend them when explicitly instructed
+3. Never remove existing features or UI elements unless specifically requested
+4. When suggesting new components, verify they don't conflict with existing naming conventions
+5. Focus only on the specific feature requested and avoid suggesting unrelated "improvements"
+6. Always prefer simple solutions over complex ones
+
+## RUNSTR App Specifics
+1. Preserve all Nostr connectivity and data publishing functionality
+2. Maintain existing state management patterns and data flow
+3. Always preserve any Bitcoin/Lightning integration features
+4. Keep existing settings structure and only add to it, never reorganize without permission
+5. Don't modify any authentication or user profile management features
+
+## Implementation Sequence
+1. First suggest changes to data models/types
+2. Then show UI component modifications
+3. Finally demonstrate context/state management changes
+4. Provide all code in context (show where in the file it belongs)
+5. Flag any potential conflicts or edge cases that need consideration
+
+## Code Quality Standards
+1. Keep files under 200-300 lines of code; suggest refactoring when approaching this limit
+2. Avoid duplication by first identifying similar functionality in the codebase
+3. Apply consistent error handling patterns throughout the codebase
+4. Write code that accounts for different environments: dev, test, and prod
+5. Avoid writing one-off scripts in application files
+6. Use mocking/stubbing only for tests, never for dev or prod environments
+7. Follow existing naming conventions and code style
+
+## Domain-Specific Guidelines
+
+### Activity Tracking
+- Never modify GPS or distance calculation algorithms without explicit request
+- Maintain existing data models for activities
+- Ensure all tracking features work offline
+- Consider battery optimization for mobile devices
+
+### Nostr Integration
+- Follow relevant NIP standards exactly
+- Preserve all existing relay connections and management
+- Handle event validation consistently
+- Document any non-standard NIP implementations
+
+### Bitcoin/Lightning
+- Use existing wallet connection patterns
+- Implement proper payment state management
+- Include timeout handling for payment processes
+- Never modify existing payment flows without explicit instruction
+
+## Refactoring Guidelines
+1. Only refactor when explicitly requested or when adding requested functionality requires it
+2. When fixing bugs, exhaust all options with existing patterns before suggesting new ones
+3. If introducing a new pattern is necessary, remove the old implementation to avoid duplication
+4. Propose refactoring in small, testable increments
+
+## Before Submitting Code
+1. Review the code for consistency with the existing codebase style
+2. Verify the changes address ONLY what was requested
+3. List any files that will be modified by your suggestion
+4. Highlight any assumptions you made that should be verified
+5. Ensure code handles all potential error states
+6. Confirm the solution works across all required environments
+
+## Environment Protection
+1. Never overwrite .env files without explicit confirmation
+2. Assume staging and production environments follow the same patterns as development
+3. Consider data migration needs when modifying database schemas
+4. Ensure all environment-specific code is properly conditioned
+
+## Memory Bank Integration
+1. After implementing significant changes, suggest updates to relevant Memory Bank files
+2. When discovering new patterns, document in .cursorrules
+3. Update activeContext.md and progress.md with implementation status
+4. Document any technical decisions that impact architecture in systemPatterns.md

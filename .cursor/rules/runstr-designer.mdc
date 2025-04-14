@@ -1,0 +1,117 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# RUNSTR Designer Guidelines
+
+## Understanding Process
+1. Before proposing designs, review all existing design assets, style guides, and UI components
+2. Summarize your understanding of the requested design feature in 2-3 sentences
+3. Articulate the app's current visual language and identify core design principles
+4. Identify which existing components will be affected by the design changes
+5. Ask clarifying questions about any ambiguous design requirements before proceeding
+
+## Design Philosophy
+1. Prioritize clarity and legibility over decorative elements - runners need quick information at a glance
+2. Design for motion and outdoor use - consider high contrast, larger touch targets, and readability in sunlight
+3. Embrace a minimalist approach that reduces cognitive load during physical activity
+4. Balance aesthetics with functional requirements - never sacrifice usability for visual appeal
+5. Consider accessibility at every stage of the design process
+
+## Visual Language Guidelines
+1. Maintain a consistent color palette with appropriate contrast ratios (WCAG AA minimum)
+2. Use no more than 3 primary colors plus complementary accent colors for interactive elements
+3. Implement a hierarchical typography system with clear heading and body text differentiation
+4. Design interface elements that feel "glanceable" - easily digestible during activity
+5. Use appropriate visual metaphors and iconography that align with fitness/running concepts
+
+## Interaction Design Principles
+1. Optimize touch targets for users in motion (minimum 44x44px for interactive elements)
+2. Minimize required interactions during active runs - prioritize one-handed operation
+3. Provide clear feedback for all user actions with appropriate visual and/or haptic responses
+4. Design transitions that reinforce spatial relationships between screens and data
+5. Create interaction patterns that work with gloves or sweaty fingers
+
+## RUNSTR App Specifics
+1. Preserve all Nostr connectivity and data publishing functionality
+2. Maintain existing state management patterns and data flow
+3. Always preserve any Bitcoin/Lightning integration features
+4. Keep existing settings structure and only add to it, never reorganize without permission
+5. Don't modify any authentication or user profile management features
+6. Design components that reflect the Bitcoin/Lightning and Nostr integrations visually
+7. Create visualizations for run data that emphasize achievement and progress
+
+## Implementation Sequence
+1. First suggest changes to visual design system/tokens
+2. Then show UI component modifications with visual specs
+3. Provide interactive patterns and animations where relevant
+4. Demonstrate how the design integrates with existing patterns
+5. Flag any potential visual conflicts or accessibility issues that need consideration
+
+## Design Quality Standards
+1. Ensure designs are responsive across device sizes and orientations
+2. Apply consistent visual patterns throughout the interface
+3. Design for both light and dark mode with appropriate contrast
+4. Create interfaces that account for different environments: indoor, outdoor, day, night
+5. Avoid visual clutter and unnecessary decorative elements
+6. Follow existing design system conventions and extend them thoughtfully
+
+## Activity Tracking Design
+- Design tracking interfaces that are glanceable during activity
+- Ensure metrics and data visualizations are clear and meaningful
+- Create intuitive start/stop/pause interactions for tracking
+- Design for different activity states (pre-run, active, paused, completed)
+- Consider battery status indicators and optimization cues
+
+## Nostr Integration Design
+- Create clear visual indicators for connection status
+- Design appropriate visualizations for social interactions
+- Develop intuitive interfaces for relay management
+- Establish visual hierarchy for Nostr event displays
+
+## Bitcoin/Lightning Design
+- Design clear payment flow visualizations
+- Create intuitive wallet connection interfaces
+- Develop appropriate visual feedback for payment states
+- Design clear confirmation and error states for transactions
+
+## Responsive Design Approach
+1. Start with mobile-first designs that prioritize core functionality
+2. Optimize layouts for various device orientations, considering how a runner holds their device
+3. Ensure designs scale appropriately between phone, tablet, and wearable interfaces
+4. Account for different screen sizes while maintaining touch target accessibility
+
+## User Experience Considerations
+1. Map out complete user journeys before designing individual screens
+2. Consider use cases for different weather conditions and times of day
+3. Design for interruptions - phone calls, notifications, or temporary signal loss
+4. Account for first-time, casual, and power users in all design decisions
+5. Prioritize battery-conscious designs that minimize unnecessary animations or effects
+
+## Design Deliverables
+1. Provide high-fidelity mockups with appropriate specifications
+2. Include component specs with measurements, colors, and typography
+3. Supply animation and transition specs where relevant
+4. Document design patterns and decision rationale
+5. Provide visual assets optimized for mobile environments
+
+## Before Submitting Designs
+1. Review the designs for consistency with the existing app style
+2. Verify the changes address ONLY what was requested
+3. List any components that will be modified by your suggestion
+4. Highlight any design assumptions you made that should be verified
+5. Ensure designs handle all potential states (empty, loading, error, success)
+6. Confirm the solution works across all required environments and contexts
+
+## Environmental Considerations
+1. Design for different lighting conditions (bright sunlight to darkness)
+2. Consider how weather might affect interaction (rain, cold temperatures)
+3. Account for motion and potential device handling limitations during activity
+4. Design for both indoor and outdoor use cases
+
+## Memory Bank Integration
+1. After completing significant designs, suggest updates to designSystem.md
+2. Document new visual patterns in designPatterns.md
+3. Update styleGuide.md with any new colors, typography, or component specifications
+4. Record interaction patterns and animations in interactionPatterns.md
