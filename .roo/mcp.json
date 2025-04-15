@@ -1,3 +1,90 @@
 {
-  "mcpServers": {}
+  "mcpServers": {
+    "server-sequential-thinking": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@smithery-ai/server-sequential-thinking",
+        "--key",
+        "b801b02b-7347-419c-99de-5ceae9b9cef5"
+      ]
+    },
+    "nostr-mcp-server": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@AustinKelsay/nostr-mcp-server",
+        "--key",
+        "b801b02b-7347-419c-99de-5ceae9b9cef5"
+      ]
+    },
+    "duckduckgo-mcp-server": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@nickclyde/duckduckgo-mcp-server",
+        "--key",
+        "b801b02b-7347-419c-99de-5ceae9b9cef5"
+      ]
+    },
+    "desktop-commander": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@wonderwhy-er/desktop-commander",
+        "--key",
+        "b801b02b-7347-419c-99de-5ceae9b9cef5"
+      ]
+    },
+    "think-mcp-server": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@PhillipRt/think-mcp-server",
+        "--key",
+        "b801b02b-7347-419c-99de-5ceae9b9cef5"
+      ]
+    },
+    "code-mcp": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@block/code-mcp",
+        "--key",
+        "b801b02b-7347-419c-99de-5ceae9b9cef5"
+      ]
+    },
+    "@21st-dev/magic": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@21st-dev/magic@latest",
+        "API_KEY=\"6e7337c771b2c7dafbd008ebc185c15a363114db84075ba080e9ccdffefde346\""
+      ]
+    }
+  }
 }
