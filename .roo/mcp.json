@@ -11,7 +11,9 @@
         "@smithery-ai/server-sequential-thinking",
         "--key",
         "b801b02b-7347-419c-99de-5ceae9b9cef5"
-      ]
+      ],
+      "disabled": false,
+      "alwaysAllow": []
     },
     "nostr-mcp-server": {
       "command": "cmd",
