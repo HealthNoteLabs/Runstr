@@ -3,8 +3,7 @@ name: Build and Release Simple-updates Debug Apk
 on:
   push:
     branches:
-      - Simple-updates
-      - updates1 # Added feed branch to automatically trigger the workflow
+      - test-nip29-changes# Added feed branch to automatically trigger the workflow
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
@@ -37,7 +36,7 @@ jobs:
       # Generate release tag dynamically
       - name: Generate Release Tag
         id: release_tag
-        run: echo "RELEASE_TAG=feed-${{ steps.package_version.outputs.VERSION }}-${{ steps.timestamp.outputs.DATE }}" >> $GITHUB_ENV
+        run: echo "RELEASE_TAG=feed-${{ env.VERSION }}-${{ env.DATE }}" >> $GITHUB_ENV
 
       # Build the React app
       - name: Build React app
@@ -77,8 +76,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.release_tag.outputs.RELEASE_TAG }}
-          release_name: 'Feed Fix ${{ steps.release_tag.outputs.RELEASE_TAG }}'
+          tag_name: ${{ env.RELEASE_TAG }}
+          release_name: 'Feed Fix ${{ env.RELEASE_TAG }}'
           draft: false
           prerelease: true
 
