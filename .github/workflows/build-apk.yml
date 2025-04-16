@@ -33,15 +33,14 @@ jobs:
         id: timestamp
         run: echo "DATE=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_ENV
 
-      # Generate release tag dynamically
+      # Generate valid release tag
       - name: Generate Release Tag
         id: release_tag
         run: |
-          if [[ -z "${{ env.VERSION }}" || -z "${{ env.DATE }}" ]]; then
-            echo "Error: VERSION or DATE is not set." >&2
-            exit 1
-          fi
-          echo "RELEASE_TAG=feed-${{ env.VERSION }}-${{ env.DATE }}" >> $GITHUB_ENV
+          # Create a valid tag name (alphanumeric with hyphens)
+          VERSION_CLEAN=$(echo ${{ env.VERSION }} | tr -d '.')
+          RELEASE_TAG="v$VERSION_CLEAN-feed-${{ env.DATE }}"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
 
       # Build the React app
       - name: Build React app
