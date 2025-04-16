@@ -140,12 +140,7 @@ const openDatabase = () => {
  */
 const initialize = async () => {
   try {
-    // Load club-to-group mappings from storage
-    loadMappings();
-    
-    // Start background processing
-    startBackgroundProcessing();
-    
+    console.log('Initializing NIP29Bridge with direct relay interaction');
     return true;
   } catch (error) {
     console.error('Failed to initialize NIP29Bridge:', error);
@@ -323,36 +318,27 @@ const addUserToGroup = async (clubId, userPubkey) => {
 
 /**
  * Send a message to a Nostr group
- * @param {string} clubId - Club ID
+ * @param {string} groupId - Group ID
  * @param {string} content - Message content
- * @param {string} userPubkey - User's Nostr public key
  * @returns {Promise<Object>} The created message event
  */
-const sendMessageToGroup = async (clubId, content, userPubkey) => {
+const sendMessageToGroup = async (groupId, content) => {
   try {
-    const groupId = getGroupIdForClub(clubId);
-    if (!groupId) {
-      throw new Error('No Nostr group found for this club');
-    }
-    
-    // Add to queue for background processing
-    const queueItem = {
-      type: 'outgoing_message',
-      clubId,
-      groupId,
+    const event = await createAndPublishEvent({
+      kind: NIP29_KINDS.GROUP_MESSAGES,
       content,
-      userPubkey,
-      timestamp: Date.now()
-    };
-    
-    outgoingMessageQueue.push(queueItem);
-    
-    // Process immediately if possible, otherwise let background worker handle it
-    if (!isWorkerRunning) {
-      await processQueue();
+      tags: [
+        ['e', groupId, '', 'root'],
+        ['client', 'RUNSTR App']
+      ]
+    });
+
+    if (!event) {
+      throw new Error('Failed to send message to group');
     }
-    
-    return { queued: true, item: queueItem };
+
+    console.log(`Message sent to group ${groupId}`);
+    return event;
   } catch (error) {
     console.error('Error sending message to group:', error);
     throw error;
@@ -472,25 +458,19 @@ const subscribeToGroupEvents = (groupId) => {
  */
 const getGroupHistory = async (groupId, limit = 50, since = undefined) => {
   try {
-    // Default to last 30 days if no since time provided
     const sinceTime = since || Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60);
-    
     console.log(`Fetching history for group ${groupId} since ${new Date(sinceTime * 1000).toLocaleString()}`);
-    
-    // Create filter for historical messages
+
     const filter = {
       kinds: [NIP29_KINDS.GROUP_MESSAGES],
       '#e': [groupId],
       since: sinceTime,
       limit: limit
     };
-    
-    // Fetch events from all relays
+
     const events = await pool.list(relays, [filter]);
-    
     console.log(`Found ${events.length} historical messages for group ${groupId}`);
-    
-    // Sort by created_at timestamp, oldest first
+
     return events.sort((a, b) => a.created_at - b.created_at);
   } catch (error) {
     console.error(`Error fetching group history for ${groupId}:`, error);
