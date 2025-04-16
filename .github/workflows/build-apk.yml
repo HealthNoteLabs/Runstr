@@ -36,7 +36,12 @@ jobs:
       # Generate release tag dynamically
       - name: Generate Release Tag
         id: release_tag
-        run: echo "RELEASE_TAG=feed-${{ env.VERSION }}-${{ env.DATE }}" >> $GITHUB_ENV
+        run: |
+          if [[ -z "${{ env.VERSION }}" || -z "${{ env.DATE }}" ]]; then
+            echo "Error: VERSION or DATE is not set." >&2
+            exit 1
+          fi
+          echo "RELEASE_TAG=feed-${{ env.VERSION }}-${{ env.DATE }}" >> $GITHUB_ENV
 
       # Build the React app
       - name: Build React app
