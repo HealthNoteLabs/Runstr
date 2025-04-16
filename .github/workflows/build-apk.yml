@@ -37,7 +37,7 @@ jobs:
       # Generate release tag dynamically
       - name: Generate Release Tag
         id: release_tag
-        run: echo "RELEASE_TAG=feed-${{ env.VERSION }}-${{ env.DATE }}" >> $GITHUB_ENV
+        run: echo "RELEASE_TAG=feed-${{ steps.package_version.outputs.VERSION }}-${{ steps.timestamp.outputs.DATE }}" >> $GITHUB_ENV
 
       # Build the React app
       - name: Build React app
@@ -77,8 +77,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          release_name: 'Feed Fix ${{ env.RELEASE_TAG }}'
+          tag_name: ${{ steps.release_tag.outputs.RELEASE_TAG }}
+          release_name: 'Feed Fix ${{ steps.release_tag.outputs.RELEASE_TAG }}'
           draft: false
           prerelease: true
 
