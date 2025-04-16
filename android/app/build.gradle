@@ -54,9 +54,12 @@ android {
         }
     }
     buildTypes {
+        debug {
+            signingConfig null // Skip signing for debug builds
+        }
         release {
             // Apply the signing configuration to the release build type
-            // signingConfig signingConfigs.release
+            signingConfig signingConfigs.release
 
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
