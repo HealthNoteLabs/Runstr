@@ -107,9 +107,19 @@ export const fetchGroupMessagesNDK = async (groupId, groupRelays = []) => {
     const groupIdParts = groupId.split(':');
     const actualGroupId = groupIdParts.length === 3 ? groupIdParts[2] : groupId;
     
+    console.log(`NDK: Extracted group identifier: ${actualGroupId}`);
+    
+    // Make sure we're using the groups relay, which is critical for NIP-29
+    const primaryGroupsRelay = 'wss://groups.0xchat.com';
+    let hasGroupsRelay = false;
+    
     // Add specific group relays if provided
     if (groupRelays && groupRelays.length > 0) {
       for (const relay of groupRelays) {
+        if (relay === primaryGroupsRelay) {
+          hasGroupsRelay = true;
+        }
+        
         if (!ndk.pool.relayList.includes(relay)) {
           try {
             await ndk.pool.addRelay(relay);
@@ -121,19 +131,44 @@ export const fetchGroupMessagesNDK = async (groupId, groupRelays = []) => {
       }
     }
     
+    // Make sure we always have the primary NIP-29 relay
+    if (!hasGroupsRelay && !ndk.pool.relayList.includes(primaryGroupsRelay)) {
+      console.log(`NDK: Adding primary groups relay: ${primaryGroupsRelay}`);
+      try {
+        await ndk.pool.addRelay(primaryGroupsRelay);
+      } catch (relayError) {
+        console.warn(`NDK: Failed to add primary groups relay:`, relayError);
+      }
+    }
+    
     console.log(`NDK: Fetching messages for group ID: ${actualGroupId}`);
     
-    // Create NDK filter (note: NDK filters don't need # prefix)
+    // Create NDK filter with the actual group ID - IMPORTANT: use "#h" format for filters
     const filter = { 
       kinds: [1], // Regular note kind per NIP-29
-      h: [actualGroupId], // NIP-29 uses h tag with group_id
-      limit: 50 
+      "#h": [actualGroupId], // NIP-29 uses #h tag with group_id
+      limit: 100 // Increase limit to ensure we get enough messages
     };
     
-    console.log("NDK: Fetching with filter:", filter);
+    console.log("NDK: Fetching with filter:", JSON.stringify(filter));
     
-    // Fetch events
-    const events = await ndk.fetchEvents(filter);
+    // Create a timeout promise
+    const timeout = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('NDK: Fetch timeout after 10 seconds')), 10000);
+    });
+    
+    // Fetch events with timeout
+    const fetchPromise = ndk.fetchEvents(filter).then(events => {
+      if (!events) return new Set();
+      return events;
+    });
+    
+    const events = await Promise.race([fetchPromise, timeout])
+      .catch(error => {
+        console.error('NDK: Fetch error or timeout:', error);
+        return new Set(); // Return empty set on error
+      });
+    
     const messagesArray = Array.from(events);
     
     console.log(`NDK: Found ${messagesArray.length} group messages`);
@@ -160,14 +195,14 @@ export const subscribeToGroupNDK = async (groupId) => {
     const groupIdParts = groupId.split(':');
     const actualGroupId = groupIdParts.length === 3 ? groupIdParts[2] : groupId;
     
-    // Create NDK filter
+    // Create NDK filter - IMPORTANT: use "#h" format for consistency
     const filter = { 
       kinds: [1], // Regular note kind per NIP-29
-      h: [actualGroupId], // NIP-29 uses h tag with group_id
+      "#h": [actualGroupId], // NIP-29 uses #h tag with group_id
       since: Math.floor(Date.now() / 1000) - 10 // Only new messages
     };
     
-    console.log("NDK: Creating subscription with filter:", filter);
+    console.log("NDK: Creating subscription with filter:", JSON.stringify(filter));
     
     // Create subscription
     const subscription = ndk.subscribe(filter);
@@ -270,6 +305,109 @@ export const hasJoinedGroupNDK = async (naddr) => {
   } catch (error) {
     console.error("NDK: Error checking group membership:", error);
     return false;
+  }
+};
+
+/**
+ * Join a group using NDK
+ * @param {string} naddr - Group naddr
+ * @returns {Promise<boolean>} Success status
+ */
+export const joinGroupNDK = async (naddr) => {
+  await ensureConnected();
+  
+  try {
+    // Get current user pubkey
+    const pubkey = await getCurrentUserPubkey();
+    if (!pubkey) {
+      console.error("NDK: No authenticated user, can't join group");
+      throw new Error("Authentication required to join groups");
+    }
+    
+    // Parse the naddr
+    const groupInfo = parseNaddrNDK(naddr);
+    if (!groupInfo) {
+      throw new Error("Invalid group identifier");
+    }
+    
+    console.log("NDK: Joining group:", groupInfo);
+    
+    // Create a NIP-51 "groups" list or update existing one
+    const listId = "groups";  // Per NIP-51 standard
+    
+    // Check if we already have a groups list
+    const existingListFilter = {
+      kinds: [30001],  // NIP-51 lists
+      authors: [pubkey],
+      "#d": [listId]
+    };
+    
+    // Create a new NDK event
+    let ndkEvent;
+    const existingLists = await ndk.fetchEvents(existingListFilter);
+    
+    // The group identifier for the tag
+    const groupTag = `${groupInfo.kind}:${groupInfo.pubkey}:${groupInfo.identifier}`;
+    
+    if (existingLists && existingLists.size > 0) {
+      // We have an existing list, so update it
+      const listArray = Array.from(existingLists);
+      // Sort to get the most recent list
+      const latestList = listArray.sort((a, b) => b.created_at - a.created_at)[0];
+      
+      // Check if the group is already in the list
+      const alreadyInList = latestList.tags.some(tag => 
+        tag[0] === 'a' && tag[1] === groupTag
+      );
+      
+      if (alreadyInList) {
+        console.log("NDK: Group already in list, no need to update");
+        return true;
+      }
+      
+      // Copy existing tags and add the new group
+      const tags = [...latestList.tags];
+      
+      // Add the group to the tags if not already there
+      tags.push(['a', groupTag]);
+      
+      // Create a new NDK event with updated tags
+      ndkEvent = {
+        kind: 30001,
+        tags,
+        content: latestList.content || '',
+        pubkey, // From authentication
+        created_at: Math.floor(Date.now() / 1000)
+      };
+    } else {
+      // Create a new list with this group
+      ndkEvent = {
+        kind: 30001,
+        tags: [
+          ['d', listId],
+          ['a', groupTag]
+        ],
+        content: '',
+        pubkey, // From authentication
+        created_at: Math.floor(Date.now() / 1000)
+      };
+    }
+    
+    console.log('NDK: Joining group with event:', ndkEvent);
+    
+    // Use the existing signing mechanism from nostrClient
+    const { createAndPublishEvent } = await import('./nostrClient');
+    const publishedEvent = await createAndPublishEvent(ndkEvent);
+    
+    if (!publishedEvent) {
+      throw new Error('Failed to publish group membership event');
+    }
+    
+    console.log('NDK: Successfully joined group');
+    return true;
+  } catch (error) {
+    console.error('NDK: Error joining group:', error);
+    throw error;
   }
 };
 
