@@ -781,36 +781,89 @@ export const hasJoinedGroup = async (naddr) => {
     const groupInfo = parseNaddr(naddr);
     if (!groupInfo) return false;
 
-    // Create a new pool specifically for groups.0xchat.com
+    // Create a new pool specifically for NIP-29 relays
     const groupPool = new SimplePool();
-    const groupRelay = 'wss://groups.0xchat.com';
+    const groupRelays = [...new Set([
+      'wss://groups.0xchat.com',
+      ...(groupInfo.relays || [])
+    ])];
 
-    // Look for NIP-51 lists (kind 30001) containing group references
-    const filter = {
-      kinds: [30001],
-      authors: [userPubkey],
-      '#d': ['groups']
-    };
+    // First approach: Check NIP-51 lists (kind 30001) containing group references
+    try {
+      const nip51Filter = {
+        kinds: [30001],
+        authors: [userPubkey],
+        '#d': ['groups']
+      };
 
-    // Query the specific relay
-    const events = await groupPool.list([groupRelay], [filter]);
-    if (!events || events.length === 0) {
-      await groupPool.close();
-      return false;
+      // Query the relays
+      const nip51Events = await groupPool.list(groupRelays, [nip51Filter]);
+      
+      if (nip51Events && nip51Events.length > 0) {
+        // Sort by created_at to get the latest list
+        const latestEvent = nip51Events.sort((a, b) => b.created_at - a.created_at)[0];
+        const groupTag = `${groupInfo.kind}:${groupInfo.pubkey}:${groupInfo.identifier}`;
+
+        // Check if the group is in the list
+        const isInNip51List = latestEvent.tags.some(tag => 
+          tag[0] === 'a' && tag[1] === groupTag
+        );
+
+        if (isInNip51List) {
+          await groupPool.close();
+          return true;
+        }
+      }
+    } catch (nip51Error) {
+      console.warn('Error checking NIP-51 membership:', nip51Error);
+      // Continue to next check - don't return false yet
     }
 
-    // Sort by created_at to get the latest list
-    const latestEvent = events.sort((a, b) => b.created_at - a.created_at)[0];
-    const groupTag = `${groupInfo.kind}:${groupInfo.pubkey}:${groupInfo.identifier}`;
+    // Second approach: Check if user was added via NIP-29 put-user event (kind 9000)
+    try {
+      // Look for kind 9000 (put-user) events that mention this user
+      const nip29Filter = {
+        kinds: [9000], // put-user event
+        '#p': [userPubkey], // User was added as a member
+        '#h': [groupInfo.identifier] // For this specific group
+      };
 
-    // Check if the group is in the list
-    const isMember = latestEvent.tags.some(tag => 
-      tag[0] === 'a' && tag[1] === groupTag
-    );
+      const putUserEvents = await groupPool.list(groupRelays, [nip29Filter]);
+      
+      // If any put-user events exist for this user, they are a member
+      if (putUserEvents && putUserEvents.length > 0) {
+        await groupPool.close();
+        return true; // Found a put-user event, user is a member
+      }
+    } catch (nip29Error) {
+      console.warn('Error checking NIP-29 membership events:', nip29Error);
+      // Continue to next check
+    }
+
+    // Third approach: Check if the group is "unmanaged" - in NIP-29, everybody is considered a member
+    // of unmanaged groups
+    try {
+      // Check for group metadata to determine if it's managed or unmanaged
+      const metadataFilter = {
+        kinds: [39000], // Group metadata
+        authors: [groupInfo.pubkey],
+        '#d': [groupInfo.identifier]
+      };
+
+      const metadataEvents = await groupPool.list(groupRelays, [metadataFilter]);
+      
+      // If no metadata exists, the group is likely unmanaged
+      if (!metadataEvents || metadataEvents.length === 0) {
+        await groupPool.close();
+        // According to NIP-29: "In `unmanaged` groups, everybody is considered to be a member."
+        return true;
+      }
+    } catch (metadataError) {
+      console.warn('Error checking if group is unmanaged:', metadataError);
+    }
 
     await groupPool.close();
-    return isMember;
-
+    return false; // Not a member according to any method
   } catch (error) {
     console.error('Error checking group membership:', error);
     return false;

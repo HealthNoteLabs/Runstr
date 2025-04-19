@@ -4,13 +4,17 @@ import { NostrContext } from '../contexts/NostrContext';
 import { 
   parseNaddr, 
   fetchGroupMetadataByNaddr, 
-  fetchGroupMessages,
   sendGroupMessage,
-  subscribe,
   hasJoinedGroup,
   joinGroup,
   leaveGroup
 } from '../utils/nostrClient';
+import {
+  fetchGroupMessagesNDK,
+  subscribeToGroupNDK,
+  hasJoinedGroupNDK,
+  sendGroupMessageNDK
+} from '../utils/ndkGroupClient';
 import '../components/RunClub.css';
 
 console.log("TeamDetail component file is loading");
@@ -224,8 +228,30 @@ export const TeamDetail = () => {
     }
   };
   
-  // Setup real-time subscription to new messages
-  const setupSubscription = (groupData) => {
+  // Load messages for the group - Using NDK instead of nostr-tools
+  const loadMessages = async (groupData) => {
+    console.log("Loading messages for group:", groupData);
+    
+    try {
+      const groupId = `${groupData.kind}:${groupData.pubkey}:${groupData.identifier}`;
+      console.log("Fetching messages with group ID:", groupId);
+      
+      const relays = groupData.relays.length > 0 ? groupData.relays : ['wss://groups.0xchat.com'];
+      console.log("Using relays:", relays);
+      
+      // Use NDK implementation instead of pool.list
+      const messages = await fetchGroupMessagesNDK(groupId, relays);
+      console.log("Received messages:", messages);
+      
+      setMessages(messages);
+    } catch (error) {
+      console.error('Error loading messages:', error);
+      setError('Failed to load messages');
+    }
+  };
+  
+  // Setup real-time subscription to new messages - Using NDK
+  const setupSubscription = async (groupData) => {
     console.log("Setting up subscription for group:", groupData);
     
     // Clean up any existing subscription
@@ -233,26 +259,14 @@ export const TeamDetail = () => {
       subscriptionRef.current.close();
     }
     
-    // Extract the actual group ID from the compound identifier
-    // Format is kind:pubkey:identifier, we need just the identifier for NIP-29 'h' tag
     const groupIdentifier = `${groupData.kind}:${groupData.pubkey}:${groupData.identifier}`;
-    const groupIdParts = groupIdentifier.split(':');
-    const actualGroupId = groupIdParts.length === 3 ? groupIdParts[2] : groupIdentifier;
-    
-    // Format the filter for subscription - NIP-29 uses 'h' tag
-    const filter = {
-      '#h': [actualGroupId], // NIP-29 uses h tag with group_id
-      since: Math.floor(Date.now() / 1000) - 10 // Only get messages from 10 seconds ago
-    };
-    
-    console.log("Subscription filter:", filter);
     
     try {
-      // Subscribe to new messages
-      const sub = subscribe(filter);
+      // Create NDK subscription
+      const sub = await subscribeToGroupNDK(groupIdentifier);
       
       if (sub) {
-        console.log("Subscription created successfully");
+        console.log("NDK subscription created successfully");
         
         // Handle incoming events
         sub.on('event', (event) => {
@@ -267,31 +281,10 @@ export const TeamDetail = () => {
         // Store the subscription for cleanup
         subscriptionRef.current = sub;
       } else {
-        console.warn("Failed to create subscription - subscribe returned null/undefined");
+        console.warn("Failed to create NDK subscription");
       }
     } catch (error) {
       console.error('Error setting up subscription:', error);
-    }
-  };
-  
-  // Load messages for the group
-  const loadMessages = async (groupData) => {
-    console.log("Loading messages for group:", groupData);
-    
-    try {
-      const groupId = `${groupData.kind}:${groupData.pubkey}:${groupData.identifier}`;
-      console.log("Fetching messages with group ID:", groupId);
-      
-      const relays = groupData.relays.length > 0 ? groupData.relays : ['wss://groups.0xchat.com'];
-      console.log("Using relays:", relays);
-      
-      const messages = await fetchGroupMessages(groupId, relays);
-      console.log("Received messages:", messages);
-      
-      setMessages(messages);
-    } catch (error) {
-      console.error('Error loading messages:', error);
-      setError('Failed to load messages');
     }
   };
   
@@ -362,7 +355,7 @@ export const TeamDetail = () => {
     }
   };
   
-  // Send a message
+  // Send a message - Try NDK first, then fall back to nostr-tools
   const handleSendMessage = async (e) => {
     e.preventDefault();
     
@@ -374,17 +367,33 @@ export const TeamDetail = () => {
     
     try {
       console.log("Sending message to group:", groupInfo);
-      const sentMessage = await sendGroupMessage(groupInfo, messageText.trim());
+      
+      // Try to send with NDK first
+      let sentMessage = null;
+      try {
+        sentMessage = await sendGroupMessageNDK(groupInfo, messageText.trim());
+        if (sentMessage) {
+          console.log("Message sent successfully with NDK:", sentMessage);
+        }
+      } catch (ndkError) {
+        console.warn("NDK message sending failed, falling back to nostr-tools:", ndkError);
+        sentMessage = null;
+      }
+      
+      // Fall back to nostr-tools if NDK failed
+      if (!sentMessage) {
+        sentMessage = await sendGroupMessage(groupInfo, messageText.trim());
+        console.log("Message sent with nostr-tools:", sentMessage);
+      }
       
       if (sentMessage) {
-        console.log("Message sent successfully:", sentMessage);
         setMessageText('');
         // Optimistically add the message to the list
         setMessages(prev => [...prev, sentMessage]);
         // Scroll to bottom after sending
         setTimeout(scrollToBottom, 100);
       } else {
-        console.error("sendGroupMessage returned falsy value");
+        console.error("Failed to send message");
         setError('Failed to send message');
       }
     } catch (error) {
@@ -408,7 +417,7 @@ export const TeamDetail = () => {
     return date.toLocaleString();
   };
   
-  // Check if the user is a member of this group
+  // Check membership status - Try NDK first, then fall back to nostr-tools
   const checkMembershipStatus = async (naddrString) => {
     if (!publicKey) {
       setIsMember(false);
@@ -416,7 +425,17 @@ export const TeamDetail = () => {
     }
     
     try {
-      const member = await hasJoinedGroup(naddrString);
+      let member = false;
+      
+      try {
+        // Try NDK implementation first
+        member = await hasJoinedGroupNDK(naddrString);
+      } catch (ndkError) {
+        console.warn('NDK membership check failed, falling back to nostr-tools:', ndkError);
+        // Fall back to nostr-tools implementation
+        member = await hasJoinedGroup(naddrString);
+      }
+      
       setIsMember(member);
       console.log(`User membership status for ${naddrString}: ${member ? 'Member' : 'Not a member'}`);
     } catch (error) {
