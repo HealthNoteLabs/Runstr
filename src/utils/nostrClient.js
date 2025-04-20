@@ -198,8 +198,11 @@ export const fetchGroupMetadataByNaddr = async (naddrString) => {
     console.log(`Fetching group metadata for ${naddrString} with filter:`, filter);
     console.log(`Using relays:`, groupRelays);
     
+    // Try all methods to fetch metadata, with fallbacks
+    let metadataResult = null;
+    
+    // Method 1: Try with pool.list
     try {
-      // First attempt with pool.list
       const events = await pool.list(groupRelays, [filter]);
       
       if (events && events.length > 0) {
@@ -215,7 +218,7 @@ export const fetchGroupMetadataByNaddr = async (naddrString) => {
           metadata = { name: 'Unknown Group', about: 'Could not parse group metadata' };
         }
         
-        return {
+        metadataResult = {
           id: latestEvent.id,
           pubkey: latestEvent.pubkey,
           created_at: latestEvent.created_at,
@@ -223,103 +226,144 @@ export const fetchGroupMetadataByNaddr = async (naddrString) => {
           tags: latestEvent.tags,
           metadata
         };
+        
+        console.log('Successfully fetched metadata with pool.list');
+        return metadataResult;
       }
     } catch (error) {
-      console.log('Pool.list failed, falling back to WebSocket for metadata:', error);
-      // Continue to WebSocket fallback
+      console.log('Pool.list failed, trying alternative methods:', error);
     }
     
-    // WebSocket fallback
-    return new Promise((resolve, reject) => {
-      try {
-        const relay = groupRelays[0] || 'wss://groups.0xchat.com';
-        console.log(`Using WebSocket fallback to fetch metadata from ${relay}`);
-        
-        const ws = new WebSocket(relay);
-        let hasResolved = false;
-        
-        const timeout = setTimeout(() => {
-          if (!hasResolved) {
-            console.log('WebSocket metadata fetch timed out');
-            ws.close();
-            reject(new Error('WebSocket connection timeout'));
-          }
-        }, 10000);
-        
-        ws.onopen = () => {
-          console.log('WebSocket connection opened for metadata fetch');
-          ws.send(JSON.stringify(['REQ', 'metadata_fetch', filter]));
-        };
-        
-        ws.onmessage = (event) => {
-          try {
-            const message = JSON.parse(event.data);
-            if (message[0] === 'EVENT' && message[2]) {
-              const eventData = message[2];
-              
-              // Parse the content which contains the group metadata
-              let metadata;
-              try {
-                metadata = JSON.parse(eventData.content);
-              } catch (e) {
-                console.error('Error parsing group metadata content from WebSocket:', e);
-                metadata = { name: 'Unknown Group', about: 'Could not parse group metadata' };
-              }
-              
-              const result = {
-                id: eventData.id,
-                pubkey: eventData.pubkey,
-                created_at: eventData.created_at,
-                kind: eventData.kind,
-                tags: eventData.tags,
-                metadata
-              };
-              
-              if (!hasResolved) {
-                hasResolved = true;
-                clearTimeout(timeout);
-                ws.close();
-                resolve(result);
-              }
-            } else if (message[0] === 'EOSE') {
-              // End of stored events
-              if (!hasResolved) {
-                hasResolved = true;
-                clearTimeout(timeout);
-                ws.close();
-                resolve(null); // No events found
-              }
-            }
-          } catch (error) {
-            console.error('Error processing WebSocket message:', error);
-          }
-        };
-        
-        ws.onerror = (error) => {
-          console.error('WebSocket error during metadata fetch:', error);
-          if (!hasResolved) {
-            hasResolved = true;
-            clearTimeout(timeout);
-            ws.close();
-            reject(error);
-          }
-        };
-        
-        ws.onclose = () => {
-          if (!hasResolved) {
-            hasResolved = true;
-            clearTimeout(timeout);
-            reject(new Error('WebSocket closed without receiving metadata'));
-          }
-        };
-      } catch (error) {
-        reject(error);
+    // Method 2: Try with WebSocket
+    try {
+      const wsMetadata = await fetchMetadataWithWebSocket(groupInfo, groupRelays[0]);
+      if (wsMetadata) {
+        console.log('Successfully fetched metadata with WebSocket');
+        return wsMetadata;
       }
-    });
+    } catch (wsError) {
+      console.error('WebSocket method failed:', wsError);
+    }
+    
+    // Method 3: If all else fails, generate fallback metadata
+    console.log('All metadata fetch methods failed, generating fallback metadata');
+    const fallbackMetadata = {
+      id: `fallback-${groupInfo.kind}-${groupInfo.identifier}`,
+      pubkey: groupInfo.pubkey,
+      created_at: Math.floor(Date.now() / 1000),
+      kind: groupInfo.kind,
+      tags: [['d', groupInfo.identifier]],
+      metadata: {
+        name: `Group ${groupInfo.identifier.substring(0, 8)}...`,
+        about: 'Group metadata could not be loaded from relay',
+        picture: null
+      }
+    };
+    
+    return fallbackMetadata;
   } catch (error) {
     console.error('Error fetching group metadata by naddr:', error);
     return null;
   }
+};
+
+/**
+ * Helper function to fetch metadata using WebSocket
+ * @private
+ */
+const fetchMetadataWithWebSocket = async (groupInfo, relayUrl = 'wss://groups.0xchat.com') => {
+  return new Promise((resolve, reject) => {
+    try {
+      const relay = relayUrl;
+      console.log(`Using WebSocket to fetch metadata from ${relay}`);
+      
+      const ws = new WebSocket(relay);
+      let hasResolved = false;
+      
+      const filter = {
+        kinds: [groupInfo.kind],
+        authors: [groupInfo.pubkey],
+        '#d': [groupInfo.identifier]
+      };
+      
+      const timeout = setTimeout(() => {
+        if (!hasResolved) {
+          console.log('WebSocket metadata fetch timed out');
+          ws.close();
+          reject(new Error('WebSocket connection timeout'));
+        }
+      }, 10000);
+      
+      ws.onopen = () => {
+        console.log('WebSocket connection opened for metadata fetch');
+        ws.send(JSON.stringify(['REQ', 'metadata_fetch', filter]));
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          if (message[0] === 'EVENT' && message[2]) {
+            const eventData = message[2];
+            
+            // Parse the content which contains the group metadata
+            let metadata;
+            try {
+              metadata = JSON.parse(eventData.content);
+            } catch (e) {
+              console.error('Error parsing group metadata content from WebSocket:', e);
+              metadata = { name: 'Unknown Group', about: 'Could not parse group metadata' };
+            }
+            
+            const result = {
+              id: eventData.id,
+              pubkey: eventData.pubkey,
+              created_at: eventData.created_at,
+              kind: eventData.kind,
+              tags: eventData.tags,
+              metadata
+            };
+            
+            if (!hasResolved) {
+              hasResolved = true;
+              clearTimeout(timeout);
+              ws.close();
+              resolve(result);
+            }
+          } else if (message[0] === 'EOSE') {
+            // End of stored events
+            if (!hasResolved) {
+              hasResolved = true;
+              clearTimeout(timeout);
+              ws.close();
+              resolve(null); // No events found
+            }
+          }
+        } catch (error) {
+          console.error('Error processing WebSocket message:', error);
+        }
+      };
+      
+      ws.onerror = (error) => {
+        console.error('WebSocket error during metadata fetch:', error);
+        if (!hasResolved) {
+          hasResolved = true;
+          clearTimeout(timeout);
+          ws.close();
+          reject(error);
+        }
+      };
+      
+      ws.onclose = () => {
+        if (!hasResolved) {
+          hasResolved = true;
+          clearTimeout(timeout);
+          reject(new Error('WebSocket closed without receiving metadata'));
+        }
+      };
+    } catch (error) {
+      reject(error);
+    }
+  });
 };
 
 /**

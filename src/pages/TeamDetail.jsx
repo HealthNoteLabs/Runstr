@@ -160,7 +160,7 @@ export const TeamDetail = () => {
                     if (eventData.content) {
                       metadata = JSON.parse(eventData.content);
                     }
-                  } catch {
+                  } catch (_) {
                     console.log('Content is not JSON, using tag-based metadata');
                   }
                   
@@ -185,6 +185,9 @@ export const TeamDetail = () => {
                   clearTimeout(timeout);
                   ws.close();
                   resolve();
+                } else if (message[0] === 'EOSE') {
+                  // End of stored events, but no metadata found
+                  console.log('Received EOSE but no metadata');
                 }
               } catch (error) {
                 console.error('Error processing WebSocket message:', error);
@@ -199,7 +202,27 @@ export const TeamDetail = () => {
           });
         } catch (wsError) {
           console.error("WebSocket fetch also failed:", wsError);
-          throw new Error('Failed to fetch group metadata from all sources');
+          
+          // Last resort: Try to construct basic metadata from the naddr
+          if (!groupMetadata && parsedInfo) {
+            console.log("Constructing fallback metadata from naddr data");
+            
+            // Create minimal metadata from available information
+            groupMetadata = {
+              id: `fallback-${parsedInfo.kind}-${parsedInfo.identifier}`,
+              pubkey: parsedInfo.pubkey,
+              created_at: Math.floor(Date.now() / 1000),
+              kind: parsedInfo.kind,
+              tags: [['d', parsedInfo.identifier]],
+              metadata: {
+                name: `Group ${parsedInfo.identifier.substring(0, 8)}...`,
+                about: 'Group metadata could not be loaded from relay',
+                picture: null
+              }
+            };
+          } else {
+            throw new Error('Failed to fetch group metadata from all sources');
+          }
         }
       }
       
@@ -248,7 +271,7 @@ export const TeamDetail = () => {
     let naddrString = decodeURIComponent(teamId);
     
     // Set up subscription using GroupChatManager
-    const sub = groupChatManager.subscribeToGroupMessages(
+    groupChatManager.subscribeToGroupMessages(
       naddrString,
       (newMessage) => {
         // Callback for new messages
