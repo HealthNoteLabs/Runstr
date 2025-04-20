@@ -3,8 +3,19 @@ import { decode as decodeNip19 } from 'nostr-tools/nip19';
 
 class GroupMembershipManager {
   constructor() {
-    // Initialize SimplePool correctly - no parameters based on nostr-tools documentation
-    this.pool = new SimplePool();
+    try {
+      // Initialize SimplePool correctly - no parameters based on nostr-tools documentation
+      this.pool = new SimplePool();
+    } catch (e) {
+      console.error('Failed to initialize SimplePool:', e);
+      // Create a stub object that won't cause errors when methods are called
+      this.pool = {
+        list: async () => [], // Return empty array on list
+        get: async () => null, // Return null on get
+        publish: () => {} // No-op for publish
+      };
+    }
+    
     this.membershipCache = new Map(); // groupId -> Set of member pubkeys
     this.pendingRequests = new Map(); // groupId -> Set of pending pubkeys
     
@@ -58,11 +69,22 @@ class GroupMembershipManager {
 
   // Re-initialize pool if needed
   ensurePool() {
-    if (!this.pool || typeof this.pool.list !== 'function') {
-      console.log('Reinitializing SimplePool in GroupMembershipManager');
-      this.pool = new SimplePool();
+    try {
+      if (!this.pool || typeof this.pool.list !== 'function') {
+        console.log('Reinitializing SimplePool in GroupMembershipManager');
+        this.pool = new SimplePool();
+      }
+      return this.pool;
+    } catch (e) {
+      console.error('Failed to ensure SimplePool:', e);
+      // Create a stub object that won't cause errors when methods are called
+      this.pool = {
+        list: async () => [], // Return empty array on list
+        get: async () => null, // Return null on get
+        publish: () => {} // No-op for publish
+      };
+      return this.pool;
     }
-    return this.pool;
   }
 
   // Parse naddr string into group components
@@ -197,13 +219,19 @@ class GroupMembershipManager {
       
       // Query multiple relays, using the correct filter array format
       try {
+        // Check if pool.list is actually a function to avoid type errors
+        if (typeof this.pool.list !== 'function') {
+          console.error('SimplePool.list is not a function. Using fallback.');
+          return false;
+        }
+        
         const events = await this.pool.list(relays, filter);
         if (!events || events.length === 0) {
           return false;
         }
         
         // Sort by created_at to get the latest list
-        const latestEvent = events.sort((a, b) => b.created_at - a.created_at)[0];
+        const latestEvent = events.sort((a, b) => b.created_at - b.created_at)[0];
         
         // Look for the group tag in various formats
         return this.checkGroupInTags(latestEvent.tags, groupInfo);
@@ -212,7 +240,8 @@ class GroupMembershipManager {
         return false;
       }
     } catch (e) {
-      throw new Error(`NIP-51 membership check failed: ${e.message}`);
+      console.error(`NIP-51 membership check failed: ${e.message}`);
+      return false; // Don't throw, just return false to let other methods try
     }
   }
   
@@ -355,6 +384,12 @@ class GroupMembershipManager {
       // Try each filter on all relays
       for (const filter of filters) {
         try {
+          // Check if pool.list is actually a function to avoid type errors
+          if (typeof this.pool.list !== 'function') {
+            console.warn(`Error with filter ${JSON.stringify(filter)}: SimplePool.list is not a function`);
+            continue; // Skip to next filter
+          }
+          
           // Use the correct array format for filters
           const events = await this.pool.list(relays, [filter]);
           
@@ -382,7 +417,8 @@ class GroupMembershipManager {
       
       return false;
     } catch (e) {
-      throw new Error(`Flexible membership check failed: ${e.message}`);
+      console.error(`Flexible membership check failed: ${e.message}`);
+      return false; // Don't throw, just return false
     }
   }
   

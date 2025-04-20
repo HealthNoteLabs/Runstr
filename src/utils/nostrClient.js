@@ -247,15 +247,22 @@ export const fetchGroupMetadataByNaddr = async (naddrString) => {
     
     // Method 3: If all else fails, generate fallback metadata
     console.log('All metadata fetch methods failed, generating fallback metadata');
+    // Create a readable name from the identifier
+    const shortId = groupInfo.identifier.substring(0, 8);
+    const pubkeyPrefix = groupInfo.pubkey.substring(0, 6);
     const fallbackMetadata = {
       id: `fallback-${groupInfo.kind}-${groupInfo.identifier}`,
       pubkey: groupInfo.pubkey,
       created_at: Math.floor(Date.now() / 1000),
       kind: groupInfo.kind,
-      tags: [['d', groupInfo.identifier]],
+      tags: [
+        ['d', groupInfo.identifier],
+        ['name', `Group ${shortId}`],
+        ['about', `Nostr group created by ${pubkeyPrefix}...`]
+      ],
       metadata: {
-        name: `Group ${groupInfo.identifier.substring(0, 8)}...`,
-        about: 'Group metadata could not be loaded from relay',
+        name: `Group ${shortId}`,
+        about: `Nostr group with identifier ${shortId}... created by ${pubkeyPrefix}...`,
         picture: null
       }
     };

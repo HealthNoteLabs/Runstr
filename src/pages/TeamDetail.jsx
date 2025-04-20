@@ -160,8 +160,8 @@ export const TeamDetail = () => {
                     if (eventData.content) {
                       metadata = JSON.parse(eventData.content);
                     }
-                  } catch (_) {
-                    console.log('Content is not JSON, using tag-based metadata');
+                  } catch (error) {
+                    console.log('Content is not JSON, using tag-based metadata:', error.message);
                   }
                   
                   // Extract metadata from tags
@@ -708,26 +708,30 @@ export const TeamDetail = () => {
           </button>
           
           <div className="flex items-center flex-1">
-            {metadata.metadata?.picture ? (
+            {metadata?.metadata?.picture ? (
               <img 
                 src={metadata.metadata.picture} 
-                alt={metadata.metadata.name} 
-                className="w-12 h-12 rounded-full mr-4"
+                alt={metadata.metadata?.name || 'Group'} 
+                className="w-12 h-12 rounded-full mr-4" 
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.style.display = 'none';
+                  e.target.nextSibling.style.display = 'flex';
+                }}
               />
-            ) : (
-              <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center mr-4">
-                <span className="text-white text-xl font-bold">
-                  {metadata.metadata?.name?.charAt(0) || '#'}
-                </span>
-              </div>
-            )}
+            ) : null}
+            <div className={`w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center mr-4 ${metadata?.metadata?.picture ? 'hidden' : ''}`}>
+              <span className="text-white text-xl font-bold">
+                {metadata?.metadata?.name?.charAt(0) || groupInfo?.identifier?.charAt(0) || '#'}
+              </span>
+            </div>
             
             <div className="flex-1">
               <h1 className="text-2xl font-bold text-white">
-                {metadata.metadata?.name || 'Running Club'}
+                {metadata?.metadata?.name || `Group ${groupInfo?.identifier?.substring(0, 8) || ''}`}
               </h1>
               <p className="text-gray-400 text-sm">
-                {metadata.metadata?.about || 'A Nostr running community'}
+                {metadata?.metadata?.about || `A Nostr running community (ID: ${groupInfo?.identifier?.substring(0, 6)}...)`}
               </p>
             </div>
             
