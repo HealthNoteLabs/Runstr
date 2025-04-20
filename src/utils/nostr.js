@@ -770,6 +770,33 @@ export const createWorkoutEvent = (run, distanceUnit) => {
     elevationTags = [['elevation_gain', elevationValue.toString(), elevationUnit]];
   }
 
+  // Format splits if available
+  let splitTags = [];
+  if (run.splits && run.splits.length > 0) {
+    // Add a summary tag for the number of splits
+    splitTags.push(['splits_count', run.splits.length.toString()]);
+    
+    // Add individual split tags
+    run.splits.forEach((split, index) => {
+      // Calculate individual split time rather than using cumulative time
+      const prevSplitTime = index > 0 ? run.splits[index - 1].time : 0;
+      const splitTime = split.time - prevSplitTime;
+      
+      // Format the split time in minutes:seconds
+      const splitMinutes = Math.floor(splitTime / 60);
+      const splitSeconds = Math.floor(splitTime % 60);
+      const formattedTime = `${splitMinutes.toString().padStart(2, '0')}:${splitSeconds.toString().padStart(2, '0')}`;
+      
+      // Add the split tag: ['split', '1', '05:32', '1 km']
+      splitTags.push([
+        'split', 
+        (index + 1).toString(), 
+        formattedTime, 
+        `1 ${distanceUnit}`
+      ]);
+    });
+  }
+
   // Create the run name based on date/time
   const runDate = new Date(run.date);
   const runName = `${runDate.toLocaleDateString()} Run`;
@@ -783,7 +810,8 @@ export const createWorkoutEvent = (run, distanceUnit) => {
       ['exercise', 'running'],
       ['distance', distanceValue, distanceUnit],
       ['duration', durationFormatted],
-      ...elevationTags
+      ...elevationTags,
+      ...splitTags
     ]
   };
 };

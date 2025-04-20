@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
+import { TipArtistButton } from './TipArtistButton';
+import { LightningWalletConnect } from './LightningWalletConnect';
 import styles from '../assets/styles/AudioPlayer.module.css';
 
 export function MusicPlayer() {
@@ -16,12 +18,21 @@ export function MusicPlayer() {
   
   const [errorMessage, setErrorMessage] = useState('');
   const [showErrorMessage, setShowErrorMessage] = useState(false);
+  const [wallet, setWallet] = useState(null);
 
   // Reset error when track changes
   useEffect(() => {
     setErrorMessage('');
     setShowErrorMessage(false);
   }, [currentTrack]);
+
+  // Attempt to get wallet from global state or context
+  // This is a placeholder - implement actual wallet connection logic
+  useEffect(() => {
+    // For demonstration - in a real implementation, get this from a wallet context
+    const connectedWallet = window.nostr?.nwc || null;
+    setWallet(connectedWallet);
+  }, []);
 
   // Error handling function
   const handlePlaybackError = (error) => {
@@ -40,6 +51,11 @@ export function MusicPlayer() {
     } catch (error) {
       handlePlaybackError(error);
     }
+  };
+
+  // Handle wallet connection
+  const handleWalletConnected = (connectedWallet) => {
+    setWallet(connectedWallet);
   };
 
   if (!currentTrack) return null;
@@ -85,6 +101,16 @@ export function MusicPlayer() {
         <p>Selected Playlist: {playlist?.title || 'Unknown'}</p>
         <p>Selected Track: {currentTrack.title}</p>
       </div>
+      <div className={styles.nowPlaying}>
+        <p>Now playing: {currentTrack.title} - {currentTrack.artist || 'Unknown Artist'}</p>
+        
+        {/* Show either tip button or wallet connect based on wallet status */}
+        {wallet ? (
+          <TipArtistButton track={currentTrack} wallet={wallet} />
+        ) : (
+          <LightningWalletConnect onWalletConnected={handleWalletConnected} />
+        )}
+      </div>
       <div className={styles.controls}>
         <button onClick={playPrevious} className={styles.controlButton}>
           <div className="icon-container">
@@ -112,9 +138,6 @@ export function MusicPlayer() {
             <span className={styles.buttonText}>Next</span>
           </div>
         </button>
-      </div>
-      <div className={styles.nowPlaying}>
-        <p>Now playing: {currentTrack.title} - {currentTrack.artist || 'Unknown Artist'}</p>
       </div>
       
       {/* Upcoming tracks section */}

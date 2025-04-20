@@ -1,0 +1,122 @@
+.tip-artist-container {
+  margin-top: 10px;
+  position: relative;
+}
+
+.tip-artist-button {
+  background-color: #f5a623;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.tip-artist-button:hover {
+  background-color: #e09109;
+}
+
+.tip-artist-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.amount-selector {
+  position: absolute;
+  top: 40px;
+  left: 0;
+  width: 280px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  padding: 16px;
+}
+
+.amount-selector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.amount-selector-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0;
+  color: #888;
+}
+
+.amount-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.amount-button {
+  background-color: #f0f0f0;
+  border: none;
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.amount-button:hover {
+  background-color: #e0e0e0;
+}
+
+.custom-amount {
+  display: flex;
+  gap: 8px;
+}
+
+.custom-amount-input {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.custom-amount-button {
+  background-color: #f5a623;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.custom-amount-button:hover {
+  background-color: #e09109;
+}
+
+.error-message {
+  margin-top: 8px;
+  color: #d9534f;
+  font-size: 14px;
+}
+
+.success-message {
+  margin-top: 8px;
+  color: #5cb85c;
+  font-size: 14px;
+} 

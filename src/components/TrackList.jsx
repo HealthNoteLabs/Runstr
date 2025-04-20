@@ -1,45 +1,42 @@
 import PropTypes from 'prop-types';
-import { useContext } from 'react';
+import { useContext, useState, useEffect } from 'react';
 import { AudioContext } from '../contexts/audioContext';
+import { TrackListItem } from './TrackListItem';
+import './TrackList.css';
 
 export function TrackList({
   tracks,
   currentTrack,
-  onTrackClick,
-  onAddToQueue
+  onTrackClick
 }) {
   const { isPlaying } = useContext(AudioContext);
+  const [wallet, setWallet] = useState(null);
+
+  // Attempt to get wallet from global state or context
+  useEffect(() => {
+    // For demonstration - in a real implementation, get this from a wallet context
+    const connectedWallet = window.nostr?.nwc || null;
+    setWallet(connectedWallet);
+  }, []);
 
   return (
     <div className="track-list">
-      {tracks.map((track) => (
-        <div
+      {tracks.map((track, index) => (
+        <TrackListItem
           key={track.id}
-          className={`track-item ${currentTrack?.id === track.id ? 'active' : ''}`}
-        >
-          <div className="track-info" onClick={() => onTrackClick(track)}>
-            <div className="track-title">{track.title}</div>
-            <div className="track-artist">{track.artist}</div>
-          </div>
-          <div className="track-controls">
-            <button
-              className="play-button"
-              onClick={() => onTrackClick(track)}
-              aria-label={
-                currentTrack?.id === track.id && isPlaying ? 'Pause' : 'Play'
-              }
-            >
-              {currentTrack?.id === track.id && isPlaying ? '⏸️' : '▶️'}
-            </button>
-            <button
-              className="queue-button"
-              onClick={() => onAddToQueue(track)}
-              aria-label="Add to queue"
-            >
-              ➕
-            </button>
-          </div>
-        </div>
+          track={track}
+          position={index + 1}
+          isPlaying={currentTrack?.id === track.id && isPlaying}
+          wallet={wallet}
+          onPlay={(track) => {
+            if (currentTrack?.id === track.id && isPlaying) {
+              // If the same track is already playing, this acts as a pause
+              onTrackClick({ ...track, playToggle: true });
+            } else {
+              onTrackClick(track);
+            }
+          }}
+        />
       ))}
     </div>
   );
@@ -50,7 +47,8 @@ TrackList.propTypes = {
     PropTypes.shape({
       id: PropTypes.string.isRequired,
       title: PropTypes.string.isRequired,
-      artist: PropTypes.string.isRequired
+      artist: PropTypes.string.isRequired,
+      albumArtUrl: PropTypes.string
     })
   ).isRequired,
   currentTrack: PropTypes.shape({
@@ -58,6 +56,5 @@ TrackList.propTypes = {
     title: PropTypes.string.isRequired,
     artist: PropTypes.string.isRequired
   }),
-  onTrackClick: PropTypes.func.isRequired,
-  onAddToQueue: PropTypes.func.isRequired
+  onTrackClick: PropTypes.func.isRequired
 };

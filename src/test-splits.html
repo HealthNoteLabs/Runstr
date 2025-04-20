@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RUNSTR Splits Test</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1f2b;
+            color: #e2e8f0;
+        }
+        .card {
+            background-color: #2d3748;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background-color: #1a202c;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #4a5568;
+        }
+        th {
+            background-color: #2d3748;
+            font-weight: 600;
+            color: #a0aec0;
+        }
+        pre {
+            background-color: #1a202c;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        .btn {
+            background-color: #4c1d95;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>RUNSTR Splits Test</h1>
+    
+    <div class="card">
+        <h2>Test Splits Data</h2>
+        <p>Use this page to test how splits are formatted for display and Nostr posts.</p>
+        
+        <div id="output"></div>
+        
+        <button class="btn" id="testBtn">Test Split Formatting</button>
+    </div>
+    
+    <script>
+        // Mock split data (times are cumulative in seconds)
+        const testSplits = [
+            { time: 360, pace: 6.0 },     // 6:00 minutes
+            { time: 735, pace: 6.25 },    // 12:15 minutes (6:15 for second split)
+            { time: 1095, pace: 6.0 },    // 18:15 minutes (6:00 for third split)
+            { time: 1455, pace: 6.0 },    // 24:15 minutes (6:00 for fourth split)
+            { time: 1755, pace: 5.0 }     // 29:15 minutes (5:00 for fifth split - fast finish!)
+        ];
+        
+        document.getElementById('testBtn').addEventListener('click', function() {
+            const distanceUnit = 'km';
+            const outputDiv = document.getElementById('output');
+            outputDiv.innerHTML = '';
+            
+            // 1. Show the original split data
+            const originalTable = document.createElement('div');
+            originalTable.innerHTML = `
+                <h3>Original Split Data (Cumulative)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Split</th>
+                            <th>Cumulative Time (s)</th>
+                            <th>Pace</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${testSplits.map((split, index) => `
+                            <tr>
+                                <td>${index + 1}</td>
+                                <td>${split.time}</td>
+                                <td>${split.pace}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            outputDiv.appendChild(originalTable);
+            
+            // 2. Calculate individual splits for the SplitsTable component
+            const splitsTable = document.createElement('div');
+            splitsTable.innerHTML = `
+                <h3>Individual Split Times (as shown in SplitsTable)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Split</th>
+                            <th>Distance</th>
+                            <th>Time</th>
+                            <th>Pace</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${testSplits.map((split, index) => {
+                            // Calculate individual split time
+                            const prevSplitTime = index > 0 ? testSplits[index - 1].time : 0;
+                            const splitTime = split.time - prevSplitTime;
+                            
+                            // Format time as MM:SS
+                            const minutes = Math.floor(splitTime / 60);
+                            const seconds = Math.floor(splitTime % 60);
+                            const formattedTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                            
+                            // Calculate pace for this split
+                            const paceMinutes = splitTime / 60; // in minutes
+                            const paceMin = Math.floor(paceMinutes);
+                            const paceSec = Math.round((paceMinutes - paceMin) * 60);
+                            const formattedPace = `${paceMin}:${paceSec.toString().padStart(2, '0')}/km`;
+                            
+                            return `
+                                <tr>
+                                    <td>${index + 1}</td>
+                                    <td>1 ${distanceUnit}</td>
+                                    <td>${formattedTime}</td>
+                                    <td>${formattedPace}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+            outputDiv.appendChild(splitsTable);
+            
+            // 3. Format for Nostr post
+            let splitsContent = '🏃‍♂️ Split Times:';
+            testSplits.forEach((split, index) => {
+                // Calculate individual split time
+                const prevSplitTime = index > 0 ? testSplits[index - 1].time : 0;
+                const splitTime = split.time - prevSplitTime;
+                
+                // Format time
+                const minutes = Math.floor(splitTime / 60);
+                const seconds = Math.floor(splitTime % 60);
+                const timeFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                
+                splitsContent += `\nSplit ${index + 1}: ${timeFormatted} for 1 ${distanceUnit}`;
+            });
+            
+            const nostrPreview = document.createElement('div');
+            nostrPreview.innerHTML = `
+                <h3>Nostr Post Preview</h3>
+                <pre>
+Just completed a run with Runstr! 🏃‍♂️💨
+
+⏱️ Duration: 29:15
+📏 Distance: 5 km
+⚡ Pace: 5:51 min/km
+🔥 Calories: 350 kcal
+🏔️ Elevation Gain: 45m
+📉 Elevation Loss: 40m
+
+${splitsContent}
+
+#Runstr #Running
+                </pre>
+            `;
+            outputDiv.appendChild(nostrPreview);
+            
+            // 4. Format for workout event tags
+            const workoutEventPreview = document.createElement('div');
+            let splitTags = [];
+            splitTags.push(['splits_count', testSplits.length.toString()]);
+            
+            testSplits.forEach((split, index) => {
+                // Calculate individual split time
+                const prevSplitTime = index > 0 ? testSplits[index - 1].time : 0;
+                const splitTime = split.time - prevSplitTime;
+                
+                // Format time
+                const splitMinutes = Math.floor(splitTime / 60);
+                const splitSeconds = Math.floor(splitTime % 60);
+                const formattedTime = `${splitMinutes.toString().padStart(2, '0')}:${splitSeconds.toString().padStart(2, '0')}`;
+                
+                splitTags.push([
+                    'split', 
+                    (index + 1).toString(), 
+                    formattedTime, 
+                    `1 ${distanceUnit}`
+                ]);
+            });
+            
+            workoutEventPreview.innerHTML = `
+                <h3>Workout Event Tags Preview</h3>
+                <pre>
+[
+  ['workout', '11/15/2023 Run'],
+  ['exercise', 'running'],
+  ['distance', '5.00', 'km'],
+  ['duration', '00:29:15'],
+  ['elevation_gain', '45', 'm'],
+  ${splitTags.map(tag => `  ['${tag[0]}', '${tag[1]}', '${tag[2] || ''}', '${tag[3] || ''}']`).join(',\n')}
+]
+                </pre>
+            `;
+            outputDiv.appendChild(workoutEventPreview);
+        });
+    </script>
+</body>
+</html> 

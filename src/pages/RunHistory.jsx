@@ -222,6 +222,24 @@ export const RunHistory = () => {
       const run = selectedRun;
       const caloriesBurned = calculateCaloriesBurned(run.distance, run.duration);
       
+      // Build splits section if available
+      let splitsContent = '';
+      if (run.splits && run.splits.length > 0) {
+        splitsContent = '\n\n🏃‍♂️ Split Times:';
+        run.splits.forEach((split, index) => {
+          // Calculate individual split time rather than using cumulative time
+          const prevSplitTime = index > 0 ? run.splits[index - 1].time : 0;
+          const splitTime = split.time - prevSplitTime;
+          
+          // Format the split time
+          const minutes = Math.floor(splitTime / 60);
+          const seconds = Math.floor(splitTime % 60);
+          const timeFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+          
+          splitsContent += `\nSplit ${index + 1}: ${timeFormatted} for 1 ${distanceUnit}`;
+        });
+      }
+      
       const content = `
 Just completed a run with Runstr! 🏃‍♂️💨
 
@@ -229,7 +247,7 @@ Just completed a run with Runstr! 🏃‍♂️💨
 📏 Distance: ${displayDistance(run.distance, distanceUnit)}
 ⚡ Pace: ${(run.duration / 60 / (distanceUnit === 'km' ? run.distance/1000 : run.distance/1609.344)).toFixed(2)} min/${distanceUnit}
 🔥 Calories: ${caloriesBurned} kcal
-${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gain, distanceUnit)}\n📉 Elevation Loss: ${formatElevation(run.elevation.loss, distanceUnit)}` : ''}
+${run.elevation ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gain, distanceUnit)}\n📉 Elevation Loss: ${formatElevation(run.elevation.loss, distanceUnit)}` : ''}${splitsContent}
 ${additionalContent ? `\n${additionalContent}` : ''}
 #Runstr #Running
 `.trim();
