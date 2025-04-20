@@ -34,7 +34,8 @@ export default defineConfig({
         '@capacitor/network',
         '@capacitor/preferences',
         '@capacitor/toast',
-        '@capacitor-community/background-geolocation'
+        '@capacitor-community/background-geolocation',
+        '@getalby/sdk'
       ]
     },
     // Enable source maps for production

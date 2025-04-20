@@ -1,5 +1,4 @@
-import { getPublicKey } from 'nostr-tools';
-import * as secp256k1 from '@noble/secp256k1';
+import { getPublicKey, generatePrivateKey } from 'nostr-tools';
 import { webln } from '@getalby/sdk';
 import { RELAYS } from '../utils/nostr';
 
@@ -19,7 +18,7 @@ export class NWCWallet {
         throw new Error('Invalid NWC URL protocol');
       }
 
-      this.secretKey = secp256k1.utils.randomPrivateKey();
+      this.secretKey = generatePrivateKey();
       this.pubKey = getPublicKey(this.secretKey);
 
       const params = new URLSearchParams(url.pathname);
@@ -77,11 +76,19 @@ export class NWCWallet {
         throw new Error('Wallet not connected');
       }
 
-      // Use provided amount or get default from localStorage
+      // Use provided amount or get default from preferences
       let zapAmount = amount;
       if (!zapAmount) {
-        const storedAmount = localStorage.getItem('defaultZapAmount');
-        zapAmount = storedAmount ? parseInt(storedAmount, 10) : 1000;
+        try {
+          // Use preference storage instead of localStorage following mobile refactoring
+          const { Preferences } = await import('@capacitor/preferences');
+          const { value } = await Preferences.get({ key: 'defaultZapAmount' });
+          zapAmount = value ? parseInt(value, 10) : 1000;
+        } catch (error) {
+          // Fallback to default
+          zapAmount = 1000;
+          console.error('Error getting default zap amount:', error);
+        }
       }
 
       const zapRequest = {
