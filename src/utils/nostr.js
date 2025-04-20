@@ -1,8 +1,5 @@
-import { SimplePool, nip19, generatePrivateKey, getPublicKey, getEventHash, signEvent } from 'nostr-tools';
-import NDK, { NDKEvent } from '@nostr-dev-kit/ndk';
-import { Platform } from '../utils/react-native-shim';
-import AmberAuth from '../services/AmberAuth';
-// Import nostr-tools implementation for fallback
+import { SimplePool, getEventHash } from 'nostr-tools';
+import NDK from '@nostr-dev-kit/ndk';
 import { createAndPublishEvent as publishWithNostrTools } from './nostrClient';
 
 // Initialize relay pool
@@ -447,27 +444,9 @@ export const createAndPublishEvent = async (eventTemplate) => {
   try {
     // Check if running in Android environment with window.Android
     if (window.Android && window.Android.getNostrPrivateKey) {
-      // Get private key from Android
-      const privateKey = window.Android.getNostrPrivateKey();
-      const pubkey = getPublicKey(privateKey);
-      
-      // Create a complete event
-      const event = {
-        ...eventTemplate,
-        pubkey,
-        id: '',
-        sig: ''
-      };
-      
-      // Calculate event hash
-      event.id = getEventHash(event);
-      
-      // Sign the event
-      event.sig = signEvent(event, privateKey);
-      
-      // Publish the event
-      await pool.publish(RELAYS, event);
-      return event;
+      // Get private key from Android and use the nostrClient implementation
+      console.log('Using Android environment for event publishing');
+      return await publishWithNostrTools(eventTemplate);
     } else {
       // Use NIP-07 browser extension if available
       if (window.nostr) {
@@ -478,8 +457,8 @@ export const createAndPublishEvent = async (eventTemplate) => {
         const event = {
           ...eventTemplate,
           pubkey,
-          id: '',
-          sig: ''
+          created_at: Math.floor(Date.now() / 1000),
+          id: ''
         };
         
         // Calculate event hash

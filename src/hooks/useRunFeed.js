@@ -22,6 +22,7 @@ const globalState = {
 /**
  * Hook to fetch and subscribe to run feed from Nostr
  * @param {string[]} tags - Tags to filter posts by
+ */
 export const useRunFeed = () => {
   const { publicKey } = useContext(NostrContext);
   const [posts, setPosts] = useState([]);

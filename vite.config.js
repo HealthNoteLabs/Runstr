@@ -23,7 +23,19 @@ export default defineConfig({
             'react-h5-audio-player'
           ]
         }
-      }
+      },
+      // Add external dependencies that should not be bundled
+      external: [
+        '@capacitor/core',
+        '@capacitor/device',
+        '@capacitor/app',
+        '@capacitor/dialog',
+        '@capacitor/haptics',
+        '@capacitor/network',
+        '@capacitor/preferences',
+        '@capacitor/toast',
+        '@capacitor-community/background-geolocation'
+      ]
     },
     // Enable source maps for production
     sourcemap: false,

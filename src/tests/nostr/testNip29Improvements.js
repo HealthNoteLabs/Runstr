@@ -5,9 +5,9 @@ import {
   hasJoinedGroup, 
   parseNaddr,
   getUserPublicKey 
-} from '../utils/nostrClient';
-import groupMembershipManager from '../services/GroupMembershipManager';
-import groupChatManager from '../services/GroupChatManager';
+} from '../../utils/nostrClient';
+import groupMembershipManager from '../../services/GroupMembershipManager';
+import groupChatManager from '../../services/GroupChatManager';
 import { SimplePool } from 'nostr-tools';
 
 // Sample Nostr groups for testing
@@ -200,7 +200,7 @@ async function testChatMessagesFetching() {
           const relays = ['wss://groups.0xchat.com', 'wss://relay.damus.io'];
           
           console.log(`   Attempting direct fetchGroupMessages from nostrClient`);
-          const { fetchGroupMessages } = await import('../utils/nostrClient');
+          const { fetchGroupMessages } = await import('../../utils/nostrClient');
           const fallbackMessages = await fetchGroupMessages(groupId, relays);
           console.log(`   Fallback fetch returned ${fallbackMessages.length} messages`);
         }

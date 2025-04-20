@@ -67,6 +67,22 @@ export const getJSON = async (key, defaultValue = null) => {
 };
 
 /**
+ * Set JSON item in storage
+ * @param {string} key - The key to set
+ * @param {any} value - The value to store (will be stringified)
+ * @returns {Promise<void>}
+ */
+export const setJSON = async (key, value) => {
+  try {
+    const jsonString = JSON.stringify(value);
+    await setItem(key, jsonString);
+  } catch (error) {
+    console.error(`Error saving JSON for ${key}:`, error);
+    throw error;
+  }
+};
+
+/**
  * Set item in storage
  * @param {string} key - The key to set
  * @param {string} value - The value to store
@@ -251,6 +267,7 @@ export default {
   setItem,
   getItem,
   getJSON,
+  setJSON,
   removeItem,
   clear,
   keys,

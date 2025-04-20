@@ -3,7 +3,7 @@ import {
   runAllTests, 
   testMembershipVerification, 
   testChatMessagesFetching 
-} from '../tests/testNip29Improvements';
+} from '../tests/nostr/testNip29Improvements';
 
 // DevTools component for testing NIP-29 improvements
 const DevTools = () => {
