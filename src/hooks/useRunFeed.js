@@ -5,8 +5,7 @@ import {
   loadSupplementaryData, 
   processPostsWithData,
   searchRunningContent,
-  fetchEvents,
-  subscribeToEvents
+  fetchEvents
 } from '../utils/nostr';
 import { NostrContext } from '../contexts/NostrContext';
 import { RUNNING_FOCUSED_RELAYS } from '../config/relays';

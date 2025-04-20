@@ -6,7 +6,7 @@ import { getNetworkStatus, onNetworkStatusChange } from '../utils/platform';
 import { useMobileStorage } from './MobileStorageContext';
 
 // Create context
-const NostrContext = createContext(null);
+export const NostrContext = createContext(null);
 
 /**
  * Provider component for Nostr functionality

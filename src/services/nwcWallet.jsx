@@ -1,4 +1,4 @@
-import { getPublicKey, generatePrivateKey } from 'nostr-tools';
+import { getPublicKey } from 'nostr-tools';
 import { webln } from '@getalby/sdk';
 import { RELAYS } from '../utils/nostr';
 
@@ -18,7 +18,9 @@ export class NWCWallet {
         throw new Error('Invalid NWC URL protocol');
       }
 
-      this.secretKey = generatePrivateKey();
+      // Generate random bytes for secret key
+      this.secretKey = new Uint8Array(32);
+      crypto.getRandomValues(this.secretKey);
       this.pubKey = getPublicKey(this.secretKey);
 
       const params = new URLSearchParams(url.pathname);
