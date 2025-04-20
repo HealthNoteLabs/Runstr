@@ -1,4 +1,4 @@
-import NDK, { NDKEvent, NDKFilter, NDKSubscription } from '@nostr-dev-kit/ndk';
+import NDK, { NDKEvent } from '@nostr-dev-kit/ndk';
 import { Platform } from '../utils/react-native-shim';
 import AmberAuth from '../services/AmberAuth';
 // Import nostr-tools implementation for fallback
@@ -7,7 +7,7 @@ import { createAndPublishEvent as publishWithNostrTools } from './nostrClient';
 // Optimized relay list based on testing results
 export const RELAYS = [
   'wss://relay.damus.io',    // Most reliable for running content
-  'wss://nos.lol',           // Good secondary option
+  'wss://nos.lol',           // Good secondary option  // Has unique running content
   'wss://nostr.wine',        // Additional reliable relay
   'wss://eden.nostr.land',   // Additional reliable relay
   'wss://e.nos.lol',         // Additional reliable relay
@@ -18,11 +18,12 @@ export const RELAYS = [
   'wss://purplerelay.com',
   'wss://nostr.bitcoiner.social',
   'wss://relay.0xchat.com',  // NIP-29 group support for running clubs
-  'wss://groups.0xchat.com', // Dedicated NIP-29 group relay
 ];
 
-// Global NDK instance
-let ndk = null;
+// Create a new NDK instance with optimized relay configuration
+const ndk = new NDK({
+  explicitRelayUrls: RELAYS
+});
 
 // Storage for subscriptions
 const activeSubscriptions = new Set();
@@ -38,29 +39,7 @@ const CONNECTION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
  */
 export const initializeNostr = async () => {
   try {
-    // Create a new NDK instance if it doesn't exist
-    if (!ndk) {
-      console.log('Creating new NDK instance with relays:', RELAYS);
-      ndk = new NDK({
-        explicitRelayUrls: RELAYS,
-        autoConnectUserRelays: false,
-        enableOutboxModel: false // Disable outbox model for better compatibility
-      });
-    }
-    
-    // Check if already connected
-    if (ndk.pool?.relays?.size > 0) {
-      const connectedCount = Array.from(ndk.pool.relays).filter(r => r.status === 1).length;
-      if (connectedCount > 0) {
-        console.log(`Already connected to ${connectedCount} relays`);
-        isConnected = true;
-        lastConnectionCheck = Date.now();
-        return true;
-      }
-    }
-    
     // Connect to relays
-    console.log('Connecting to NDK relays...');
     await ndk.connect();
     console.log('Connected to NDK relays');
     isConnected = true;
@@ -78,12 +57,6 @@ export const initializeNostr = async () => {
  * @returns {Promise<boolean>} Connection status
  */
 export const ensureConnection = async () => {
-  // Check if NDK is initialized
-  if (!ndk) {
-    console.log('NDK not initialized, initializing...');
-    await initializeNostr();
-  }
-  
   // Check if we're due for a connection check
   const now = Date.now();
   const timeSinceLastCheck = now - lastConnectionCheck;
@@ -691,18 +664,9 @@ export const diagnoseConnection = async () => {
     console.log('Starting connection diagnostics...');
     
     // Check if NDK is initialized
-    if (!ndk) {
+    if (!ndk || !ndk.pool || !ndk.pool.relays) {
       console.log('NDK not initialized, initializing...');
       await initializeNostr();
-    }
-    
-    // Simple status check
-    if (!ndk || !ndk.pool || !ndk.pool.relays) {
-      console.error('NDK not properly initialized');
-      return { 
-        error: 'NDK not properly initialized',
-        connectedRelays: []
-      };
     }
     
     // Check connected relays
@@ -726,40 +690,32 @@ export const diagnoseConnection = async () => {
     };
     
     console.log('Testing relay connectivity with simple filter...');
-    try {
-      const generalEvents = await ndk.fetchEvents(simpleFilter);
-      const generalArray = Array.from(generalEvents);
-      console.log(`Retrieved ${generalArray.length} general events`);
+    const generalEvents = await ndk.fetchEvents(simpleFilter);
+    const generalArray = Array.from(generalEvents);
+    console.log(`Retrieved ${generalArray.length} general events`);
     
-      // Test if we can fetch running-related events
-      const runningFilter = {
-        kinds: [1],
-        "#t": ["running", "run", "runner", "runstr"],
-        limit: 5
-      };
-      
-      console.log('Testing relay connectivity with running filter...');
-      const runningEvents = await ndk.fetchEvents(runningFilter);
-      const runningArray = Array.from(runningEvents);
-      console.log(`Retrieved ${runningArray.length} running events`);
-      
-      return {
-        connectedRelays,
-        generalEvents: generalArray.length,
-        runningEvents: runningArray.length
-      };
-    } catch (fetchError) {
-      console.error('Error fetching test events:', fetchError);
-      return {
-        error: `Connected to relays but failed to fetch test events: ${fetchError.message}`,
-        connectedRelays
-      };
-    }
+    // Test if we can fetch running-related events
+    const runningFilter = {
+      kinds: [1],
+      "#t": ["running", "run", "runner", "runstr"],
+      limit: 5
+    };
+    
+    console.log('Testing relay connectivity with running filter...');
+    const runningEvents = await ndk.fetchEvents(runningFilter);
+    const runningArray = Array.from(runningEvents);
+    console.log(`Retrieved ${runningArray.length} running events`);
+    
+    return {
+      connectedRelays,
+      generalEvents: generalArray.length,
+      runningEvents: runningArray.length
+    };
   } catch (error) {
     console.error('Diagnostic error:', error);
     return { 
       error: error.message,
-      connectedRelays: Array.from(ndk?.pool?.relays || [])
+      connectedRelays: Array.from(ndk.pool?.relays || [])
         .filter(r => r.status === 1)
         .map(r => r.url)
     };

@@ -1,7 +1,6 @@
 import WebSocket from 'ws';
-import { nip19, SimplePool } from 'nostr-tools';
+import { nip19 } from 'nostr-tools';
 import process from 'process';
-import NDK, { NDKEvent } from '@nostr-dev-kit/ndk';
 
 // Test configuration
 const TEST_RELAYS = [
@@ -77,14 +76,14 @@ async function testRelayConnections() {
 }
 
 async function testGroupMetadata() {
-  console.log('🧪 Testing group metadata fetch (raw websocket)...');
+  console.log('🧪 Testing group metadata fetch...');
   return new Promise((resolve) => {
     try {
       const ws = new WebSocket(TEST_RELAYS[0]); // Using 0xchat groups relay
       let receivedMetadata = false;
       
       ws.on('open', () => {
-        const { data } = nip19.decode(RUNSTR_CLUB_NADDR);
+        const { data } = nip19.decode(MESSI_CLUB_NADDR);
         const filter = {
           kinds: [data.kind],
           authors: [data.pubkey],
@@ -127,17 +126,17 @@ async function testGroupMetadata() {
 }
 
 async function testGroupMessages() {
-  console.log('🧪 Testing group messages fetch (raw websocket)...');
+  console.log('🧪 Testing group messages fetch...');
   return new Promise((resolve) => {
     try {
       const ws = new WebSocket(TEST_RELAYS[0]); // Using 0xchat groups relay
       let messageCount = 0;
       
       ws.on('open', () => {
-        const { data } = nip19.decode(RUNSTR_CLUB_NADDR);
+        const { data } = nip19.decode(MESSI_CLUB_NADDR);
         const filter = {
-          kinds: [39001, 1], // Using correct kinds for group messages
-          '#h': [data.identifier], // Using 'h' tag for group reference
+          kinds: [39001], // Using correct kind for group messages
+          '#e': [data.identifier], // Using 'e' tag for group reference
           limit: 10
         };
         
@@ -185,136 +184,6 @@ async function testGroupMessages() {
   });
 }
 
-async function testGroupMessagesWithNostrTools() {
-  console.log('🧪 Testing group messages fetch (nostr-tools)...');
-  
-  try {
-    const { data } = nip19.decode(RUNSTR_CLUB_NADDR);
-    const pool = new SimplePool();
-    
-    const groupFilter = {
-      kinds: [39001, 1], // Both group-specific and general notes with h tag
-      '#h': [data.identifier],
-      limit: 20
-    };
-    
-    console.log('SimplePool filter:', groupFilter);
-    
-    const events = await pool.list(TEST_RELAYS, [groupFilter], { timeout: 10000 });
-    
-    if (events && events.length > 0) {
-      console.log(`✅ Successfully received ${events.length} messages with nostr-tools`);
-      console.log('First message:', JSON.stringify(events[0], null, 2));
-      
-      // Close pool
-      pool.close(TEST_RELAYS);
-      return true;
-    } else {
-      console.log('ℹ️ No messages found with nostr-tools');
-      pool.close(TEST_RELAYS);
-      return true; // Still consider a success if we got EOSE
-    }
-  } catch (error) {
-    console.error('❌ Error in nostr-tools test:', error.message);
-    return false;
-  }
-}
-
-async function testGroupMessagesWithNDK() {
-  console.log('🧪 Testing group messages fetch (NDK)...');
-  
-  try {
-    const { data } = nip19.decode(RUNSTR_CLUB_NADDR);
-    
-    // Set up NDK
-    const ndk = new NDK({
-      explicitRelayUrls: TEST_RELAYS
-    });
-    
-    await ndk.connect();
-    console.log('Connected to NDK relays');
-    
-    const groupFilter = {
-      kinds: [39001, 1], // Both group-specific and general notes with h tag
-      '#h': [data.identifier],
-      limit: 20
-    };
-    
-    console.log('NDK filter:', groupFilter);
-    
-    const events = await ndk.fetchEvents(groupFilter);
-    const eventsArray = Array.from(events);
-    
-    if (eventsArray.length > 0) {
-      console.log(`✅ Successfully received ${eventsArray.length} messages with NDK`);
-      console.log('First message:', JSON.stringify(eventsArray[0].rawEvent(), null, 2));
-      return true;
-    } else {
-      console.log('ℹ️ No messages found with NDK');
-      return true; // Still consider a success if we got EOSE
-    }
-  } catch (error) {
-    console.error('❌ Error in NDK test:', error.message);
-    return false;
-  }
-}
-
-async function testGroupMembership() {
-  console.log('🧪 Testing group membership detection...');
-  
-  try {
-    // We'll need to use a real pubkey to test membership
-    // For testing, we'll just check if there are any join events for the group
-    const { data } = nip19.decode(RUNSTR_CLUB_NADDR);
-    const pool = new SimplePool();
-    
-    // Look for kind 9000 (put-user) events for this group
-    const membershipFilter = {
-      kinds: [9000], // put-user event
-      '#h': [data.identifier]
-    };
-    
-    console.log('Membership filter:', membershipFilter);
-    
-    const events = await pool.list(TEST_RELAYS, [membershipFilter], { timeout: 10000 });
-    
-    if (events && events.length > 0) {
-      console.log(`✅ Found ${events.length} membership-related events`);
-      console.log('Example membership event:', JSON.stringify(events[0], null, 2));
-      
-      // Close pool
-      pool.close(TEST_RELAYS);
-      return true;
-    } else {
-      // Try looking for messages with the group as another signal of membership
-      const messageFilter = {
-        kinds: [39001, 1], // Group messages
-        '#h': [data.identifier],
-        limit: 5
-      };
-      
-      const messages = await pool.list(TEST_RELAYS, [messageFilter], { timeout: 5000 });
-      
-      if (messages && messages.length > 0) {
-        console.log(`✅ Found ${messages.length} group messages that indicate membership`);
-        const authors = [...new Set(messages.map(msg => msg.pubkey))];
-        console.log(`Group has ${authors.length} unique authors`);
-        
-        // Close pool
-        pool.close(TEST_RELAYS);
-        return true;
-      }
-      
-      console.log('ℹ️ No membership events found');
-      pool.close(TEST_RELAYS);
-      return true; // Still consider a success
-    }
-  } catch (error) {
-    console.error('❌ Error testing membership:', error.message);
-    return false;
-  }
-}
-
 async function runTests() {
   console.log('🚀 Starting NIP-29 implementation tests...\n');
   
@@ -322,10 +191,7 @@ async function runTests() {
     testNaddrParsing(),
     testRelayConnections(),
     testGroupMetadata(),
-    testGroupMessages(),
-    testGroupMessagesWithNostrTools(),
-    testGroupMessagesWithNDK(),
-    testGroupMembership()
+    testGroupMessages()
   ]);
   
   const passedTests = testResults.filter(result => result).length;

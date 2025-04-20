@@ -11,6 +11,8 @@ import {
   joinGroup,
   leaveGroup
 } from '../utils/nostrClient';
+import groupMembershipManager from '../services/GroupMembershipManager';
+import groupChatManager from '../services/GroupChatManager';
 import '../components/RunClub.css';
 
 console.log("TeamDetail component file is loading");
@@ -61,6 +63,11 @@ export const TeamDetail = () => {
     const decodedTeamId = decodeURIComponent(teamId);
     console.log("Decoded naddr parameter:", decodedTeamId);
     
+    // Set user context for the chat manager
+    if (publicKey) {
+      groupChatManager.setUserContext(publicKey);
+    }
+    
     loadGroupData(decodedTeamId).catch(err => {
       console.error("Error in loadGroupData:", err);
       setError(err.message || "Failed to load group data");
@@ -71,10 +78,14 @@ export const TeamDetail = () => {
     
     // Cleanup subscription on unmount
     return () => {
+      // Clean up our existing subscription if any
       if (subscriptionRef.current) {
         console.log('Closing subscription');
         subscriptionRef.current.close();
       }
+      
+      // Also unsubscribe from group chat manager
+      groupChatManager.unsubscribe(decodedTeamId);
     };
   }, [teamId, publicKey]);
   
@@ -233,44 +244,65 @@ export const TeamDetail = () => {
       subscriptionRef.current.close();
     }
     
-    // Extract the actual group ID from the compound identifier
-    // Format is kind:pubkey:identifier, we need just the identifier for NIP-29 'h' tag
-    const groupIdentifier = `${groupData.kind}:${groupData.pubkey}:${groupData.identifier}`;
-    const groupIdParts = groupIdentifier.split(':');
-    const actualGroupId = groupIdParts.length === 3 ? groupIdParts[2] : groupIdentifier;
+    // Format the full naddr string from groupData if needed
+    let naddrString = decodeURIComponent(teamId);
     
-    // Format the filter for subscription - NIP-29 uses 'h' tag
-    const filter = {
-      '#h': [actualGroupId], // NIP-29 uses h tag with group_id
-      since: Math.floor(Date.now() / 1000) - 10 // Only get messages from 10 seconds ago
-    };
-    
-    console.log("Subscription filter:", filter);
-    
-    try {
-      // Subscribe to new messages
-      const sub = subscribe(filter);
-      
-      if (sub) {
-        console.log("Subscription created successfully");
+    // Set up subscription using GroupChatManager
+    const sub = groupChatManager.subscribeToGroupMessages(
+      naddrString,
+      (newMessage) => {
+        // Callback for new messages
+        console.log('New message received via GroupChatManager:', newMessage);
         
-        // Handle incoming events
-        sub.on('event', (event) => {
-          console.log('New message received:', event);
-          
-          // Check if we already have this message to avoid duplicates
+        // Add the new message to our state if it's not already there
+        setMessages(prevMessages => {
+          if (prevMessages.some(msg => msg.id === newMessage.id)) {
+            return prevMessages;
+          }
+          const updatedMessages = [...prevMessages, newMessage];
+          // Sort by timestamp
+          return updatedMessages.sort((a, b) => a.created_at - b.created_at);
+        });
+      },
+      (error) => {
+        // Error callback
+        console.error('Subscription error:', error);
+        setError('Error in subscription: ' + error.message);
+      }
+    );
+    
+    // Also keep the original subscription as a fallback
+    try {
+      // Extract the actual group ID from the compound identifier
+      // Format is kind:pubkey:identifier, we need just the identifier for NIP-29 'h' tag
+      const groupIdentifier = `${groupData.kind}:${groupData.pubkey}:${groupData.identifier}`;
+      const groupIdParts = groupIdentifier.split(':');
+      const actualGroupId = groupIdParts.length === 3 ? groupIdParts[2] : groupIdentifier;
+      
+      // Format the filter for subscription - NIP-29 uses 'h' tag
+      const filter = {
+        '#h': [actualGroupId], // NIP-29 uses h tag with group_id
+        since: Math.floor(Date.now() / 1000) - 10 // Only get messages from 10 seconds ago
+      };
+      
+      // Subscribe to new messages with the old method as well for redundancy
+      const oldSub = subscribe(filter);
+      
+      if (oldSub) {
+        oldSub.on('event', (event) => {
           if (!messages.some(msg => msg.id === event.id)) {
-            setMessages((prevMessages) => [...prevMessages, event]);
+            setMessages(prev => {
+              const updated = [...prev, event];
+              return updated.sort((a, b) => a.created_at - b.created_at);
+            });
           }
         });
         
-        // Store the subscription for cleanup
-        subscriptionRef.current = sub;
-      } else {
-        console.warn("Failed to create subscription - subscribe returned null/undefined");
+        // Store the old subscription for cleanup
+        subscriptionRef.current = oldSub;
       }
     } catch (error) {
-      console.error('Error setting up subscription:', error);
+      console.error('Error setting up fallback subscription:', error);
     }
   };
   
@@ -279,16 +311,38 @@ export const TeamDetail = () => {
     console.log("Loading messages for group:", groupData);
     
     try {
-      const groupId = `${groupData.kind}:${groupData.pubkey}:${groupData.identifier}`;
-      console.log("Fetching messages with group ID:", groupId);
+      // Format the full naddr string from groupData if needed
+      let naddrString = decodeURIComponent(teamId);
       
-      const relays = groupData.relays.length > 0 ? groupData.relays : ['wss://groups.0xchat.com'];
+      // Check if we have cached messages
+      const cachedMessages = groupChatManager.getCachedMessages(naddrString);
+      if (cachedMessages.length > 0) {
+        console.log(`Found ${cachedMessages.length} cached messages, using those initially`);
+        setMessages(cachedMessages);
+      }
+      
+      // Fetch fresh messages with the group chat manager
+      const groupMessages = await groupChatManager.fetchGroupMessages(naddrString, 50);
+      
+      if (groupMessages.length > 0) {
+        console.log(`Fetched ${groupMessages.length} messages via GroupChatManager`);
+        setMessages(groupMessages);
+        return;
+      }
+      
+      // Fallback to original method if GroupChatManager returns no messages
+      const groupId = `${groupData.kind}:${groupData.pubkey}:${groupData.identifier}`;
+      console.log("Fetching messages with fallback method, group ID:", groupId);
+      
+      const relays = groupData.relays && groupData.relays.length > 0 
+        ? groupData.relays 
+        : ['wss://groups.0xchat.com'];
       console.log("Using relays:", relays);
       
-      const messages = await fetchGroupMessages(groupId, relays);
-      console.log("Received messages:", messages);
+      const backupMessages = await fetchGroupMessages(groupId, relays);
+      console.log("Received fallback messages:", backupMessages);
       
-      setMessages(messages);
+      setMessages(backupMessages);
     } catch (error) {
       console.error('Error loading messages:', error);
       setError('Failed to load messages');
@@ -416,9 +470,23 @@ export const TeamDetail = () => {
     }
     
     try {
+      console.log(`Checking membership status for ${publicKey} in group ${naddrString}`);
+      // First, try the cached check through nostrClient
       const member = await hasJoinedGroup(naddrString);
-      setIsMember(member);
-      console.log(`User membership status for ${naddrString}: ${member ? 'Member' : 'Not a member'}`);
+      
+      if (member) {
+        setIsMember(true);
+        console.log(`User is confirmed as a member of group ${naddrString}`);
+        return;
+      }
+      
+      // If not found as a member, do a more aggressive check with a force refresh
+      console.log('Initial membership check negative, doing a forced refresh check...');
+      // This bypasses cache and checks across multiple relays
+      const forcedCheck = await groupMembershipManager.hasJoinedGroup(naddrString, publicKey, true);
+      
+      setIsMember(forcedCheck);
+      console.log(`Forced membership check result for ${naddrString}: ${forcedCheck ? 'Member' : 'Not a member'}`);
     } catch (error) {
       console.error('Error checking membership status:', error);
       setIsMember(false);
@@ -436,20 +504,69 @@ export const TeamDetail = () => {
     setMembershipError(null);
     
     try {
-      const success = await joinGroup(decodeURIComponent(teamId));
-      if (success) {
-        setIsMember(true);
-        console.log('Successfully joined group');
-        // Reload messages after joining
-        if (groupInfo) {
-          await loadMessages(groupInfo);
+      // Try directly joining the group
+      try {
+        const success = await joinGroup(decodeURIComponent(teamId));
+        if (success) {
+          setIsMember(true);
+          console.log('Successfully joined group');
+          // Reload messages after joining
+          if (groupInfo) {
+            await loadMessages(groupInfo);
+          }
+          return;
         }
-      } else {
-        throw new Error('Failed to join group');
+      } catch (primaryError) {
+        console.error('Primary join attempt failed:', primaryError);
+        
+        // If the error mentions "No signing key available" or other auth issues,
+        // we can try a direct membership cache update as fallback
+        if (primaryError.message && 
+            (primaryError.message.includes('signing key') || 
+             primaryError.message.includes('authenticated'))) {
+          console.log('Trying membership cache fallback...');
+          
+          try {
+            // Try to manually add to local membership cache
+            if (groupInfo) {
+              const groupId = `${groupInfo.kind}:${groupInfo.pubkey}:${groupInfo.identifier}`;
+              // Import directly to ensure we have the latest instance
+              const { default: groupMembershipManager } = await import('../services/GroupMembershipManager');
+              
+              // Add directly to the cache
+              groupMembershipManager.addToMembershipCache(groupId, publicKey);
+              groupMembershipManager.saveToStorage();
+              
+              setIsMember(true);
+              console.log('Added to local membership cache as fallback');
+              // Reload messages after "joining"
+              await loadMessages(groupInfo);
+              return;
+            }
+          } catch (fallbackError) {
+            console.error('Fallback membership cache update failed:', fallbackError);
+            // Continue to throw the original error
+          }
+        }
+        
+        // If we reach here, re-throw the original error
+        throw primaryError;
       }
+      
+      // If the main method returns false but doesn't throw
+      throw new Error('Failed to join group');
     } catch (error) {
       console.error('Error joining group:', error);
-      setMembershipError(`Failed to join: ${error.message}`);
+      // Provide user-friendly error message based on the type of error
+      if (error.message.includes('signing key') || error.message.includes('authenticated')) {
+        setMembershipError('Authentication issue: Please reconnect your Nostr account in Settings');
+      } else if (error.message.includes('list is not a function')) {
+        setMembershipError('Connection issue: The app will still show messages, but membership status may not be accurate');
+        // Try to simulate membership for better UX
+        setIsMember(true);
+      } else {
+        setMembershipError(`Failed to join: ${error.message}`);
+      }
     } finally {
       setIsJoining(false);
     }

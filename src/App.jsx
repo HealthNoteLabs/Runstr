@@ -8,6 +8,7 @@ import { TeamsProvider } from './contexts/TeamsContext';
 import { ActivityModeProvider } from './contexts/ActivityModeContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { MenuBar } from './components/MenuBar';
+import DevTools from './components/DevTools';
 import { initializeNostr } from './utils/nostr';
 import './App.css';
 
@@ -78,6 +79,7 @@ const AppRoutes = lazy(() =>
 
 const App = () => {
   const [hasError, setHasError] = useState(false);
+  const [showDevTools, setShowDevTools] = useState(process.env.NODE_ENV === 'development');
   
   // Initialize Nostr connection as soon as the app launches
   useEffect(() => {
@@ -102,6 +104,17 @@ const App = () => {
     };
     
     preloadNostr();
+    
+    // Enable Dev Tools via keyboard shortcut Ctrl+Shift+D
+    const handleKeyDown = (e) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+        e.preventDefault();
+        setShowDevTools(prev => !prev);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
   
   // Global error handler
@@ -135,6 +148,7 @@ const App = () => {
                           <AppRoutes />
                         </Suspense>
                       </main>
+                      {showDevTools && <DevTools />}
                     </div>
                   </TeamsProvider>
                 </RunTrackerProvider>
