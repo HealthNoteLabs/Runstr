@@ -81,7 +81,7 @@ export const joinGroup = async (naddrString) => {
       }
       
       // Also publish specifically to group relays
-      pool.publish(groupRelays, publishedRequest);
+      pool.sendEvent(groupRelays, publishedRequest);
       
       console.log('Join request sent successfully');
       
@@ -128,7 +128,7 @@ const addGroupToNip51List = async (groupInfo) => {
       '#d': ['groups']
     };
     
-    let events = await pool.list(relays, [filter]);
+    let events = await pool.querySync(relays, [filter]);
     const currentEvent = events.length > 0 
       ? events.sort((a, b) => b.created_at - a.created_at)[0]
       : null;
@@ -229,7 +229,7 @@ export const hasJoinedGroup = async (naddr) => {
         '#d': ['groups']
       };
 
-      const nip51Events = await groupPool.list(groupRelays, [nip51Filter]);
+      const nip51Events = await groupPool.querySync(groupRelays, [nip51Filter]);
       
       if (nip51Events && nip51Events.length > 0) {
         // Sort by created_at to get the latest list
@@ -260,7 +260,7 @@ export const hasJoinedGroup = async (naddr) => {
         '#h': [groupInfo.identifier] // For this specific group
       };
 
-      const putUserEvents = await groupPool.list(groupRelays, [nip29Filter]);
+      const putUserEvents = await groupPool.querySync(groupRelays, [nip29Filter]);
       
       // If any put-user events exist for this user, they are a member
       if (putUserEvents && putUserEvents.length > 0) {
@@ -282,7 +282,7 @@ export const hasJoinedGroup = async (naddr) => {
         '#d': [groupInfo.identifier]
       };
 
-      const metadataEvents = await groupPool.list(groupRelays, [metadataFilter]);
+      const metadataEvents = await groupPool.querySync(groupRelays, [metadataFilter]);
       
       // If no metadata exists, the group is likely unmanaged
       if (!metadataEvents || metadataEvents.length === 0) {
@@ -298,7 +298,7 @@ export const hasJoinedGroup = async (naddr) => {
         '#h': [groupInfo.identifier]
       };
       
-      const userMessages = await groupPool.list(groupRelays, [userMessagesFilter]);
+      const userMessages = await groupPool.querySync(groupRelays, [userMessagesFilter]);
       
       if (userMessages && userMessages.length > 0) {
         await groupPool.close();
@@ -379,7 +379,7 @@ export const leaveGroup = async (naddrString) => {
       }
       
       // Also publish specifically to group relays
-      pool.publish(groupRelays, publishedRequest);
+      pool.sendEvent(groupRelays, publishedRequest);
       
       console.log('Leave request sent successfully');
       
@@ -422,7 +422,7 @@ const removeGroupFromNip51List = async (groupInfo) => {
       '#d': ['groups']
     };
     
-    let events = await pool.list(relays, [filter]);
+    let events = await pool.querySync(relays, [filter]);
     const currentEvent = events.length > 0 
       ? events.sort((a, b) => b.created_at - a.created_at)[0]
       : null;
@@ -489,7 +489,7 @@ export const fetchUserGroupList = async (pubkey, relayList = relays) => {
       // Consider adding 'communities' or 'bookmarks' if 'groups' yields no results
     };
     
-    const listEvents = await pool.list(relayList, [filter]);
+    const listEvents = await pool.querySync(relayList, [filter]);
     if (!listEvents || listEvents.length === 0) {
       console.log('No group list event (kind 30001, #d=groups) found.');
       // Optionally, try fetching kind 10001 or other conventions
@@ -561,5 +561,121 @@ export const fetchUserGroupList = async (pubkey, relayList = relays) => {
   } catch (error) {
     console.error('Error fetching user group list:', error);
     return [];
+  }
+};
+
+/**
+ * Add a user to a group using NIP-29 standard (kind 42 event)
+ * @param {string} naddrString - NIP-19 naddr string for the group
+ * @param {string} userPubkey - Public key of the user to add
+ * @returns {Promise<object>} The published event
+ */
+export const addUserToGroup = async (naddrString, userPubkey) => {
+  try {
+    console.log(`Adding user ${userPubkey} to group ${naddrString}`);
+    
+    if (!naddrString) {
+      throw new Error('Missing group identifier');
+    }
+    
+    if (!userPubkey) {
+      throw new Error('Missing user public key');
+    }
+    
+    // Parse the naddr to get group components
+    const groupInfo = parseNaddr(naddrString);
+    if (!groupInfo) {
+      throw new Error('Invalid group data - could not parse naddr');
+    }
+    
+    // Create a NIP-29 compliant member addition event (kind 42)
+    const memberAdditionEvent = {
+      kind: 42,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ['d', groupInfo.identifier], // Group identifier
+        ['p', userPubkey] // User being added
+      ],
+      content: JSON.stringify({
+        members: [userPubkey]
+      })
+    };
+    
+    // Sign and publish the event
+    const publishedEvent = await createAndPublishEvent(memberAdditionEvent);
+    if (!publishedEvent) {
+      throw new Error('Failed to publish member addition event');
+    }
+    
+    // Publish to group-specific relays if available
+    const groupRelays = [...new Set([
+      ...relays,
+      ...(groupInfo.relays || [])
+    ])];
+    
+    await pool.sendEvent(groupRelays, publishedEvent);
+    
+    console.log('Successfully added user to group');
+    return publishedEvent;
+  } catch (error) {
+    console.error('Error adding user to group:', error);
+    throw error;
+  }
+};
+
+/**
+ * Remove a user from a group using NIP-29 standard (kind 43 event)
+ * @param {string} naddrString - NIP-19 naddr string for the group
+ * @param {string} userPubkey - Public key of the user to remove
+ * @returns {Promise<object>} The published event
+ */
+export const removeUserFromGroup = async (naddrString, userPubkey) => {
+  try {
+    console.log(`Removing user ${userPubkey} from group ${naddrString}`);
+    
+    if (!naddrString) {
+      throw new Error('Missing group identifier');
+    }
+    
+    if (!userPubkey) {
+      throw new Error('Missing user public key');
+    }
+    
+    // Parse the naddr to get group components
+    const groupInfo = parseNaddr(naddrString);
+    if (!groupInfo) {
+      throw new Error('Invalid group data - could not parse naddr');
+    }
+    
+    // Create a NIP-29 compliant member removal event (kind 43)
+    const memberRemovalEvent = {
+      kind: 43,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ['d', groupInfo.identifier], // Group identifier
+        ['p', userPubkey] // User being removed
+      ],
+      content: '' // Usually empty
+    };
+    
+    // Sign and publish the event
+    const publishedEvent = await createAndPublishEvent(memberRemovalEvent);
+    if (!publishedEvent) {
+      throw new Error('Failed to publish member removal event');
+    }
+    
+    // Publish to group-specific relays if available
+    const groupRelays = [...new Set([
+      ...relays,
+      ...(groupInfo.relays || [])
+    ])];
+    
+    await pool.sendEvent(groupRelays, publishedEvent);
+    
+    console.log('Successfully removed user from group');
+    return publishedEvent;
+  } catch (error) {
+    console.error('Error removing user from group:', error);
+    throw error;
   }
 }; 

@@ -156,7 +156,7 @@ export const fetchGroupMessages = async (groupId, groupRelays = ['wss://groups.0
     console.log(`Fetching group messages with filter:`, filter);
     console.log(`Using relays:`, groupRelays);
     
-    const events = await pool.list(groupRelays, [filter]);
+    const events = await pool.querySync(groupRelays, [filter]);
     
     if (!events || events.length === 0) {
       console.log(`No messages found for group ${actualGroupId}`);
@@ -201,9 +201,9 @@ export const fetchGroupMetadataByNaddr = async (naddrString) => {
     // Try all methods to fetch metadata, with fallbacks
     let metadataResult = null;
     
-    // Method 1: Try with pool.list
+    // Method 1: Try with pool.querySync
     try {
-      const events = await pool.list(groupRelays, [filter]);
+      const events = await pool.querySync(groupRelays, [filter]);
       
       if (events && events.length > 0) {
         // Sort by created_at in descending order to get the latest
@@ -250,11 +250,11 @@ export const fetchGroupMetadataByNaddr = async (naddrString) => {
           about: metadata.about
         };
         
-        console.log('Successfully fetched metadata with pool.list:', metadataResult);
+        console.log('Successfully fetched metadata with pool.querySync:', metadataResult);
         return metadataResult;
       }
     } catch (error) {
-      console.log('Pool.list failed, trying alternative methods:', error);
+      console.log('Pool.querySync failed, trying alternative methods:', error);
     }
     
     // Method 2: Try with WebSocket
@@ -442,7 +442,7 @@ export const fetchGroupMetadata = async (kind, pubkey, identifier, groupRelays =
     console.log(`Fetching group metadata with filter:`, filter);
     console.log(`Using relays:`, groupRelays);
     
-    const events = await pool.list(groupRelays, [filter]);
+    const events = await pool.querySync(groupRelays, [filter]);
     
     if (!events || events.length === 0) {
       console.log(`No metadata found for group kind=${kind}, pubkey=${pubkey}, identifier=${identifier}`);
@@ -564,7 +564,7 @@ export const fetchEvents = async (filter) => {
     }
     
     // Simple fetch with timeout
-    const events = await pool.list(relays, [filter], { timeout: 10000 });
+    const events = await pool.querySync(relays, [filter], { timeout: 10000 });
     console.log(`Fetched ${events.length} events`);
     return events;
   } catch (error) {
@@ -576,12 +576,36 @@ export const fetchEvents = async (filter) => {
 /**
  * Subscribe to events from relays
  * @param {Object} filter - Nostr filter
+ * @param {Function} onEvent - Callback for events
+ * @param {Function} onEose - Callback for end of stored events
  * @returns {Object} Subscription object
  */
-export const subscribe = (filter) => {
+export const subscribe = (filter, onEvent, onEose) => {
   try {
-    const sub = pool.sub(relays, [filter]);
-    return sub;
+    // In nostr-tools v2.12.0, subscribe takes callbacks
+    const sub = pool.subscribe(
+      relays, 
+      [filter],
+      {
+        onEvent: onEvent,
+        onEose: onEose || (() => console.log('EOSE received'))
+      }
+    );
+    
+    // Create a wrapper with unsub/close method for compatibility
+    return {
+      sub,
+      close: () => {
+        if (sub && typeof sub.close === 'function') {
+          sub.close();
+        }
+      },
+      unsub: () => {
+        if (sub && typeof sub.close === 'function') {
+          sub.close();
+        }
+      }
+    };
   } catch (error) {
     console.error('Error subscribing to events:', error);
     return null;
@@ -712,7 +736,7 @@ export const fetchUserGroupList = async (pubkey, relayList = relays) => {
       // Consider adding 'communities' or 'bookmarks' if 'groups' yields no results
     };
     
-    const listEvents = await pool.list(relayList, [filter]);
+    const listEvents = await pool.querySync(relayList, [filter]);
     if (!listEvents || listEvents.length === 0) {
       console.log('No group list event (kind 30001, #d=groups) found.');
       // Optionally, try fetching kind 10001 or other conventions
@@ -979,7 +1003,7 @@ const addGroupToNip51List = async (groupInfo) => {
     
     try {
       // Use the correct array wrapping for filters
-      let events = await pool.list(relays, [filter]);
+      let events = await pool.querySync(relays, [filter]);
       const currentEvent = events.length > 0 
         ? events.sort((a, b) => b.created_at - a.created_at)[0]
         : null;
@@ -1027,7 +1051,7 @@ const addGroupToNip51List = async (groupInfo) => {
       console.log('Successfully added group to NIP-51 list');
       return true;
     } catch (error) {
-      console.error('Error in pool.list or event creation:', error);
+      console.error('Error in pool.querySync or event creation:', error);
       throw error; // Let it fall through to the WebSocket fallback
     }
   } catch (error) {
@@ -1037,7 +1061,7 @@ const addGroupToNip51List = async (groupInfo) => {
 };
 
 /**
- * WebSocket fallback to add a group to the NIP-51 list when pool.list fails
+ * WebSocket fallback to add a group to the NIP-51 list when pool.querySync fails
  * @param {Object} groupInfo - Group information from parseNaddr
  * @returns {Promise<boolean>} Success status
  */
@@ -1245,7 +1269,7 @@ const removeGroupFromNip51List = async (groupInfo) => {
       '#d': ['groups']
     };
     
-    let events = await pool.list(relays, [filter]);
+    let events = await pool.querySync(relays, [filter]);
     const currentEvent = events.length > 0 
       ? events.sort((a, b) => b.created_at - a.created_at)[0]
       : null;

@@ -115,7 +115,7 @@ export function MusicPlayer() {
         <button onClick={playPrevious} className={styles.controlButton}>
           <div className="icon-container">
             <div className="icon-prev"></div>
-            <span className={styles.buttonText}>Previous</span>
+            <span className={styles.buttonText}>Restart</span>
           </div>
         </button>
         <button onClick={safeTogglePlay} className={styles.controlButton}>

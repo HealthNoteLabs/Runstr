@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useContext } from 'react';
 import { 
   initializeNostr, 
   fetchRunningPosts, 
@@ -6,6 +6,7 @@ import {
   processPostsWithData,
   searchRunningContent
 } from '../utils/nostr';
+import { NostrContext } from '../contexts/NostrContext';
 
 // Global state for caching posts across component instances
 const globalState = {
@@ -16,6 +17,7 @@ const globalState = {
 };
 
 export const useRunFeed = () => {
+  const { publicKey } = useContext(NostrContext);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false); // New state for pull-to-refresh
@@ -63,31 +65,33 @@ export const useRunFeed = () => {
     const newUserLikes = new Set([...userLikes]);
     const newUserReposts = new Set([...userReposts]);
     
-    supplementaryData.likes?.forEach(like => {
-      try {
-        if (window.nostr && like.pubkey === window.nostr.getPublicKey()) {
-          const postId = like.tags.find(tag => tag[0] === 'e')?.[1];
-          if (postId) newUserLikes.add(postId);
+    if (publicKey) {
+      supplementaryData.likes?.forEach(like => {
+        try {
+          if (like.pubkey === publicKey) {
+            const postId = like.tags.find(tag => tag[0] === 'e')?.[1];
+            if (postId) newUserLikes.add(postId);
+          }
+        } catch (err) {
+          console.error('Error processing user likes:', err);
         }
-      } catch (err) {
-        console.error('Error processing user likes:', err);
-      }
-    });
-    
-    supplementaryData.reposts?.forEach(repost => {
-      try {
-        if (window.nostr && repost.pubkey === window.nostr.getPublicKey()) {
-          const postId = repost.tags.find(tag => tag[0] === 'e')?.[1];
-          if (postId) newUserReposts.add(postId);
+      });
+      
+      supplementaryData.reposts?.forEach(repost => {
+        try {
+          if (repost.pubkey === publicKey) {
+            const postId = repost.tags.find(tag => tag[0] === 'e')?.[1];
+            if (postId) newUserReposts.add(postId);
+          }
+        } catch (err) {
+          console.error('Error processing user reposts:', err);
         }
-      } catch (err) {
-        console.error('Error processing user reposts:', err);
-      }
-    });
+      });
+    }
     
     setUserLikes(newUserLikes);
     setUserReposts(newUserReposts);
-  }, [userLikes, userReposts]);
+  }, [userLikes, userReposts, publicKey]);
 
   // Main function to fetch run posts
   const fetchRunPostsViaSubscription = useCallback(async (isRefresh = false) => {

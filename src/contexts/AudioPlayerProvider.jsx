@@ -90,12 +90,19 @@ export const AudioPlayerProvider = ({ children }) => {
     }
   }, [playlist]);
 
-  // Play previous track
+  // Play previous track - modified to restart current track instead
   const playPrevious = useCallback(() => {
-    if (playlist && playlist.tracks) {
-      setCurrentTrackIndex((current) => (current > 0 ? current - 1 : 0));
+    if (playlist && playlist.tracks && audioPlayerRef?.audio?.current) {
+      // Restart the current track by setting its time to 0 instead of going to previous track
+      audioPlayerRef.audio.current.currentTime = 0;
+      
+      // Ensure the track is playing after restarting
+      if (!state.isPlaying) {
+        dispatch({ type: 'PLAY' });
+        audioPlayerRef.audio.current.play().catch(e => console.log('Play prevented:', e));
+      }
     }
-  }, [playlist]);
+  }, [playlist, audioPlayerRef, state.isPlaying, dispatch]);
 
   // Skip to a specific track by index
   const skipToTrack = useCallback((trackIndex) => {

@@ -308,20 +308,24 @@ export const TeamDetail = () => {
         since: Math.floor(Date.now() / 1000) - 10 // Only get messages from 10 seconds ago
       };
       
-      // Subscribe to new messages with the old method as well for redundancy
-      const oldSub = subscribe(filter);
-      
-      if (oldSub) {
-        oldSub.on('event', (event) => {
+      // Subscribe to new messages with the updated method for v2.12.0
+      const oldSub = subscribe(
+        filter,
+        // onEvent callback
+        (event) => {
           if (!messages.some(msg => msg.id === event.id)) {
             setMessages(prev => {
               const updated = [...prev, event];
               return updated.sort((a, b) => a.created_at - b.created_at);
             });
           }
-        });
-        
-        // Store the old subscription for cleanup
+        },
+        // onEose callback
+        () => console.log('EOSE received for fallback subscription')
+      );
+      
+      // Store the subscription for cleanup
+      if (oldSub) {
         subscriptionRef.current = oldSub;
       }
     } catch (error) {

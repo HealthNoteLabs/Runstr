@@ -132,64 +132,45 @@ export const fetchRunningPosts = async (limit = 7, since = undefined) => {
     const defaultSince = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
     const sinceTimestamp = since ? Math.floor(since / 1000) : defaultSince;
     
-    console.log(`Fetching posts with #runstr and #running hashtags from ${new Date(sinceTimestamp * 1000).toLocaleString()}`);
-    
-    // Simplified approach: Only fetch posts with the two specific hashtags
-    const events = await ndk.fetchEvents({
-      kinds: [1], // Regular posts
-      limit: limit,
-      "#t": ["runstr", "running"],  // Only these two specific hashtags
+    console.log("Fetching running posts with hashtags...");
+    const hashtagFilter = {
+      kinds: [1],
+      limit: limit || 10,
+      "#t": ["running", "run", "runner", "runstr", "5k", "10k", "marathon", "jog"],
       since: sinceTimestamp
-    });
+    };
     
-    // Convert to array and sort by created_at (newest first)
-    const eventArray = Array.from(events)
-      .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
-      .slice(0, limit);
+    const events = await ndk.fetchEvents(hashtagFilter);
+    let eventArray = Array.from(events);
     
-    console.log(`Found ${eventArray.length} posts with #runstr and #running hashtags`);
-    
+    // If hashtag search found results, return them
     if (eventArray.length > 0) {
+      console.log(`Found ${eventArray.length} posts with hashtags`);
       return eventArray;
     }
     
-    // Fallback if no posts found with both tags
-    console.log("No posts found with both tags, trying individual tag queries...");
+    // Fallback to content-based filtering
+    console.log("No hashtag results, trying content-based filtering...");
+    const contentFilter = {
+      kinds: [1],
+      limit: (limit || 10) * 3, // Get more to filter client-side
+      since: sinceTimestamp
+    };
     
-    // Try fetching with each tag separately and combine results
-    const [runstrEvents, runningEvents] = await Promise.all([
-      ndk.fetchEvents({
-        kinds: [1],
-        limit: limit,
-        "#t": ["runstr"],
-        since: sinceTimestamp
-      }),
-      ndk.fetchEvents({
-        kinds: [1],
-        limit: limit,
-        "#t": ["running"],
-        since: sinceTimestamp
-      })
-    ]);
+    const contentEvents = await ndk.fetchEvents(contentFilter);
+    const allEvents = Array.from(contentEvents);
     
-    // Combine and deduplicate events
-    const uniqueEvents = new Map();
+    // Filter for running content client-side
+    const runningKeywords = ["running", "run", "runner", "5k", "10k", "marathon", "jog"];
+    const runningEvents = allEvents.filter(event => {
+      const content = event.content.toLowerCase();
+      return runningKeywords.some(keyword => content.includes(keyword));
+    }).slice(0, limit);
     
-    [...Array.from(runstrEvents), ...Array.from(runningEvents)].forEach(event => {
-      if (event && event.id && !uniqueEvents.has(event.id)) {
-        uniqueEvents.set(event.id, event);
-      }
-    });
-    
-    // Sort by created_at and limit
-    const fallbackArray = Array.from(uniqueEvents.values())
-      .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
-      .slice(0, limit);
-    
-    console.log(`Found ${fallbackArray.length} posts with individual hashtags`);
-    return fallbackArray;
+    console.log(`Found ${runningEvents.length} posts via content filtering`);
+    return runningEvents;
   } catch (error) {
-    console.error('Error fetching hashtag posts:', error);
+    console.error("Error fetching running posts:", error);
     return [];
   }
 };
@@ -872,6 +853,20 @@ export const testRelayConnections = async () => {
       }
     };
   }
+};
+
+/**
+ * Get the number of connected relays
+ * @returns {number} Number of connected relays
+ */
+export const getConnectedRelaysCount = () => {
+  if (!ndk || !ndk.pool || !ndk.pool.relays) {
+    return 0;
+  }
+  
+  return Array.from(ndk.pool.relays)
+    .filter(relay => relay.status === 1)
+    .length;
 };
 
 export { ndk };

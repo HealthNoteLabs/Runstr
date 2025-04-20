@@ -17,7 +17,7 @@ class GroupChatManager {
   
   // Re-initialize pool if needed - replaced with a method that follows the correct nostr-tools implementation
   ensurePool() {
-    if (!this.pool || typeof this.pool.list !== 'function') {
+    if (!this.pool || typeof this.pool.querySync !== 'function') {
       console.log('Reinitializing SimplePool');
       // Simply create a new instance without parameters
       this.pool = new SimplePool();
@@ -160,8 +160,8 @@ class GroupChatManager {
       console.log(`Fetching group metadata for ${groupId} with filter:`, filter);
       console.log(`Using relays:`, relays);
       
-      // Correct usage: pool.list(relays, [filter])
-      const events = await this.pool.list(relays, filter);
+      // Correct usage: pool.querySync(relays, [filter])
+      const events = await this.pool.querySync(relays, filter);
       
       if (!events || events.length === 0) {
         console.log(`No metadata found for group ${groupId}`);
@@ -337,28 +337,47 @@ class GroupChatManager {
       
       // Try to use the instance method
       try {
-        // Correct usage: pool.sub(relays, [filter])
-        const sub = this.pool.sub(relays, filter);
+        // In nostr-tools v2.12.0, subscribe takes onEvent and onEose callbacks
+        const sub = this.pool.subscribe(
+          relays, 
+          filter,
+          {
+            // Handle incoming events
+            onEvent: (event) => {
+              // Process incoming message
+              this.processMessage(event, groupId, onNewMessage);
+            },
+            // Handle EOSE (End of Stored Events)
+            onEose: () => {
+              console.log(`Received EOSE for group ${groupId}`);
+            }
+          }
+        );
         
-        sub.on('event', event => {
-          // Process incoming message
-          this.processMessage(event, groupId, onNewMessage);
-        });
-        
-        // Handle errors
-        sub.on('error', err => {
-          console.error(`Subscription error for group ${groupId}:`, err);
-          if (onError) onError(err);
-        });
+        // Create a wrapper with unsub method to match our existing pattern
+        const subscription = {
+          relay: relays.join(','),
+          sub,
+          unsub: () => {
+            try {
+              // In v2.12.0, we call close() on the subscription
+              if (sub && typeof sub.close === 'function') {
+                sub.close();
+              }
+            } catch (e) {
+              console.error('Error closing subscription:', e);
+            }
+          }
+        };
         
         // Store subscription for cleanup
-        this.messageSubscriptions.set(groupId, sub);
+        this.messageSubscriptions.set(groupId, subscription);
         console.log(`Subscription established for group ${groupId}`);
         
-        return sub;
+        return subscription;
       } catch (subError) {
         // If the sub method fails, try direct WebSocket connection
-        console.error('Error using SimplePool.sub:', subError);
+        console.error('Error using SimplePool.subscribe:', subError);
         return this.setupDirectWebSocketSubscription(groupInfo, actualGroupId, groupId, onNewMessage, onError);
       }
     } catch (error) {
@@ -550,8 +569,8 @@ class GroupChatManager {
       console.log(`Fetching group messages for ${groupId} with filter:`, filter);
       console.log(`Using relays:`, relays);
       
-      // Correct usage: pool.list(relays, [filter])
-      const events = await this.pool.list(relays, filter);
+      // Correct usage: pool.querySync(relays, [filter])
+      const events = await this.pool.querySync(relays, filter);
       
       if (!events || events.length === 0) {
         console.log(`No messages found for group ${groupId}`);

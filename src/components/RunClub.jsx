@@ -5,7 +5,7 @@ import { useRunFeed } from '../hooks/useRunFeed';
 import { usePostInteractions } from '../hooks/usePostInteractions';
 import { PostList } from './PostList';
 import { PullToRefresh } from './PullToRefresh';
-import { handleAppBackground } from '../utils/nostr';
+import { handleAppBackground, getConnectedRelaysCount } from '../utils/nostr';
 import './RunClub.css';
 
 const RunClub = () => {
@@ -211,7 +211,7 @@ const RunClub = () => {
       {showDebug && (
         <div className="debug-overlay">
           <h3>Debug Info</h3>
-          <p>Connected relays: {window.NDK?.pool?.relays?.size || 0}</p>
+          <p>Connected relays: {getConnectedRelaysCount()}</p>
           <p>Posts loaded: {posts?.length || 0}</p>
           <p>Feed error: {error || 'None'}</p>
           <p>Loading state: {loading ? 'Loading' : 'Idle'}</p>

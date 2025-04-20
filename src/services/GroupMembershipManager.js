@@ -3,21 +3,18 @@ import { decode as decodeNip19 } from 'nostr-tools/nip19';
 
 class GroupMembershipManager {
   constructor() {
-    try {
-      // Initialize SimplePool correctly - no parameters based on nostr-tools documentation
-      this.pool = new SimplePool();
-    } catch (e) {
-      console.error('Failed to initialize SimplePool:', e);
-      // Create a stub object that won't cause errors when methods are called
-      this.pool = {
-        list: async () => [], // Return empty array on list
-        get: async () => null, // Return null on get
-        publish: () => {} // No-op for publish
-      };
-    }
+    // Initialize SimplePool for standard Nostr relay operations
+    this.pool = new SimplePool();
     
-    this.membershipCache = new Map(); // groupId -> Set of member pubkeys
-    this.pendingRequests = new Map(); // groupId -> Set of pending pubkeys
+    // Cache for membership status to reduce network requests
+    this.membershipCache = new Map(); // groupId -> Map of pubkey -> boolean
+    
+    // Default relays for group operations
+    this.defaultRelays = [
+      'wss://relay.damus.io',
+      'wss://nos.lol',
+      'wss://relay.nostr.band'
+    ];
     
     // Try to load cache from localStorage
     this.loadCacheFromStorage();
@@ -29,34 +26,26 @@ class GroupMembershipManager {
       if (cachedData) {
         const parsed = JSON.parse(cachedData);
         
-        // Convert back to Map and Sets
+        // Convert back to Map of Maps
         this.membershipCache = new Map();
         Object.entries(parsed.membershipCache).forEach(([groupId, members]) => {
-          this.membershipCache.set(groupId, new Set(members));
-        });
-        
-        this.pendingRequests = new Map();
-        Object.entries(parsed.pendingRequests).forEach(([groupId, members]) => {
-          this.pendingRequests.set(groupId, new Set(members));
+          this.membershipCache.set(groupId, new Map(Object.entries(members)));
         });
       }
     } catch (e) {
       console.error('Failed to load membership cache', e);
+      // Reset cache if loading fails
+      this.membershipCache = new Map();
     }
   }
   
   saveToStorage() {
     try {
-      // Convert Maps and Sets to serializable objects
+      // Convert Maps to serializable objects
       const cacheData = {
         membershipCache: Object.fromEntries(
           Array.from(this.membershipCache.entries()).map(
-            ([groupId, members]) => [groupId, Array.from(members)]
-          )
-        ),
-        pendingRequests: Object.fromEntries(
-          Array.from(this.pendingRequests.entries()).map(
-            ([groupId, members]) => [groupId, Array.from(members)]
+            ([groupId, members]) => [groupId, Object.fromEntries(members)]
           )
         )
       };
@@ -64,26 +53,6 @@ class GroupMembershipManager {
       localStorage.setItem('group_membership_cache', JSON.stringify(cacheData));
     } catch (e) {
       console.error('Failed to save membership cache', e);
-    }
-  }
-
-  // Re-initialize pool if needed
-  ensurePool() {
-    try {
-      if (!this.pool || typeof this.pool.list !== 'function') {
-        console.log('Reinitializing SimplePool in GroupMembershipManager');
-        this.pool = new SimplePool();
-      }
-      return this.pool;
-    } catch (e) {
-      console.error('Failed to ensure SimplePool:', e);
-      // Create a stub object that won't cause errors when methods are called
-      this.pool = {
-        list: async () => [], // Return empty array on list
-        get: async () => null, // Return null on get
-        publish: () => {} // No-op for publish
-      };
-      return this.pool;
     }
   }
 
@@ -111,347 +80,182 @@ class GroupMembershipManager {
     }
   }
 
-  // Get primary group identifier 
+  // Get primary group identifier
   getGroupId(groupInfo) {
     if (!groupInfo) return null;
     return `${groupInfo.kind}:${groupInfo.pubkey}:${groupInfo.identifier}`;
   }
 
-  // Fetch and update membership status
-  async refreshMembershipStatus(naddrString, userPubkey) {
-    const groupInfo = this.parseNaddr(naddrString);
-    if (!groupInfo) {
-      console.error('Could not parse group information from naddr');
-      return false;
-    }
-    
-    const groupId = this.getGroupId(groupInfo);
-    
-    // Get all relevant relays for this group
-    const relays = this.getGroupRelays(groupInfo);
-    
-    // Check membership across all available relays
-    const isMember = await this.checkMembershipAcrossRelays(groupInfo, userPubkey, relays);
-    
-    // Update cache based on membership status
-    if (isMember) {
-      this.addToMembershipCache(groupId, userPubkey);
-      
-      // If was pending, remove from pending
-      if (this.pendingRequests.has(groupId)) {
-        this.pendingRequests.get(groupId).delete(userPubkey);
-      }
-    }
-    
-    // Save updated cache
-    this.saveToStorage();
-    
-    return isMember;
-  }
-  
   // Get relays from group info or fallback to default relays
   getGroupRelays(groupInfo) {
-    const defaultRelays = [
-      'wss://groups.0xchat.com', 
-      'wss://relay.damus.io',
-      'wss://nos.lol',
-      'wss://relay.nostr.band'
-    ];
-    
     // Add group-specific relays if available
-    const relays = [...new Set([
-      ...defaultRelays,
+    return [...new Set([
+      ...this.defaultRelays,
       ...(groupInfo.relays || [])
     ])];
-    
-    return relays;
   }
-  
-  // Check if user is a member of the group by checking multiple relays
-  async checkMembershipAcrossRelays(groupInfo, userPubkey, relays) {
-    const groupId = this.getGroupId(groupInfo);
-    
-    // Multiple ways to detect membership
-    try {
-      // First, try NIP-51 membership check which is most reliable
-      const isMemberNip51 = await this.checkNip51Membership(groupInfo, userPubkey, relays);
-      if (isMemberNip51) {
-        console.log(`NIP-51 membership confirmed for ${userPubkey} in group ${groupId}`);
-        return true;
+
+  // Clear membership cache for a specific group or user
+  clearCache(groupId = null, pubkey = null) {
+    if (groupId && pubkey) {
+      // Clear for specific group and user
+      if (this.membershipCache.has(groupId)) {
+        this.membershipCache.get(groupId).delete(pubkey);
       }
-      
-      // Then try alternative formats in a flexible way
-      const isFlexibleMember = await this.checkFlexibleMembership(groupInfo, userPubkey, relays);
-      if (isFlexibleMember) {
-        console.log(`Flexible membership confirmed for ${userPubkey} in group ${groupId}`);
-        return true;
-      }
-      
-      // If both approaches fail, try direct WebSocket as a last resort
-      try {
-        const isWSMember = await this.checkMembershipWithWebSocket(groupInfo, userPubkey, relays[0]);
-        if (isWSMember) {
-          console.log(`WebSocket membership confirmed for ${userPubkey} in group ${groupId}`);
-          return true;
-        }
-      } catch (wsError) {
-        console.warn(`WebSocket membership check failed: ${wsError.message}`);
-      }
-    } catch (e) {
-      console.warn(`Error during membership check: ${e.message}`);
+    } else if (groupId) {
+      // Clear for specific group
+      this.membershipCache.delete(groupId);
+    } else {
+      // Clear all
+      this.membershipCache.clear();
     }
-    
-    return false;
-  }
-  
-  // Check membership using NIP-51 lists (kind 30001 with d tag "groups")
-  async checkNip51Membership(groupInfo, userPubkey, relays) {
-    try {
-      // Ensure pool is properly initialized
-      this.ensurePool();
-      
-      // Look for NIP-51 lists (kind 30001) containing group references
-      const filter = [{
-        kinds: [30001],
-        authors: [userPubkey],
-        '#d': ['groups']
-      }];
-      
-      // Query multiple relays, using the correct filter array format
-      try {
-        // Check if pool.list is actually a function to avoid type errors
-        if (typeof this.pool.list !== 'function') {
-          console.error('SimplePool.list is not a function. Using fallback.');
-          return false;
-        }
-        
-        const events = await this.pool.list(relays, filter);
-        if (!events || events.length === 0) {
-          return false;
-        }
-        
-        // Sort by created_at to get the latest list
-        const latestEvent = events.sort((a, b) => b.created_at - b.created_at)[0];
-        
-        // Look for the group tag in various formats
-        return this.checkGroupInTags(latestEvent.tags, groupInfo);
-      } catch (error) {
-        console.error('Error in pool.list:', error);
-        return false;
-      }
-    } catch (e) {
-      console.error(`NIP-51 membership check failed: ${e.message}`);
-      return false; // Don't throw, just return false to let other methods try
-    }
-  }
-  
-  // Check membership with direct WebSocket connection
-  async checkMembershipWithWebSocket(groupInfo, userPubkey, relay) {
-    return new Promise((resolve, reject) => {
-      try {
-        console.log(`Checking membership with direct WebSocket to ${relay}`);
-        const ws = new WebSocket(relay);
-        let hasFoundMembership = false;
-        
-        const timeout = setTimeout(() => {
-          ws.close();
-          if (!hasFoundMembership) {
-            resolve(false);
-          }
-        }, 5000);
-        
-        ws.onopen = () => {
-          // Create filter for group lists
-          const filter = {
-            kinds: [30001],
-            authors: [userPubkey],
-            '#d': ['groups']
-          };
-          
-          // Send subscription request
-          ws.send(JSON.stringify(['REQ', 'membership', filter]));
-        };
-        
-        ws.onmessage = (event) => {
-          try {
-            const message = JSON.parse(event.data);
-            if (message[0] === 'EVENT' && message[2]) {
-              const eventData = message[2];
-              
-              // Check membership in this event
-              const isMember = this.checkGroupInTags(eventData.tags || [], groupInfo);
-              
-              if (isMember) {
-                hasFoundMembership = true;
-                clearTimeout(timeout);
-                ws.close();
-                resolve(true);
-              }
-            } else if (message[0] === 'EOSE') {
-              // End of stored events, if we haven't found membership yet
-              if (!hasFoundMembership) {
-                clearTimeout(timeout);
-                ws.close();
-                resolve(false);
-              }
-            }
-          } catch (error) {
-            console.error('Error processing WebSocket message:', error);
-          }
-        };
-        
-        ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
-          clearTimeout(timeout);
-          ws.close();
-          reject(error);
-        };
-        
-        ws.onclose = () => {
-          clearTimeout(timeout);
-          if (!hasFoundMembership) {
-            resolve(false);
-          }
-        };
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-  
-  // Check for group in tags with multiple format options
-  checkGroupInTags(tags, groupInfo) {
-    // The standard format is kind:pubkey:identifier
-    const standardFormat = `${groupInfo.kind}:${groupInfo.pubkey}:${groupInfo.identifier}`;
-    
-    // Alternative format with kind 30023
-    const altKindFormat = `30023:${groupInfo.pubkey}:${groupInfo.identifier}`;
-    
-    // Check all tags
-    return tags.some(tag => {
-      if (tag[0] !== 'a') return false;
-      
-      const groupIdentifier = tag[1];
-      return (
-        // Direct match of group identifier
-        groupIdentifier === standardFormat ||
-        // Match alternative format
-        groupIdentifier === altKindFormat ||
-        // Match the identifier using just the pubkey and identifier
-        groupIdentifier.includes(`${groupInfo.pubkey}:${groupInfo.identifier}`) ||
-        // Match partial identifier 
-        (groupInfo.identifier && groupIdentifier.includes(groupInfo.identifier)) ||
-        // Match partial pubkey with kind
-        groupIdentifier.includes(`30023:${groupInfo.pubkey}`) ||
-        // Match any relay-specific format that might be used
-        groupIdentifier.includes(`${groupInfo.kind}:${groupInfo.pubkey}`)
-      );
-    });
-  }
-  
-  // Check membership using a flexible approach
-  async checkFlexibleMembership(groupInfo, userPubkey, relays) {
-    try {
-      // Ensure pool is properly initialized
-      this.ensurePool();
-      
-      // Try multiple formats at once to reduce network requests
-      const identifier = groupInfo.identifier;
-      
-      // Construct filters that catch various ways a user might be in a group
-      // CRITICAL: filters parameter must be an array of filter objects
-      const filters = [
-        // Direct 'a' tag with kind:pubkey:identifier format
-        {
-          kinds: [30001, 30000], // Kind for lists
-          authors: [userPubkey],
-          '#a': [`${groupInfo.kind}:${groupInfo.pubkey}:${identifier}`]
-        },
-        // Alternative format 1: 'd' tag with groups and 'a' tags in content
-        {
-          kinds: [30001],
-          authors: [userPubkey],
-          '#d': ['groups']
-        },
-        // Direct h tag format
-        {
-          kinds: [1, 9021], // Kind for group join request
-          authors: [userPubkey],
-          '#h': [identifier]
-        }
-      ];
-      
-      // Try each filter on all relays
-      for (const filter of filters) {
-        try {
-          // Check if pool.list is actually a function to avoid type errors
-          if (typeof this.pool.list !== 'function') {
-            console.warn(`Error with filter ${JSON.stringify(filter)}: SimplePool.list is not a function`);
-            continue; // Skip to next filter
-          }
-          
-          // Use the correct array format for filters
-          const events = await this.pool.list(relays, [filter]);
-          
-          if (events && events.length > 0) {
-            // Check each event for the group reference
-            for (const event of events) {
-              // If it's a group list, check the tags
-              if (event.kind === 30001 && event.tags.some(t => t[0] === 'd' && t[1] === 'groups')) {
-                if (this.checkGroupInTags(event.tags, groupInfo)) {
-                  return true;
-                }
-              }
-              
-              // Check for '#h' tag matching the identifier
-              if (event.tags.some(t => t[0] === 'h' && t[1] === identifier)) {
-                return true;
-              }
-            }
-          }
-        } catch (error) {
-          console.warn(`Error with filter ${JSON.stringify(filter)}:`, error);
-          continue; // Try next filter even if this one failed
-        }
-      }
-      
-      return false;
-    } catch (e) {
-      console.error(`Flexible membership check failed: ${e.message}`);
-      return false; // Don't throw, just return false
-    }
-  }
-  
-  // Add member to the cache
-  addToMembershipCache(groupId, pubkey) {
-    if (!this.membershipCache.has(groupId)) {
-      this.membershipCache.set(groupId, new Set());
-    }
-    this.membershipCache.get(groupId).add(pubkey);
     this.saveToStorage();
   }
+
+  // Check if user is a member of the group using proper NIP-29 events
+  async checkMembershipStatus(groupInfo, userPubkey) {
+    const groupId = this.getGroupId(groupInfo);
+    const relays = this.getGroupRelays(groupInfo);
+    
+    try {
+      console.log(`Checking membership status for ${userPubkey} in group ${groupId}`);
+      
+      // 1. Check for member addition events (kind 42)
+      const memberEvents = await this.pool.querySync(relays, [{
+        kinds: [42],
+        '#d': [groupInfo.identifier],
+        limit: 100
+      }]);
+      
+      // Check if user is in any member addition events
+      for (const event of memberEvents) {
+        try {
+          // Check 'p' tags for user pubkey
+          if (event.tags.some(tag => tag[0] === 'p' && tag[1] === userPubkey)) {
+            console.log(`Found user ${userPubkey} in member addition event`, event);
+            return true;
+          }
+          
+          // Also check if content contains members array
+          const content = JSON.parse(event.content);
+          if (content.members && Array.isArray(content.members) && 
+              content.members.includes(userPubkey)) {
+            console.log(`Found user ${userPubkey} in members list`, event);
+            return true;
+          }
+        } catch {
+          // Continue checking other events if one fails to parse
+          continue;
+        }
+      }
+      
+      // 2. Check if user has posted to the group (implicit membership)
+      const userMessages = await this.pool.querySync(relays, [{
+        kinds: [42, 43, 44], // Group-related message types
+        authors: [userPubkey],
+        '#d': [groupInfo.identifier],
+        limit: 10
+      }]);
+      
+      if (userMessages.length > 0) {
+        console.log(`User ${userPubkey} has posted to group ${groupId}`, userMessages[0]);
+        return true;
+      }
+      
+      // 3. Check if the group is "public" - in some cases everyone is a member
+      const metadataEvents = await this.pool.querySync(relays, [{
+        kinds: [41], // Group metadata
+        '#d': [groupInfo.identifier],
+        limit: 1
+      }]);
+      
+      if (metadataEvents.length > 0) {
+        const metadata = metadataEvents[0];
+        // Check if group has a "public" tag or similar
+        const isPublic = metadata.tags.some(tag => 
+          (tag[0] === 'public' && tag[1] !== 'false') ||
+          (tag[0] === 'private' && tag[1] === 'false')
+        );
+        
+        if (isPublic) {
+          console.log(`Group ${groupId} is public, considering ${userPubkey} a member`);
+          return true;
+        }
+      }
+      
+      // 4. Check if there are any member removal events (kind 43) after additions
+      const removalEvents = await this.pool.querySync(relays, [{
+        kinds: [43],
+        '#d': [groupInfo.identifier],
+        '#p': [userPubkey],
+        limit: 10
+      }]);
+      
+      if (removalEvents.length > 0) {
+        // Sort by created_at to get the latest
+        const latestRemoval = removalEvents.sort((a, b) => b.created_at - a.created_at)[0];
+        
+        // If the most recent event is a removal, user is not a member
+        console.log(`Found removal event for ${userPubkey} in group ${groupId}`, latestRemoval);
+        return false;
+      }
+      
+      // No evidence of membership
+      return false;
+    } catch (error) {
+      console.error(`Error checking NIP-29 membership: ${error.message}`);
+      return false;
+    }
+  }
   
-  // Check membership from cache first, then network if needed
+  // Main method to check membership status
   async hasJoinedGroup(naddrString, userPubkey, forceRefresh = false) {
     try {
+      // Parse the group naddr
       const groupInfo = this.parseNaddr(naddrString);
       if (!groupInfo) return false;
       
       const groupId = this.getGroupId(groupInfo);
       
-      // Check cache first
-      if (!forceRefresh && this.membershipCache.has(groupId)) {
-        if (this.membershipCache.get(groupId).has(userPubkey)) {
-          console.log(`Cache hit: ${userPubkey} is a member of ${groupId}`);
-          return true;
+      // Check cache first unless forced refresh
+      if (!forceRefresh) {
+        // Get group's cache
+        const groupCache = this.membershipCache.get(groupId);
+        if (groupCache && groupCache.has(userPubkey)) {
+          console.log(`Cache hit: ${userPubkey} is ${groupCache.get(userPubkey) ? '' : 'not '}a member of ${groupId}`);
+          return groupCache.get(userPubkey);
         }
       }
       
-      // If not in cache or force refresh, check network
-      return await this.refreshMembershipStatus(naddrString, userPubkey);
+      // If not in cache or forced refresh, check membership status
+      const isMember = await this.checkMembershipStatus(groupInfo, userPubkey);
+      
+      // Update cache with result
+      if (!this.membershipCache.has(groupId)) {
+        this.membershipCache.set(groupId, new Map());
+      }
+      this.membershipCache.get(groupId).set(userPubkey, isMember);
+      
+      // Save to persistent storage
+      this.saveToStorage();
+      
+      return isMember;
     } catch (error) {
       console.error('Error checking group membership:', error);
       return false;
+    }
+  }
+  
+  // Refresh membership status from network and update cache
+  async refreshMembershipStatus(naddrString, userPubkey) {
+    // This just forces a cache refresh
+    return await this.hasJoinedGroup(naddrString, userPubkey, true);
+  }
+  
+  // Close the pool to release resources
+  close() {
+    if (this.pool) {
+      this.pool.close();
     }
   }
 }
