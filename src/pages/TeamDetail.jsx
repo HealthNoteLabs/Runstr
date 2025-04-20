@@ -708,24 +708,6 @@ export const TeamDetail = () => {
           </button>
           
           <div className="flex items-center flex-1">
-            {metadata?.metadata?.picture ? (
-              <img 
-                src={metadata.metadata.picture} 
-                alt={metadata.metadata?.name || 'Group'} 
-                className="w-12 h-12 rounded-full mr-4" 
-                onError={(e) => {
-                  e.target.onerror = null;
-                  e.target.style.display = 'none';
-                  e.target.nextSibling.style.display = 'flex';
-                }}
-              />
-            ) : null}
-            <div className={`w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center mr-4 ${metadata?.metadata?.picture ? 'hidden' : ''}`}>
-              <span className="text-white text-xl font-bold">
-                {metadata?.metadata?.name?.charAt(0) || groupInfo?.identifier?.charAt(0) || '#'}
-              </span>
-            </div>
-            
             <div className="flex-1">
               <h1 className="text-2xl font-bold text-white">
                 {metadata?.metadata?.name || `Group ${groupInfo?.identifier?.substring(0, 8) || ''}`}

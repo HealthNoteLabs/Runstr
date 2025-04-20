@@ -1,5 +1,4 @@
 import { MessagesSquare, CloudUpload, Landmark, Server, Castle } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { RichText } from "@/components/rich-text";
 import { useTranslation } from "react-i18next";
@@ -7,12 +6,17 @@ import { useOpenGroup } from "@/lib/groups";
 import PropTypes from "prop-types";
 import { useProfile } from "@/lib/nostr";
 import { useNavigate } from "react-router-dom";
-import { Avatar as NostrAvatar } from "@/components/nostr/avatar";
 import { Name } from "@/components/nostr/name";
 import { BlossomLink } from "@/components/blossom";
 import { RelayLink } from "@/components/relay";
 import { MintLink } from "@/components/mint";
 import { useCommunity } from "@/lib/nostr/groups";
+import { cn } from "@/lib/utils";
+import { 
+  GroupPictureFromEvent, 
+  GroupNameFromEvent,
+  ProfilePicture
+} from "./GroupAvatar";
 
 /**
  * Extracts metadata from a NIP-29 group event
@@ -75,13 +79,13 @@ export function EnhancedGroupMetadata({
   const { t } = useTranslation();
   
   return (
-    <div className={className}>
+    <div className={cn("flex flex-col gap-4", className)}>
       <div className="flex flex-col gap-1 items-center">
-        <Avatar className="rounded-full size-32">
-          <AvatarImage src={metadata.picture} className="object-cover" />
-          <AvatarFallback>{metadata.name?.at(0) || id.at(0)}</AvatarFallback>
-        </Avatar>
-        <h2 className="text-lg font-semibold">{metadata.name}</h2>
+        {/* Using our enhanced avatar component */}
+        <GroupPictureFromEvent event={event} size="xl" />
+        <h2 className="text-lg font-semibold">
+          <GroupNameFromEvent event={event} />
+        </h2>
         {metadata.about ? (
           <RichText
             tags={event.tags}
@@ -146,11 +150,12 @@ export function EnhancedCommunityMetadata({
   };
 
   return (
-    <div className={className}>
+    <div className={cn("flex flex-col gap-4", className)}>
       <div className="flex flex-row gap-3 items-center">
         <Castle className="size-8 text-muted-foreground" />
         <div className="flex flex-row gap-2 items-center">
-          <NostrAvatar pubkey={event.pubkey} className="size-8" />
+          {/* Using our profile picture component */}
+          <ProfilePicture pubkey={event.pubkey} className="size-8" />
           <div className="flex flex-col gap-0 items-start">
             <h3 className="text-lg font-semibold line-clamp-1">
               {metadata.name || <Name pubkey={event.pubkey} />}
@@ -280,7 +285,8 @@ export function EnhancedCommunitySummary({
     <Button variant="outline" size="fit" onClick={openGroup}>
       <div className="p-2 space-y-3 w-64 rounded-sm">
         <div className="flex flex-col gap-1 items-center">
-          <NostrAvatar pubkey={event.pubkey} className="size-12" />
+          {/* Using our profile picture component */}
+          <ProfilePicture pubkey={event.pubkey} className="size-12" />
           <div className="flex flex-col gap-0.5">
             <h3 className="text-lg font-semibold line-clamp-1">
               {metadata.name || <Name pubkey={event.pubkey} />}

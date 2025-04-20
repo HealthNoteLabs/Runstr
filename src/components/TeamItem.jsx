@@ -17,17 +17,6 @@ export const TeamItem = ({ team }) => {
       className="bg-[#1a222e] rounded-lg p-4 cursor-pointer transition-transform hover:scale-[1.01]"
     >
       <div className="flex items-center">
-        {team.imageUrl ? (
-          <img 
-            src={team.imageUrl} 
-            alt={team.name} 
-            className="w-12 h-12 rounded-full mr-4 object-cover" 
-          />
-        ) : (
-          <div className="w-12 h-12 rounded-full mr-4 bg-blue-900/50 flex items-center justify-center">
-            <span className="text-lg font-bold">{team.name.charAt(0)}</span>
-          </div>
-        )}
         <div className="flex-1">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">{team.name}</h3>
