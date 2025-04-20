@@ -1,17 +1,53 @@
 import { Capacitor } from '@capacitor/core';
-import { Device } from '@capacitor/device';
+
+// More robust check for native platform
+const detectNativePlatform = () => {
+  try {
+    // First check if we're running as a Capacitor app
+    if (!Capacitor || typeof Capacitor.getPlatform !== 'function') {
+      console.log('Capacitor object not available or missing getPlatform method');
+      return false;
+    }
+
+    const platform = Capacitor.getPlatform();
+    console.log('Detected platform:', platform);
+    
+    // If platform is explicitly 'web', we're not native
+    if (platform === 'web') {
+      return false;
+    }
+    
+    // Additional check for native plugins
+    const hasDevicePlugin = Capacitor.isPluginAvailable('Device');
+    console.log('Device plugin available:', hasDevicePlugin);
+    
+    // Return true if platform is android/ios or we have native plugins
+    return platform === 'android' || platform === 'ios' || hasDevicePlugin;
+  } catch (error) {
+    console.error('Error detecting native platform:', error);
+    // In case of any error, default to false (web)
+    return false;
+  }
+};
 
 /**
  * Check if running on a native platform (Android/iOS)
  * @returns {boolean} True if running on a native platform
  */
-export const isNativePlatform = !Capacitor.isPluginAvailable('Device') ? false : Capacitor.getPlatform() !== 'web';
+export const isNativePlatform = detectNativePlatform();
 
 /**
  * Get the current platform
  * @returns {string} The platform (android, ios, web)
  */
-export const getPlatform = () => Capacitor.getPlatform();
+export const getPlatform = () => {
+  try {
+    return Capacitor.getPlatform();
+  } catch (error) {
+    console.error('Error getting platform:', error);
+    return 'web'; // Default to web on error
+  }
+};
 
 /**
  * Check if running on Android
@@ -32,11 +68,16 @@ export const isIOS = getPlatform() === 'ios';
 export const isMobileBrowser = () => {
   if (isNativePlatform) return false;
   
-  const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-  
-  // Check for common mobile user agent patterns
-  const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
-  return mobileRegex.test(userAgent);
+  try {
+    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+    
+    // Check for common mobile user agent patterns
+    const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+    return mobileRegex.test(userAgent);
+  } catch (error) {
+    console.error('Error detecting mobile browser:', error);
+    return false;
+  }
 };
 
 /**
@@ -50,23 +91,32 @@ export const isMobileContext = () => isNativePlatform || isMobileBrowser();
  * @returns {Promise<Object>} Device information
  */
 export const getDeviceInfo = async () => {
-  if (!Capacitor.isPluginAvailable('Device')) {
-    return {
-      isVirtual: false,
-      manufacturer: 'web',
-      model: 'browser',
-      operatingSystem: navigator.platform,
-      osVersion: navigator.userAgent,
-      platform: 'web',
-      webViewVersion: navigator.appVersion,
-    };
-  }
-  
   try {
+    if (!Capacitor.isPluginAvailable('Device')) {
+      return {
+        isVirtual: false,
+        manufacturer: 'web',
+        model: 'browser',
+        operatingSystem: navigator.platform,
+        osVersion: navigator.userAgent,
+        platform: 'web',
+        webViewVersion: navigator.appVersion,
+      };
+    }
+    
+    const { Device } = await import('@capacitor/device');
     return await Device.getInfo();
   } catch (error) {
     console.error('Error getting device info:', error);
-    return null;
+    return {
+      isVirtual: false,
+      manufacturer: 'unknown',
+      model: 'unknown',
+      operatingSystem: 'unknown',
+      osVersion: 'unknown',
+      platform: 'web',
+      webViewVersion: 'unknown',
+    };
   }
 };
 

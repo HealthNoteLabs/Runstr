@@ -17,12 +17,17 @@ import './App.css';
 console.log("App.jsx is loading");
 
 // Improved error boundary fallback
-const ErrorFallback = () => (
+const ErrorFallback = ({ error }) => (
   <div className="p-6 bg-red-900/30 border border-red-800 rounded-lg m-4">
     <h2 className="text-2xl font-bold text-white mb-4">App Loading Error</h2>
     <p className="text-red-300 mb-4">
       There was a problem loading the app. This could be due to network issues or a problem with the app itself.
     </p>
+    {error && (
+      <div className="bg-red-950/30 p-3 rounded mb-4 overflow-auto max-h-40">
+        <p className="text-red-200 text-sm font-mono">{error.toString()}</p>
+      </div>
+    )}
     <button 
       onClick={() => window.location.reload()}
       className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500"
@@ -35,6 +40,7 @@ const ErrorFallback = () => (
 // Enhanced loading component with timeout detection
 const EnhancedLoadingFallback = () => {
   const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
+  const [extendedTimeout, setExtendedTimeout] = useState(false);
   
   useEffect(() => {
     // After 5 seconds of loading, show a timeout warning
@@ -42,7 +48,15 @@ const EnhancedLoadingFallback = () => {
       setShowTimeoutWarning(true);
     }, 5000);
     
-    return () => clearTimeout(timeoutId);
+    // After 15 seconds, show extended timeout warning
+    const extendedTimeoutId = setTimeout(() => {
+      setExtendedTimeout(true);
+    }, 15000);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      clearTimeout(extendedTimeoutId);
+    };
   }, []);
   
   return (
@@ -60,9 +74,38 @@ const EnhancedLoadingFallback = () => {
           </p>
         </div>
       )}
+      
+      {extendedTimeout && (
+        <div className="mt-4 p-4 bg-red-900/20 border border-red-800 rounded-lg max-w-md">
+          <p className="text-red-300 text-center mb-2">
+            Loading timeout exceeded. There may be an initialization issue.
+          </p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="w-full mt-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500"
+          >
+            Reload App
+          </button>
+        </div>
+      )}
     </div>
   );
 };
+
+// Direct component for when AppRoutes fails to load
+const FallbackHomeScreen = () => (
+  <div className="p-6">
+    <h2 className="text-2xl font-bold mb-4">Welcome to RUNSTR</h2>
+    <p className="mb-4">The main application screens could not be loaded.</p>
+    <p className="mb-4">This might be caused by a permissions issue or initialization problem.</p>
+    <button 
+      onClick={() => window.location.reload()}
+      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500"
+    >
+      Retry Loading
+    </button>
+  </div>
+);
 
 // Lazy load AppRoutes with error handling
 const AppRoutes = lazy(() => 
@@ -74,29 +117,41 @@ const AppRoutes = lazy(() =>
     .catch(error => {
       console.error("Error loading AppRoutes:", error);
       return { 
-        default: () => <ErrorFallback /> 
+        default: () => <ErrorFallback error={error} /> 
       };
     })
 );
 
 const App = () => {
   const [hasError, setHasError] = useState(false);
+  const [errorDetails, setErrorDetails] = useState(null);
+  const [initializationComplete, setInitializationComplete] = useState(false);
   const [showDevTools, setShowDevTools] = useState(process.env.NODE_ENV === 'development' && !isNativePlatform);
   
   // Initialize mobile services and Nostr as soon as the app launches
   useEffect(() => {
+    console.log('Starting app initialization process');
+    
     const initializeApp = async () => {
       try {
         // Initialize mobile services first
         console.log('Initializing mobile services...');
-        await initMobileServices();
+        const mobileServicesResult = await initMobileServices();
+        console.log('Mobile services initialization result:', mobileServicesResult);
         
         // Set up app event listeners
+        console.log('Setting up app event listeners...');
         const cleanupListeners = setupAppEventListeners();
         
         // Initialize Nostr
         console.log('Preloading Nostr connection on app launch');
-        await initializeNostr();
+        try {
+          await initializeNostr();
+          console.log('Nostr initialization complete');
+        } catch (nostrError) {
+          console.error('Nostr initialization failed but continuing:', nostrError);
+          // We'll continue even if Nostr fails - it's not critical for app startup
+        }
         
         // Prefetch run feed data using dynamic import to avoid circular dependencies
         try {
@@ -107,7 +162,11 @@ const App = () => {
           );
         } catch (error) {
           console.error('Error importing feed functions:', error);
+          // Not critical for initialization
         }
+        
+        console.log('Initialization process complete');
+        setInitializationComplete(true);
         
         return () => {
           // Clean up event listeners
@@ -115,6 +174,7 @@ const App = () => {
         };
       } catch (error) {
         console.error('Error initializing app:', error);
+        setErrorDetails(error);
         setHasError(true);
       }
     };
@@ -139,6 +199,7 @@ const App = () => {
   useEffect(() => {
     const handleGlobalError = (event) => {
       console.error('Global error:', event.error);
+      setErrorDetails(event.error);
       setHasError(true);
     };
     
@@ -147,33 +208,51 @@ const App = () => {
   }, []);
   
   if (hasError) {
-    return <ErrorFallback />;
+    return <ErrorFallback error={errorDetails} />;
   }
+  
+  // If we're on Android and initialization hasn't completed in 10 seconds, render a simple UI anyway
+  const [forceRender, setForceRender] = useState(false);
+  useEffect(() => {
+    if (isNativePlatform && !initializationComplete) {
+      const timeoutId = setTimeout(() => {
+        console.log('Forcing render after timeout');
+        setForceRender(true);
+      }, 10000);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [initializationComplete]);
   
   return (
     <Router>
       <NostrProvider>
-        <AuthProvider>
-          <AudioPlayerProvider>
-            <SettingsProvider>
-              <ActivityModeProvider>
-                <RunTrackerProvider>
-                  <TeamsProvider>
-                    <div className="relative w-full h-full bg-[#111827] text-white">
+        <div className="relative w-full h-full bg-[#111827] text-white">
+          {/* Render basic app shell even if providers fail */}
+          <SettingsProvider>
+            <ActivityModeProvider>
+              <AuthProvider>
+                <AudioPlayerProvider>
+                  <RunTrackerProvider>
+                    <TeamsProvider>
                       <MenuBar />
                       <main className="pb-24 w-full mx-auto px-4 max-w-screen-md">
-                        <Suspense fallback={<EnhancedLoadingFallback />}>
-                          <AppRoutes />
-                        </Suspense>
+                        {(initializationComplete || forceRender) ? (
+                          <Suspense fallback={<EnhancedLoadingFallback />}>
+                            <AppRoutes />
+                          </Suspense>
+                        ) : (
+                          <EnhancedLoadingFallback />
+                        )}
                       </main>
                       {showDevTools && <DevTools />}
-                    </div>
-                  </TeamsProvider>
-                </RunTrackerProvider>
-              </ActivityModeProvider>
-            </SettingsProvider>
-          </AudioPlayerProvider>
-        </AuthProvider>
+                    </TeamsProvider>
+                  </RunTrackerProvider>
+                </AudioPlayerProvider>
+              </AuthProvider>
+            </ActivityModeProvider>
+          </SettingsProvider>
+        </div>
       </NostrProvider>
     </Router>
   );
