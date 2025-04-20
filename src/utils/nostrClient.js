@@ -210,12 +210,32 @@ export const fetchGroupMetadataByNaddr = async (naddrString) => {
         const latestEvent = events.sort((a, b) => b.created_at - a.created_at)[0];
         
         // Parse the content which contains the group metadata
-        let metadata;
+        let metadata = {};
+        
+        // First try to parse the content as JSON
         try {
-          metadata = JSON.parse(latestEvent.content);
-        } catch (e) {
-          console.error('Error parsing group metadata content:', e);
-          metadata = { name: 'Unknown Group', about: 'Could not parse group metadata' };
+          if (latestEvent.content && latestEvent.content.trim() !== '') {
+            metadata = JSON.parse(latestEvent.content);
+          }
+        } catch (_) {
+          console.log('Content is not valid JSON, will extract metadata from tags instead');
+        }
+        
+        // If JSON parsing failed or content was empty, try to extract metadata from tags
+        if (!metadata.name || !metadata.about) {
+          console.log('Extracting metadata from tags');
+          // Extract metadata from tags (NIP-29 allows metadata in tags or content)
+          latestEvent.tags.forEach(tag => {
+            if (tag[0] === 'name' && tag[1]) metadata.name = tag[1];
+            else if (tag[0] === 'about' && tag[1]) metadata.about = tag[1];
+            else if (tag[0] === 'description' && tag[1]) metadata.about = tag[1];
+            else if ((tag[0] === 'picture' || tag[0] === 'image') && tag[1]) metadata.picture = tag[1];
+          });
+        }
+        
+        // If we still don't have a name, use a fallback
+        if (!metadata.name) {
+          metadata.name = `Group ${groupInfo.identifier.substring(0, 8)}`;
         }
         
         metadataResult = {
@@ -224,10 +244,13 @@ export const fetchGroupMetadataByNaddr = async (naddrString) => {
           created_at: latestEvent.created_at,
           kind: latestEvent.kind,
           tags: latestEvent.tags,
-          metadata
+          metadata,
+          name: metadata.name,
+          picture: metadata.picture,
+          about: metadata.about
         };
         
-        console.log('Successfully fetched metadata with pool.list');
+        console.log('Successfully fetched metadata with pool.list:', metadataResult);
         return metadataResult;
       }
     } catch (error) {
@@ -264,7 +287,10 @@ export const fetchGroupMetadataByNaddr = async (naddrString) => {
         name: `Group ${shortId}`,
         about: `Nostr group with identifier ${shortId}... created by ${pubkeyPrefix}...`,
         picture: null
-      }
+      },
+      name: `Group ${shortId}`,
+      about: `Nostr group with identifier ${shortId}... created by ${pubkeyPrefix}...`,
+      picture: null
     };
     
     return fallbackMetadata;
@@ -312,13 +338,34 @@ const fetchMetadataWithWebSocket = async (groupInfo, relayUrl = 'wss://groups.0x
           if (message[0] === 'EVENT' && message[2]) {
             const eventData = message[2];
             
-            // Parse the content which contains the group metadata
-            let metadata;
+            // Parse metadata with more robust approach
+            let metadata = {};
+            
+            // First try to parse content as JSON
             try {
-              metadata = JSON.parse(eventData.content);
-            } catch (e) {
-              console.error('Error parsing group metadata content from WebSocket:', e);
-              metadata = { name: 'Unknown Group', about: 'Could not parse group metadata' };
+              if (eventData.content && eventData.content.trim() !== '') {
+                metadata = JSON.parse(eventData.content);
+              }
+            } catch (_) {
+              console.log('WebSocket: Content is not valid JSON, extracting from tags');
+            }
+            
+            // Extract metadata from tags if needed
+            if (!metadata.name || !metadata.about) {
+              // Extract metadata from tags
+              if (eventData.tags) {
+                eventData.tags.forEach(tag => {
+                  if (tag[0] === 'name' && tag[1]) metadata.name = tag[1];
+                  else if (tag[0] === 'about' && tag[1]) metadata.about = tag[1];
+                  else if (tag[0] === 'description' && tag[1]) metadata.about = tag[1];
+                  else if ((tag[0] === 'picture' || tag[0] === 'image') && tag[1]) metadata.picture = tag[1];
+                });
+              }
+            }
+            
+            // If we still don't have a name, use a fallback
+            if (!metadata.name) {
+              metadata.name = `Group ${groupInfo.identifier.substring(0, 8)}`;
             }
             
             const result = {
@@ -327,7 +374,10 @@ const fetchMetadataWithWebSocket = async (groupInfo, relayUrl = 'wss://groups.0x
               created_at: eventData.created_at,
               kind: eventData.kind,
               tags: eventData.tags,
-              metadata
+              metadata,
+              name: metadata.name,
+              picture: metadata.picture,
+              about: metadata.about
             };
             
             if (!hasResolved) {
@@ -345,8 +395,8 @@ const fetchMetadataWithWebSocket = async (groupInfo, relayUrl = 'wss://groups.0x
               resolve(null); // No events found
             }
           }
-        } catch (error) {
-          console.error('Error processing WebSocket message:', error);
+        } catch (wsError) {
+          console.error('Error processing WebSocket message:', wsError);
         }
       };
       
