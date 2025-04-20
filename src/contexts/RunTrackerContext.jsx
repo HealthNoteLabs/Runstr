@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { runTracker } from '../services/RunTracker';
 import { useActivityMode } from './ActivityModeContext';
 import { ACTIVITY_TYPES } from '../services/RunDataService';
+import { useMobileStorage } from './MobileStorageContext';
 
 // Create the context
 const RunTrackerContext = createContext(null);
@@ -35,6 +36,7 @@ export const useRunTracker = () => {
 // Provider component
 export const RunTrackerProvider = ({ children }) => {
   const { mode: activityType } = useActivityMode();
+  const storage = useMobileStorage();
 
   // Initialize state with try/catch to prevent fatal errors on startup
   const [trackingState, setTrackingState] = useState(() => {
@@ -66,6 +68,8 @@ export const RunTrackerProvider = ({ children }) => {
 
   // Listen for changes in the run tracker state
   useEffect(() => {
+    if (!storage.isReady) return; // Don't set up listeners if storage isn't ready
+    
     try {
       const handleDistanceChange = (distance) => {
         setTrackingState(prev => ({ ...prev, distance }));
@@ -110,44 +114,46 @@ export const RunTrackerProvider = ({ children }) => {
       runTracker.on('statusChange', handleStatusChange);
       runTracker.on('stopped', handleRunStopped);
 
-      // Check for active run state in localStorage on mount
-      const savedRunState = localStorage.getItem('activeRunState');
-      if (savedRunState) {
+      // Check for active run state in storage on mount
+      const loadActiveRunState = async () => {
         try {
-          const runData = JSON.parse(savedRunState);
-          
-          // Update state
-          setTrackingState({
-            isTracking: runData.isRunning,
-            isPaused: runData.isPaused,
-            distance: runData.distance,
-            duration: runData.duration,
-            pace: runData.pace,
-            splits: runData.splits,
-            elevation: runData.elevation,
-            activityType: runData.activityType || activityType
-          });
-          
-          // Restore tracking if active and not paused
-          if (runData.isRunning && !runData.isPaused) {
-            runTracker.restoreTracking(runData);
-          } else if (runData.isRunning && runData.isPaused) {
-            // We need to ensure the runTracker internal state matches our paused state
-            runTracker.isTracking = true;
-            runTracker.isPaused = true;
-            runTracker.distance = runData.distance;
-            runTracker.duration = runData.duration;
-            runTracker.pace = runData.pace;
-            runTracker.splits = [...runData.splits];
-            runTracker.elevation = {...runData.elevation};
-            runTracker.activityType = runData.activityType || activityType;
+          const savedRunState = await storage.getJSON('activeRunState', null);
+          if (savedRunState) {
+            // Update state
+            setTrackingState({
+              isTracking: savedRunState.isRunning,
+              isPaused: savedRunState.isPaused,
+              distance: savedRunState.distance,
+              duration: savedRunState.duration,
+              pace: savedRunState.pace,
+              splits: savedRunState.splits,
+              elevation: savedRunState.elevation,
+              activityType: savedRunState.activityType || activityType
+            });
+            
+            // Restore tracking if active and not paused
+            if (savedRunState.isRunning && !savedRunState.isPaused) {
+              runTracker.restoreTracking(savedRunState);
+            } else if (savedRunState.isRunning && savedRunState.isPaused) {
+              // We need to ensure the runTracker internal state matches our paused state
+              runTracker.isTracking = true;
+              runTracker.isPaused = true;
+              runTracker.distance = savedRunState.distance;
+              runTracker.duration = savedRunState.duration;
+              runTracker.pace = savedRunState.pace;
+              runTracker.splits = [...savedRunState.splits];
+              runTracker.elevation = {...savedRunState.elevation};
+              runTracker.activityType = savedRunState.activityType || activityType;
+            }
           }
         } catch (error) {
           console.error('Error restoring run state:', error);
           // If restoration fails, remove potentially corrupted state
-          localStorage.removeItem('activeRunState');
+          await storage.removeItem('activeRunState');
         }
-      }
+      };
+      
+      loadActiveRunState();
 
       // Cleanup event listeners on unmount
       return () => {
@@ -164,12 +170,14 @@ export const RunTrackerProvider = ({ children }) => {
       // Return empty cleanup function
       return () => {};
     }
-  }, [activityType]); // Include activityType in dependencies
+  }, [activityType, storage, storage.isReady]); // Include activityType and storage in dependencies
 
-  // Save run state to localStorage when it changes
+  // Save run state to storage when it changes
   useEffect(() => {
+    if (!storage.isReady || !trackingState.isTracking) return;
+    
     try {
-      if (trackingState.isTracking) {
+      const saveRunState = async () => {
         const runData = {
           isRunning: trackingState.isTracking,
           isPaused: trackingState.isPaused,
@@ -182,15 +190,22 @@ export const RunTrackerProvider = ({ children }) => {
           timestamp: new Date().getTime()
         };
         
-        localStorage.setItem('activeRunState', JSON.stringify(runData));
-      } else {
-        // Clear active run state when run is stopped
-        localStorage.removeItem('activeRunState');
-      }
+        await storage.setJSON('activeRunState', runData);
+      };
+      
+      saveRunState();
     } catch (error) {
       console.error('Error saving run state:', error);
     }
-  }, [trackingState]);
+    
+    return () => {
+      // If tracking stops, clear active run state
+      if (!trackingState.isTracking) {
+        storage.removeItem('activeRunState')
+          .catch(error => console.error('Error removing active run state:', error));
+      }
+    };
+  }, [trackingState, storage, storage.isReady]);
 
   // Update activity type in tracking state when it changes in context
   useEffect(() => {

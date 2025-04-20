@@ -1,7 +1,9 @@
 import { formatPostContent } from '../utils/postFormatters';
 import PropTypes from 'prop-types';
 import { useState, useCallback, memo } from 'react';
-import { Heart, MessageSquare, Repeat, Zap, Camera, X, ImageIcon } from "lucide-react";
+import { Heart, MessageSquare, Repeat, Zap, Camera, X, ImageIcon, Share2 } from "lucide-react";
+import BottomSheet from './ui/BottomSheet';
+import { vibrate } from '../utils/platform';
 import './Post.css';
 
 /**
@@ -45,8 +47,10 @@ const Comment = memo(({ comment, handleAvatarError }) => {
                     `;
                     imageElement.addEventListener('click', () => {
                       document.body.removeChild(imageElement);
+                      vibrate('light');
                     });
                     document.body.appendChild(imageElement);
+                    vibrate('light');
                   }}
                 />
               </div>
@@ -79,7 +83,7 @@ Comment.propTypes = {
 };
 
 /**
- * Component for displaying a single post in the run feed - optimized for Android
+ * Component for displaying a single post in the run feed - optimized for mobile
  */
 export const Post = ({
   post,
@@ -97,11 +101,15 @@ export const Post = ({
   handleAddCommentImage,
   handleRemoveCommentImage
 }) => {
+  // Track bottom sheet states
+  const [showCommentsSheet, setShowCommentsSheet] = useState(false);
+  const [showPostActionsSheet, setShowPostActionsSheet] = useState(false);
+  const [showImageOptionsSheet, setShowImageOptionsSheet] = useState(false);
+  
   // Track if comments are loading
   const [commentsLoading, setCommentsLoading] = useState(false);
-  const [showImageOptions, setShowImageOptions] = useState(false);
 
-  // Android optimization: handle avatar error
+  // Handle avatar error
   const handleAvatarError = (event) => {
     event.target.src = '/default-avatar.svg';
   };
@@ -112,7 +120,7 @@ export const Post = ({
     event.target.classList.add('image-loaded');
   };
 
-  // Format date for Android
+  // Format date for mobile
   const formatDate = (timestamp) => {
     try {
       const date = new Date(timestamp * 1000);
@@ -150,9 +158,6 @@ export const Post = ({
       return 'unknown date';
     }
   };
-
-  // Detect mobile
-  const isMobile = true;
   
   // Use the pre-extracted images array from the post object
   const images = post.images || [];
@@ -162,14 +167,17 @@ export const Post = ({
 
   // Handle comment click with loading state
   const handleCommentClickWithLoading = useCallback((postId) => {
+    vibrate('light');
+    
     if (!post.commentsLoaded && !commentsLoading) {
       setCommentsLoading(true);
       // Call the original handler which should load the comments
       handleCommentClick(postId).finally(() => {
         setCommentsLoading(false);
+        setShowCommentsSheet(true);
       });
     } else {
-      handleCommentClick(postId);
+      setShowCommentsSheet(true);
     }
   }, [post, commentsLoading, handleCommentClick]);
 
@@ -177,7 +185,8 @@ export const Post = ({
    * Handles camera capture for comments
    */
   const handleCameraCapture = () => {
-    setShowImageOptions(false);
+    setShowImageOptionsSheet(false);
+    vibrate('light');
     
     // Create file input element
     const input = document.createElement('input');
@@ -191,6 +200,7 @@ export const Post = ({
         const file = e.target.files[0];
         const imageUrl = URL.createObjectURL(file);
         handleAddCommentImage(file, imageUrl);
+        vibrate('light');
       }
     };
     
@@ -202,7 +212,8 @@ export const Post = ({
    * Handles gallery selection for comments
    */
   const handleGallerySelect = () => {
-    setShowImageOptions(false);
+    setShowImageOptionsSheet(false);
+    vibrate('light');
     
     // Create file input element
     const input = document.createElement('input');
@@ -216,11 +227,52 @@ export const Post = ({
         const file = e.target.files[0];
         const imageUrl = URL.createObjectURL(file);
         handleAddCommentImage(file, imageUrl);
+        vibrate('light');
       }
     };
     
     // Trigger file selection dialog
     input.click();
+  };
+  
+  // Handle post-specific actions
+  const handleLikeWithFeedback = (post) => {
+    vibrate(userLikes.has(post.id) ? 'light' : 'medium');
+    handleLike(post);
+    setShowPostActionsSheet(false);
+  };
+  
+  const handleRepostWithFeedback = (post) => {
+    vibrate(userReposts.has(post.id) ? 'light' : 'medium');
+    handleRepost(post);
+    setShowPostActionsSheet(false);
+  };
+  
+  const handleZapWithFeedback = (post, wallet) => {
+    vibrate('medium');
+    handleZap(post, wallet);
+    setShowPostActionsSheet(false);
+  };
+  
+  const handleSharePost = () => {
+    vibrate('light');
+    
+    // Implement share functionality
+    if (navigator.share) {
+      navigator.share({
+        title: `${post.author.profile.name}'s post on Runstr`,
+        text: post.content.substring(0, 100) + (post.content.length > 100 ? '...' : ''),
+        url: window.location.href
+      }).catch(err => console.error('Error sharing post:', err));
+    }
+    
+    setShowPostActionsSheet(false);
+  };
+  
+  // Handle comment submission with feedback
+  const handleCommentWithFeedback = (postId) => {
+    vibrate('medium');
+    handleComment(postId);
   };
 
   return (
@@ -241,6 +293,22 @@ export const Post = ({
             {formatDate(post.created_at)}
           </span>
         </div>
+        
+        {/* Add a more button that opens the action sheet */}
+        <button 
+          className="post-more-button"
+          onClick={() => {
+            vibrate('light');
+            setShowPostActionsSheet(true);
+          }}
+          aria-label="Post actions"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 13C12.5523 13 13 12.5523 13 12C13 11.4477 12.5523 11 12 11C11.4477 11 11 11.4477 11 12C11 12.5523 11.4477 13 12 13Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M19 13C19.5523 13 20 12.5523 20 12C20 11.4477 19.5523 11 19 11C18.4477 11 18 11.4477 18 12C18 12.5523 18.4477 13 19 13Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M5 13C5.55228 13 6 12.5523 6 12C6 11.4477 5.55228 11 5 11C4.44772 11 4 11.4477 4 12C4 12.5523 4.44772 13 5 13Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
       </div>
       
       <div className="post-content" dangerouslySetInnerHTML={{ __html: formattedContent }}></div>
@@ -274,7 +342,7 @@ export const Post = ({
                     left: 0
                   }}
                   onClick={() => {
-                    // On Android, simply show in full screen instead of opening a new window
+                    // Show in full screen
                     const imageElement = document.createElement('div');
                     imageElement.className = 'fullscreen-image-container';
                     imageElement.innerHTML = `
@@ -283,8 +351,10 @@ export const Post = ({
                     `;
                     imageElement.addEventListener('click', () => {
                       document.body.removeChild(imageElement);
+                      vibrate('light');
                     });
                     document.body.appendChild(imageElement);
+                    vibrate('light');
                   }}
                 />
               </div>
@@ -300,30 +370,6 @@ export const Post = ({
       
       <div className="post-actions">
         <button
-          className="action-button zap-button"
-          onClick={() => handleZap(post, wallet)}
-        >
-          <Zap className="h-5 w-5 mr-1" />
-          <span className="action-text">Kudos</span>
-          {post.zaps > 0 && <span className="action-count">{post.zaps}</span>}
-        </button>
-        <button
-          className={`action-button like-button ${userLikes.has(post.id) ? 'liked' : ''}`}
-          onClick={() => handleLike(post)}
-        >
-          <Heart className={`h-5 w-5 mr-1 ${userLikes.has(post.id) ? 'fill-current' : ''}`} />
-          <span className="action-text">Like</span>
-          {post.likes > 0 && <span className="action-count">{post.likes}</span>}
-        </button>
-        <button
-          className={`action-button repost-button ${userReposts.has(post.id) ? 'reposted' : ''}`}
-          onClick={() => handleRepost(post)}
-        >
-          <Repeat className="h-5 w-5 mr-1" />
-          <span className="action-text">Repost</span>
-          {post.reposts > 0 && <span className="action-count">{post.reposts}</span>}
-        </button>
-        <button
           className="action-button comment-button"
           onClick={() => handleCommentClickWithLoading(post.id)}
         >
@@ -331,10 +377,67 @@ export const Post = ({
           <span className="action-text">Comment</span>
           {(post.comments?.length > 0) && <span className="action-count">{post.comments.length}</span>}
         </button>
+        
+        <button
+          className={`action-button like-button ${userLikes.has(post.id) ? 'liked' : ''}`}
+          onClick={() => handleLikeWithFeedback(post)}
+        >
+          <Heart className={`h-5 w-5 mr-1 ${userLikes.has(post.id) ? 'fill-current' : ''}`} />
+          <span className="action-text">Like</span>
+          {post.likes > 0 && <span className="action-count">{post.likes}</span>}
+        </button>
       </div>
       
-      {post.showComments && (
-        <div className="comments-section">
+      {/* Bottom Sheet for Post Actions */}
+      <BottomSheet
+        isOpen={showPostActionsSheet}
+        onClose={() => setShowPostActionsSheet(false)}
+        height="auto"
+        title="Post Actions"
+      >
+        <div className="post-actions-sheet">
+          <button 
+            className={`post-action-item ${userLikes.has(post.id) ? 'active' : ''}`}
+            onClick={() => handleLikeWithFeedback(post)}
+          >
+            <Heart className={`h-6 w-6 ${userLikes.has(post.id) ? 'fill-current text-red-500' : ''}`} />
+            <span>{userLikes.has(post.id) ? 'Unlike' : 'Like'}</span>
+          </button>
+          
+          <button 
+            className={`post-action-item ${userReposts.has(post.id) ? 'active' : ''}`}
+            onClick={() => handleRepostWithFeedback(post)}
+          >
+            <Repeat className={`h-6 w-6 ${userReposts.has(post.id) ? 'text-green-500' : ''}`} />
+            <span>{userReposts.has(post.id) ? 'Undo Repost' : 'Repost'}</span>
+          </button>
+          
+          <button 
+            className="post-action-item"
+            onClick={() => handleZapWithFeedback(post, wallet)}
+          >
+            <Zap className="h-6 w-6 text-yellow-500" />
+            <span>Send Kudos</span>
+          </button>
+          
+          <button 
+            className="post-action-item"
+            onClick={handleSharePost}
+          >
+            <Share2 className="h-6 w-6 text-blue-500" />
+            <span>Share</span>
+          </button>
+        </div>
+      </BottomSheet>
+      
+      {/* Bottom Sheet for Comments */}
+      <BottomSheet
+        isOpen={showCommentsSheet}
+        onClose={() => setShowCommentsSheet(false)}
+        height="75%"
+        title="Comments"
+      >
+        <div className="comments-section-sheet">
           <div className="comments-list">
             {commentsLoading ? (
               <div className="comments-loading">Loading comments...</div>
@@ -342,24 +445,14 @@ export const Post = ({
               <>
                 {post.comments && post.comments.length > 0 ? (
                   <>
-                    {/* Only render the first 5 comments initially, for better performance */}
-                    {post.comments.slice(0, 5).map((comment) => (
+                    {/* Show all comments in the sheet */}
+                    {post.comments.map((comment) => (
                       <Comment 
                         key={comment.id} 
                         comment={comment} 
                         handleAvatarError={handleAvatarError} 
                       />
                     ))}
-                    
-                    {/* Show "View more comments" button if there are more than 5 comments */}
-                    {post.comments.length > 5 && (
-                      <button 
-                        className="view-more-comments"
-                        onClick={() => console.log('View all comments')}
-                      >
-                        View all {post.comments.length} comments
-                      </button>
-                    )}
                   </>
                 ) : (
                   <div className="no-comments">No comments yet. Be the first to comment!</div>
@@ -380,7 +473,10 @@ export const Post = ({
                   />
                   <button 
                     className="remove-comment-image"
-                    onClick={() => handleRemoveCommentImage(index)}
+                    onClick={() => {
+                      handleRemoveCommentImage(index);
+                      vibrate('light');
+                    }}
                   >
                     <X size={14} />
                   </button>
@@ -395,54 +491,55 @@ export const Post = ({
               placeholder="Add a comment..."
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === 'Enter' && !isMobile) {
-                  handleComment(post.id);
-                }
-              }}
             />
             
-            {/* Image options menu */}
-            {showImageOptions ? (
-              <div className="comment-image-options">
-                <button 
-                  className="comment-image-option camera"
-                  onClick={handleCameraCapture}
-                >
-                  <Camera size={16} />
-                </button>
-                <button 
-                  className="comment-image-option gallery"
-                  onClick={handleGallerySelect}
-                >
-                  <ImageIcon size={16} />
-                </button>
-                <button 
-                  className="comment-image-option cancel"
-                  onClick={() => setShowImageOptions(false)}
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            ) : (
-              <button 
-                className="comment-add-image"
-                onClick={() => setShowImageOptions(true)}
-                disabled={commentImages.length >= 3}
-              >
-                <Camera size={16} />
-              </button>
-            )}
+            <button 
+              className="comment-add-image"
+              onClick={() => {
+                vibrate('light');
+                setShowImageOptionsSheet(true);
+              }}
+              disabled={commentImages.length >= 3}
+            >
+              <Camera size={16} />
+            </button>
             
             <button 
-              onClick={() => handleComment(post.id)}
+              onClick={() => handleCommentWithFeedback(post.id)}
               disabled={!commentText.trim() && commentImages.length === 0}
+              className="comment-submit-button"
             >
               Post
             </button>
           </div>
         </div>
-      )}
+      </BottomSheet>
+      
+      {/* Bottom Sheet for Image Options */}
+      <BottomSheet
+        isOpen={showImageOptionsSheet}
+        onClose={() => setShowImageOptionsSheet(false)}
+        height="auto"
+        title="Add Photo"
+      >
+        <div className="image-options-sheet">
+          <button 
+            className="image-option-item"
+            onClick={handleCameraCapture}
+          >
+            <Camera className="h-6 w-6" />
+            <span>Take Photo</span>
+          </button>
+          
+          <button 
+            className="image-option-item"
+            onClick={handleGallerySelect}
+          >
+            <ImageIcon className="h-6 w-6" />
+            <span>Choose from Gallery</span>
+          </button>
+        </div>
+      </BottomSheet>
     </div>
   );
 };

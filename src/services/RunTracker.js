@@ -1,6 +1,7 @@
 import { registerPlugin } from '@capacitor/core';
 import { EventEmitter } from 'tseep';
 import runDataService, { ACTIVITY_TYPES } from './RunDataService';
+import * as storage from '../utils/storage';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
 
@@ -28,16 +29,46 @@ class RunTracker extends EventEmitter {
     this.pausedTime = 0; // Total time paused in milliseconds
     this.lastPauseTime = 0; // Timestamp when the run was last paused
     this.lastSplitDistance = 0; // Track last split milestone
-    this.activityType = localStorage.getItem('activityMode') || ACTIVITY_TYPES.RUN; // Get current activity type
+    this.activityType = ACTIVITY_TYPES.RUN; // Default activity type
+    
+    // Initialize activity type once storage is ready
+    this.initActivityType();
 
     this.watchId = null; // For geolocation watch id
     this.timerInterval = null; // For updating duration every second
     this.paceInterval = null; // For calculating pace at regular intervals
   }
+  
+  // Initialize the activity type from storage, if available
+  async initActivityType() {
+    try {
+      const activityMode = await storage.getItem('activityMode');
+      if (activityMode) {
+        this.activityType = activityMode;
+      }
+    } catch (error) {
+      console.error('Error initializing activity type:', error);
+    }
+  }
 
-  // Helper method to get the current distance unit from localStorage
-  getDistanceUnit() {
-    return localStorage.getItem('distanceUnit') || 'km';
+  // Helper method to get the current distance unit from storage
+  async getDistanceUnit() {
+    try {
+      return await storage.getItem('distanceUnit') || 'km';
+    } catch (error) {
+      console.error('Error getting distance unit:', error);
+      return 'km'; // Default to kilometers
+    }
+  }
+  
+  // Synchronous version for immediate use
+  getDistanceUnitSync() {
+    try {
+      return storage.getItemSync('distanceUnit') || 'km';
+    } catch (error) {
+      console.error('Error getting distance unit synchronously:', error);
+      return 'km'; // Default to kilometers
+    }
   }
 
   toRadians(degrees) {
@@ -66,7 +97,7 @@ class RunTracker extends EventEmitter {
 
   calculatePace(distance, duration) {
     // Use the centralized pace calculation method
-    return runDataService.calculatePace(distance, duration, this.getDistanceUnit());
+    return runDataService.calculatePace(distance, duration, this.getDistanceUnitSync());
   }
 
   updateElevation(altitude) {
@@ -130,7 +161,7 @@ class RunTracker extends EventEmitter {
       }
 
       // Get current distance unit
-      const distanceUnit = this.getDistanceUnit();
+      const distanceUnit = this.getDistanceUnitSync();
       
       // Define the split distance in meters based on selected unit
       const splitDistance = distanceUnit === 'km' ? 1000 : 1609.344; // 1km or 1mile in meters
@@ -206,7 +237,7 @@ class RunTracker extends EventEmitter {
   async startTracking() {
     try {
       // We should have already requested permissions by this point
-      const permissionsGranted = localStorage.getItem('permissionsGranted') === 'true';
+      const permissionsGranted = await storage.getItem('permissionsGranted') === 'true';
       
       if (!permissionsGranted) {
         console.warn('Attempting to start tracking without permissions. This should not happen.');
@@ -232,9 +263,14 @@ class RunTracker extends EventEmitter {
           if (error) {
             if (error.code === 'NOT_AUTHORIZED') {
               // Permissions were revoked after being initially granted
-              localStorage.setItem('permissionsGranted', 'false');
-              alert('Location permission is required for tracking. Please enable it in your device settings.');
-              BackgroundGeolocation.openSettings();
+              storage.setItem('permissionsGranted', 'false')
+                .catch(err => console.error('Error updating permissions:', err));
+              
+              // Use platform-agnostic alert - this function should be handled by component
+              this.emit('permissionError', {
+                code: error.code,
+                message: 'Location permission is required for tracking.'
+              });
             }
             return console.error(error);
           }
@@ -264,8 +300,18 @@ class RunTracker extends EventEmitter {
   async start() {
     if (this.isTracking && !this.isPaused) return;
     
-    // Update activityType from localStorage in case it changed
-    this.activityType = localStorage.getItem('activityMode') || ACTIVITY_TYPES.RUN;
+    // Update activityType from storage in case it changed
+    try {
+      const activityMode = await storage.getItem('activityMode');
+      if (activityMode) {
+        this.activityType = activityMode;
+      } else {
+        this.activityType = ACTIVITY_TYPES.RUN;
+      }
+    } catch (error) {
+      console.error('Error getting activity mode:', error);
+      this.activityType = ACTIVITY_TYPES.RUN;
+    }
     
     this.isTracking = true;
     this.isPaused = false;
@@ -334,7 +380,9 @@ class RunTracker extends EventEmitter {
     
     // Calculate speed and pace one last time
     if (this.distance > 0 && this.duration > 0) {
-      this.pace = runDataService.calculatePace(this.distance, this.duration, this.getDistanceUnit());
+      // Get distance unit for final pace calculation
+      const distanceUnit = await this.getDistanceUnit();
+      this.pace = runDataService.calculatePace(this.distance, this.duration, distanceUnit);
     }
     
     // Create the final run data object
@@ -347,17 +395,17 @@ class RunTracker extends EventEmitter {
         gain: this.elevation.gain,
         loss: this.elevation.loss
       },
-      unit: this.getDistanceUnit(),
+      unit: await this.getDistanceUnit(),
       activityType: this.activityType
     };
     
-    // Save to run history using RunDataService instead of directly to localStorage
-    runDataService.saveRun(finalResults);
+    // Save to run history using RunDataService
+    await runDataService.saveRun(finalResults);
     
     // Clean up resources
-    this.stopTracking();
-    this.stopTimer();
-    this.stopPaceCalculator();
+    await this.cleanupWatchers(); // Stop tracking
+    clearInterval(this.timerInterval); // Stop the timer
+    clearInterval(this.paceInterval); // Stop the pace calculator
     
     // Emit status change and completed event
     this.emit('statusChange', { isTracking: false, isPaused: false });
@@ -367,7 +415,7 @@ class RunTracker extends EventEmitter {
   }
 
   // Restore an active tracking session that was not paused
-  restoreTracking(savedState) {
+  async restoreTracking(savedState) {
     // Set the base values from saved state
     this.distance = savedState.distance;
     this.duration = savedState.duration;
@@ -395,7 +443,7 @@ class RunTracker extends EventEmitter {
     this.lastPauseTime = 0;
     
     // Start the tracking services
-    this.startTracking();
+    await this.startTracking();
     this.startTimer();
     this.startPaceCalculator();
     

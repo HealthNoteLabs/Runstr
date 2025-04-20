@@ -10,6 +10,8 @@ import { SettingsProvider } from './contexts/SettingsContext';
 import { MenuBar } from './components/MenuBar';
 import DevTools from './components/DevTools';
 import { initializeNostr } from './utils/nostr';
+import { initMobileServices, setupAppEventListeners } from './services/MobileService';
+import { isNativePlatform } from './utils/platform';
 import './App.css';
 
 console.log("App.jsx is loading");
@@ -79,12 +81,20 @@ const AppRoutes = lazy(() =>
 
 const App = () => {
   const [hasError, setHasError] = useState(false);
-  const [showDevTools, setShowDevTools] = useState(process.env.NODE_ENV === 'development');
+  const [showDevTools, setShowDevTools] = useState(process.env.NODE_ENV === 'development' && !isNativePlatform);
   
-  // Initialize Nostr connection as soon as the app launches
+  // Initialize mobile services and Nostr as soon as the app launches
   useEffect(() => {
-    const preloadNostr = async () => {
+    const initializeApp = async () => {
       try {
+        // Initialize mobile services first
+        console.log('Initializing mobile services...');
+        await initMobileServices();
+        
+        // Set up app event listeners
+        const cleanupListeners = setupAppEventListeners();
+        
+        // Initialize Nostr
         console.log('Preloading Nostr connection on app launch');
         await initializeNostr();
         
@@ -98,23 +108,31 @@ const App = () => {
         } catch (error) {
           console.error('Error importing feed functions:', error);
         }
+        
+        return () => {
+          // Clean up event listeners
+          cleanupListeners();
+        };
       } catch (error) {
-        console.error('Error in preloadNostr:', error);
+        console.error('Error initializing app:', error);
+        setHasError(true);
       }
     };
     
-    preloadNostr();
+    initializeApp();
     
-    // Enable Dev Tools via keyboard shortcut Ctrl+Shift+D
-    const handleKeyDown = (e) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
-        e.preventDefault();
-        setShowDevTools(prev => !prev);
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    // Dev tools keyboard shortcut - only available in development mode and not on native mobile
+    if (process.env.NODE_ENV === 'development' && !isNativePlatform) {
+      const handleKeyDown = (e) => {
+        if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+          e.preventDefault();
+          setShowDevTools(prev => !prev);
+        }
+      };
+      
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
   }, []);
   
   // Global error handler

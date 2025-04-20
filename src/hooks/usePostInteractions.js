@@ -1,357 +1,175 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { createAndPublishEvent } from '../utils/nostr';
 
-export const usePostInteractions = ({
-  setPosts,
-  setUserLikes,
-  setUserReposts,
-  loadSupplementaryData,
-  loadedSupplementaryData,
-  defaultZapAmount
-}) => {
-  const [commentText, setCommentText] = useState('');
-  const [activeCommentPost, setActiveCommentPost] = useState(null);
-  const [commentImages, setCommentImages] = useState([]);
-
-  const handleCommentClick = useCallback((postId) => {
-    // Make sure we have post's comments loaded
-    if (!loadedSupplementaryData.has(postId)) {
-      loadSupplementaryData(postId);
-    }
-    
-    // Toggle comment visibility
-    setPosts(currentPosts => 
-      currentPosts.map(post => 
-        post.id === postId ? { ...post, showComments: !post.showComments } : post
-      )
-    );
-    
-    // Set this as the active post for commenting
-    setActiveCommentPost(postId);
-    
-    // Reset comment images if the active post changes
-    if (activeCommentPost !== postId) {
-      setCommentImages([]);
-    }
-  }, [loadSupplementaryData, loadedSupplementaryData, setPosts, activeCommentPost]);
-
-  const handleLike = useCallback(async (post) => {
-    if (!window.nostr) {
-      alert('Please login to like posts');
-      return;
-    }
-
-    try {
-      // Create like event (kind 7)
-      const likeEvent = {
-        kind: 7,
-        created_at: Math.floor(Date.now() / 1000),
-        content: '+',
-        tags: [
-          ['e', post.id],
-          ['p', post.author.pubkey]
-        ],
-        pubkey: await window.nostr.getPublicKey()
-      };
-
-      // Sign and publish
-      const signedEvent = await window.nostr.signEvent(likeEvent);
-      await createAndPublishEvent(signedEvent);
-
-      // Update UI optimistically
-      setUserLikes(prev => {
-        const newLikes = new Set(prev);
-        newLikes.add(post.id);
-        return newLikes;
-      });
-
-      setPosts(currentPosts => 
-        currentPosts.map(p => 
-          p.id === post.id ? { ...p, likes: p.likes + 1 } : p
-        )
-      );
-
-      console.log('Post liked successfully');
-    } catch (error) {
-      console.error('Error liking post:', error);
-      alert('Failed to like post: ' + error.message);
-    }
-  }, [setUserLikes, setPosts]);
-
-  const handleRepost = useCallback(async (post) => {
-    if (!window.nostr) {
-      alert('Please login to repost');
-      return;
-    }
-
-    try {
-      // Create repost event (kind 6)
-      const repostEvent = {
-        kind: 6,
-        created_at: Math.floor(Date.now() / 1000),
-        content: '',
-        tags: [
-          ['e', post.id, '', 'mention'],
-          ['p', post.author.pubkey]
-        ],
-        pubkey: await window.nostr.getPublicKey()
-      };
-
-      // Sign and publish
-      const signedEvent = await window.nostr.signEvent(repostEvent);
-      await createAndPublishEvent(signedEvent);
-
-      // Update UI optimistically
-      setUserReposts(prev => {
-        const newReposts = new Set(prev);
-        newReposts.add(post.id);
-        return newReposts;
-      });
-
-      setPosts(currentPosts => 
-        currentPosts.map(p => 
-          p.id === post.id ? { ...p, reposts: p.reposts + 1 } : p
-        )
-      );
-
-      console.log('Post reposted successfully');
-    } catch (error) {
-      console.error('Error reposting:', error);
-      alert('Failed to repost: ' + error.message);
-    }
-  }, [setUserReposts, setPosts]);
-
-  const handleZap = useCallback(async (post, wallet) => {
-    if (!window.nostr) {
-      alert('Please login to send zaps');
-      return;
-    }
-
-    if (!wallet) {
-      alert('Please connect a Bitcoin wallet to send zaps');
-      return;
-    }
-
-    try {
-      // Check if author has Lightning address
-      if (!post.author.lud16 && !post.author.lud06) {
-        alert('This user has not set up their Lightning address');
-        return;
-      }
-
-      // Create zap request
-      const zapEvent = {
-        kind: 9734, // Zap request
-        created_at: Math.floor(Date.now() / 1000),
-        content: 'Zap for your run! ⚡️',
-        tags: [
-          ['p', post.author.pubkey],
-          ['e', post.id],
-          ['amount', (defaultZapAmount * 1000).toString()], // millisats
-        ],
-        pubkey: await window.nostr.getPublicKey()
-      };
-      
-      // Sign the event
-      const signedEvent = await window.nostr.signEvent(zapEvent);
-      
-      // Parse Lightning address
-      let zapEndpoint;
-      const lnurl = post.author.lud16 || post.author.lud06;
-      
-      if (lnurl.includes('@')) {
-        // Handle Lightning address (lud16)
-        const [username, domain] = lnurl.split('@');
-        zapEndpoint = `https://${domain}/.well-known/lnurlp/${username}`;
-      } else {
-        // Handle raw LNURL (lud06)
-        zapEndpoint = lnurl;
-      }
-      
-      // Get LNURL-pay metadata
-      const response = await fetch(zapEndpoint);
-      const lnurlPayData = await response.json();
-      
-      if (!lnurlPayData.callback) {
-        throw new Error('Invalid LNURL-pay response');
-      }
-      
-      // Construct callback URL
-      const callbackUrl = new URL(lnurlPayData.callback);
-      callbackUrl.searchParams.append('amount', defaultZapAmount * 1000);
-      callbackUrl.searchParams.append('nostr', JSON.stringify(signedEvent));
-      
-      if (lnurlPayData.commentAllowed) {
-        callbackUrl.searchParams.append('comment', 'Zap for your run! ⚡️');
-      }
-      
-      // Get invoice
-      const invoiceResponse = await fetch(callbackUrl);
-      const invoiceData = await invoiceResponse.json();
-      
-      if (!invoiceData.pr) {
-        throw new Error('Invalid LNURL-pay response');
-      }
-      
-      // Pay invoice using wallet
-      await wallet.makePayment(invoiceData.pr);
-      
-      // Update UI optimistically
-      setPosts(currentPosts => 
-        currentPosts.map(p => {
-          if (p.id === post.id) {
-            return {
-              ...p,
-              zaps: (p.zaps || 0) + 1,
-              zapAmount: (p.zapAmount || 0) + defaultZapAmount
-            };
-          }
-          return p;
-        })
-      );
-      
-      alert('Zap sent successfully! ⚡️');
-    } catch (error) {
-      console.error('Error sending zap:', error);
-      alert('Failed to send zap: ' + error.message);
-    }
-  }, [defaultZapAmount, setPosts]);
+/**
+ * Hook for handling post interactions (likes, replies)
+ * @returns {Object} Functions and state for post interactions
+ */
+export const usePostInteractions = () => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   /**
-   * Convert image file to base64 string for posting
-   * @param {File} file - Image file to convert
-   * @returns {Promise<string>} Base64 encoded image
+   * Like a post by creating a reaction event
+   * @param {Object} event - Nostr event to like
+   * @returns {Promise<boolean>} Success status
    */
-  const fileToBase64 = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = (error) => reject(error);
-    });
+  const likePost = async (event) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Create a reaction event (kind 7)
+      const reactionEvent = {
+        kind: 7,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['e', event.id], // Reference to the original event
+          ['p', event.pubkey] // Reference to the author's pubkey
+        ],
+        content: '+' // Like reaction
+      };
+      
+      // Publish the reaction
+      await createAndPublishEvent(reactionEvent);
+      
+      // Show toast on Android if available
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Liked post!');
+      }
+      
+      return true;
+    } catch (err) {
+      console.error('Error liking post:', err);
+      setError(err);
+      
+      // Show error toast on Android if available
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Failed to like post: ' + err.message);
+      }
+      
+      return false;
+    } finally {
+      setLoading(false);
+    }
   };
 
   /**
-   * Handle adding an image to a comment
-   * @param {File} file - The selected image file
-   * @param {string} url - The object URL for the image preview
+   * Reply to a post
+   * @param {Object} event - Nostr event to reply to
+   * @param {string} content - Reply content
+   * @returns {Promise<Object|boolean>} Published event or false on failure
    */
-  const handleAddCommentImage = useCallback((file, url) => {
-    setCommentImages(prev => [...prev, { file, url }]);
-  }, []);
-
-  /**
-   * Handle removing an image from a comment
-   * @param {number} index - Index of the image to remove
-   */
-  const handleRemoveCommentImage = useCallback((index) => {
-    setCommentImages(prev => {
-      const newImages = [...prev];
-      // Release the object URL to prevent memory leaks
-      URL.revokeObjectURL(newImages[index].url);
-      newImages.splice(index, 1);
-      return newImages;
-    });
-  }, []);
-
-  const handleComment = useCallback(async (postId) => {
-    if ((!commentText.trim() && commentImages.length === 0) || !window.nostr) {
-      alert('Please login and enter a comment or add an image');
-      return;
+  const replyToPost = async (event, content) => {
+    if (!content || content.trim() === '') {
+      setError(new Error('Reply content cannot be empty'));
+      return false;
     }
-
+    
+    setLoading(true);
+    setError(null);
+    
     try {
-      // Process images if any
-      const imageTags = [];
-      
-      if (commentImages.length > 0) {
-        // Process each selected image
-        for (let i = 0; i < commentImages.length; i++) {
-          try {
-            // Convert image to base64
-            const base64Image = await fileToBase64(commentImages[i].file);
-            
-            // Add image tag
-            imageTags.push(['image', base64Image]);
-          } catch (error) {
-            console.error('Error processing image:', error);
-          }
-        }
-      }
-
-      // Create comment event with images
-      const commentEvent = {
+      // Create a reply event (kind 1 with e tag)
+      const replyEvent = {
         kind: 1,
         created_at: Math.floor(Date.now() / 1000),
-        content: commentText,
         tags: [
-          ['e', postId, '', 'reply'],
-          ['k', '1'],
-          ...imageTags
+          ['e', event.id, '', 'reply'], // Reference to the event we're replying to
+          ['p', event.pubkey] // Reference to the author's pubkey
         ],
-        pubkey: await window.nostr.getPublicKey()
+        content
       };
-
-      // Sign the event
-      const signedEvent = await window.nostr.signEvent(commentEvent);
-      await createAndPublishEvent(signedEvent);
-
-      // Create a simple profile for immediate UI update
-      const userProfile = { name: 'You' };
-
-      // Add comment to UI right away
-      setPosts(currentPosts =>
-        currentPosts.map(post => {
-          if (post.id === postId) {
-            return {
-              ...post,
-              comments: [
-                ...post.comments,
-                {
-                  id: signedEvent.id,
-                  content: commentText,
-                  created_at: Math.floor(Date.now() / 1000),
-                  author: {
-                    pubkey: signedEvent.pubkey,
-                    profile: userProfile
-                  },
-                  // Add images to the comment for display
-                  images: commentImages.length > 0 ? 
-                    commentImages.map(img => img.url) : 
-                    []
-                }
-              ]
-            };
-          }
-          return post;
-        })
-      );
-
-      // Clean up image URLs
-      commentImages.forEach(image => {
-        URL.revokeObjectURL(image.url);
-      });
-
-      // Clear comment text and images
-      setCommentText('');
-      setCommentImages([]);
-    } catch (error) {
-      console.error('Error posting comment:', error);
-      alert('Failed to post comment: ' + error.message);
+      
+      // Publish the reply
+      const publishedEvent = await createAndPublishEvent(replyEvent);
+      
+      // Show toast on Android if available
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Reply posted successfully!');
+      }
+      
+      return publishedEvent;
+    } catch (err) {
+      console.error('Error replying to post:', err);
+      setError(err);
+      
+      // Show error toast on Android if available
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Failed to post reply: ' + err.message);
+      }
+      
+      return false;
+    } finally {
+      setLoading(false);
     }
-  }, [commentText, setPosts, commentImages]);
+  };
+
+  /**
+   * Repost an event (boost)
+   * @param {Object} event - Nostr event to repost
+   * @param {string} comment - Optional comment to add
+   * @returns {Promise<Object|boolean>} Published event or false on failure
+   */
+  const repostEvent = async (event, comment = '') => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Create a repost event (kind 6 or kind 1 with e tag)
+      const hasComment = comment && comment.trim() !== '';
+      
+      // If there's a comment, use kind 1 with e tag
+      // Otherwise use kind 6 (repost)
+      const repostEvent = hasComment ? {
+        kind: 1, // Text note with reference
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['e', event.id], // Reference to the event we're reposting
+          ['p', event.pubkey], // Reference to the author's pubkey
+          ['k', event.kind.toString()] // Kind of the referenced event
+        ],
+        content: comment.trim()
+      } : {
+        kind: 6, // Repost
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['e', event.id], // Reference to the event we're reposting
+          ['p', event.pubkey], // Reference to the author's pubkey
+          ['k', event.kind.toString()] // Kind of the referenced event
+        ],
+        content: ''
+      };
+      
+      // Publish the repost
+      const publishedEvent = await createAndPublishEvent(repostEvent);
+      
+      // Show toast on Android if available
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Post boosted!');
+      }
+      
+      return publishedEvent;
+    } catch (err) {
+      console.error('Error reposting event:', err);
+      setError(err);
+      
+      // Show error toast on Android if available
+      if (window.Android && window.Android.showToast) {
+        window.Android.showToast('Failed to boost post: ' + err.message);
+      }
+      
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return {
-    commentText,
-    setCommentText,
-    commentImages,
-    handleAddCommentImage,
-    handleRemoveCommentImage,
-    handleCommentClick,
-    handleLike,
-    handleRepost,
-    handleZap,
-    handleComment,
-    activeCommentPost
+    likePost,
+    replyToPost,
+    repostEvent,
+    loading,
+    error
   };
 }; 

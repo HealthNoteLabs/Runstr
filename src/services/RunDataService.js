@@ -2,6 +2,7 @@
  * RunDataService.js
  * Centralized service for handling run data throughout the application
  */
+import * as storage from '../utils/storage';
 
 // Define activity types as constants for consistency across the app
 export const ACTIVITY_TYPES = {
@@ -18,12 +19,11 @@ class RunDataService {
 
   /**
    * Get all runs from storage
-   * @returns {Array} Array of run objects
+   * @returns {Promise<Array>} Array of run objects
    */
-  getAllRuns() {
+  async getAllRuns() {
     try {
-      const storedRuns = localStorage.getItem(this.storageKey);
-      return storedRuns ? JSON.parse(storedRuns) : [];
+      return await storage.getJSON(this.storageKey, []);
     } catch (error) {
       console.error('Error loading run data:', error);
       return [];
@@ -31,12 +31,26 @@ class RunDataService {
   }
 
   /**
+   * Get all runs synchronously (for immediate use)
+   * @returns {Array} Array of run objects
+   */
+  getAllRunsSync() {
+    try {
+      const storedRuns = storage.getItemSync(this.storageKey);
+      return storedRuns ? JSON.parse(storedRuns) : [];
+    } catch (error) {
+      console.error('Error loading run data synchronously:', error);
+      return [];
+    }
+  }
+
+  /**
    * Get runs filtered by activity type
    * @param {string} activityType - Type of activity (run, walk, cycle)
-   * @returns {Array} Filtered array of activities
+   * @returns {Promise<Array>} Filtered array of activities
    */
-  getRunsByActivityType(activityType) {
-    const allRuns = this.getAllRuns();
+  async getRunsByActivityType(activityType) {
+    const allRuns = await this.getAllRuns();
     
     // If no activity type filter is provided, return all runs
     if (!activityType) return allRuns;
@@ -50,11 +64,11 @@ class RunDataService {
   /**
    * Save a new run to storage
    * @param {Object} runData - Run data to save
-   * @returns {Object} The saved run with generated ID
+   * @returns {Promise<Object>} The saved run with generated ID
    */
-  saveRun(runData) {
+  async saveRun(runData) {
     try {
-      const runs = this.getAllRuns();
+      const runs = await this.getAllRuns();
       
       // Generate a unique ID if not provided
       const newRun = {
@@ -68,10 +82,16 @@ class RunDataService {
       
       // Add to beginning of array for most recent first
       const updatedRuns = [newRun, ...runs];
-      localStorage.setItem(this.storageKey, JSON.stringify(updatedRuns));
+      await storage.setJSON(this.storageKey, updatedRuns);
       
       // Notify listeners
       this.notifyListeners(updatedRuns);
+      
+      // Dispatch custom event
+      this.dispatchRunEvent('runCompleted', {
+        run: newRun,
+        runs: updatedRuns
+      });
       
       return newRun;
     } catch (error) {
@@ -84,21 +104,28 @@ class RunDataService {
    * Update an existing run
    * @param {string} runId - ID of the run to update
    * @param {Object} updatedData - New data to apply
-   * @returns {boolean} Success status
+   * @returns {Promise<boolean>} Success status
    */
-  updateRun(runId, updatedData) {
+  async updateRun(runId, updatedData) {
     try {
-      const runs = this.getAllRuns();
+      const runs = await this.getAllRuns();
       const index = runs.findIndex(run => run.id === runId);
       
       if (index === -1) return false;
       
       // Update the run
       runs[index] = { ...runs[index], ...updatedData };
-      localStorage.setItem(this.storageKey, JSON.stringify(runs));
+      await storage.setJSON(this.storageKey, runs);
       
       // Notify listeners
       this.notifyListeners(runs);
+      
+      // Dispatch custom event
+      this.dispatchRunEvent('runUpdated', {
+        runId,
+        run: runs[index],
+        runs
+      });
       
       return true;
     } catch (error) {
@@ -110,34 +137,41 @@ class RunDataService {
   /**
    * Delete a run
    * @param {string} runId - ID of the run to delete
-   * @returns {boolean} Success status
+   * @returns {Promise<boolean>} Success status
    */
-  deleteRun(runId) {
+  async deleteRun(runId) {
     try {
-      const runs = this.getAllRuns();
+      const runs = await this.getAllRuns();
       const updatedRuns = runs.filter(run => run.id !== runId);
       
       if (updatedRuns.length === runs.length) return false;
       
-      localStorage.setItem(this.storageKey, JSON.stringify(updatedRuns));
+      await storage.setJSON(this.storageKey, updatedRuns);
       
       // Notify listeners
       this.notifyListeners(updatedRuns);
       
-      // Dispatch a custom event for components that don't use the listener pattern
-      const event = new CustomEvent('runDeleted', { 
-        detail: { 
-          runId,
-          remainingRuns: updatedRuns
-        } 
+      // Dispatch custom event
+      this.dispatchRunEvent('runDeleted', {
+        runId,
+        remainingRuns: updatedRuns
       });
-      document.dispatchEvent(event);
       
       return true;
     } catch (error) {
       console.error('Error deleting run:', error);
       return false;
     }
+  }
+
+  /**
+   * Dispatch a custom event for run data changes
+   * @param {string} eventName - Name of the event
+   * @param {Object} detail - Event details
+   */
+  dispatchRunEvent(eventName, detail) {
+    const event = new CustomEvent(eventName, { detail });
+    document.dispatchEvent(event);
   }
 
   /**

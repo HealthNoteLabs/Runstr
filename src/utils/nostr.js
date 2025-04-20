@@ -1,23 +1,21 @@
+import { SimplePool, nip19, generatePrivateKey, getPublicKey, getEventHash, signEvent } from 'nostr-tools';
 import NDK, { NDKEvent } from '@nostr-dev-kit/ndk';
 import { Platform } from '../utils/react-native-shim';
 import AmberAuth from '../services/AmberAuth';
 // Import nostr-tools implementation for fallback
 import { createAndPublishEvent as publishWithNostrTools } from './nostrClient';
 
-// Optimized relay list based on testing results
+// Initialize relay pool
+const pool = new SimplePool();
+
+// List of relays to connect to
 export const RELAYS = [
-  'wss://relay.damus.io',    // Most reliable for running content
-  'wss://nos.lol',           // Good secondary option  // Has unique running content
-  'wss://nostr.wine',        // Additional reliable relay
-  'wss://eden.nostr.land',   // Additional reliable relay
-  'wss://e.nos.lol',         // Additional reliable relay
-  'wss://relay.snort.social', // Backup relay
-  'wss://feeds.nostr.band/running',
-  'wss://feeds.nostr.band/popular',
-  'wss://feeds.nostr.band/memes',
-  'wss://purplerelay.com',
-  'wss://nostr.bitcoiner.social',
-  'wss://relay.0xchat.com',  // NIP-29 group support for running clubs
+  'wss://relay.damus.io',
+  'wss://relay.nostr.band',
+  'wss://nostr-pub.wellorder.net',
+  'wss://relay.current.fyi',
+  'wss://nos.lol',
+  'wss://relay.snort.social'
 ];
 
 // Create a new NDK instance with optimized relay configuration
@@ -96,27 +94,18 @@ export const ensureConnection = async () => {
 };
 
 /**
- * Fetch events from Nostr
+ * Fetch events from Nostr network
  * @param {Object} filter - Nostr filter
- * @returns {Promise<Set>} Set of events
+ * @param {number} limit - Maximum number of events to fetch
+ * @returns {Promise<Array>} - Array of events
  */
-export const fetchEvents = async (filter) => {
+export const fetchEvents = async (filter, limit = 50) => {
   try {
-    // Log what we're fetching - helpful for debugging
-    console.log('Fetching events with filter:', filter);
-    
-    // Set safe defaults
-    if (!filter.limit) {
-      filter.limit = 30;
-    }
-    
-    // Fetch events using NDK
-    const events = await ndk.fetchEvents(filter);
-    console.log(`Fetched ${events.size} events for filter:`, filter);
+    const events = await pool.list(RELAYS, [{ ...filter, limit }]);
     return events;
   } catch (error) {
     console.error('Error fetching events:', error);
-    return new Set();
+    throw error;
   }
 };
 
@@ -450,151 +439,64 @@ export const processPostsWithData = async (posts, supplementaryData) => {
 };
 
 /**
- * Helper function to publish an NDK event with retries
- * @param {NDKEvent} ndkEvent - The NDK event to publish
- * @param {number} maxRetries - Maximum number of retry attempts
- * @param {number} delay - Delay between retries in ms
- * @returns {Promise<{success: boolean, error: string|null}>} Result of publish attempt
+ * Create and publish an event to Nostr network
+ * @param {Object} eventTemplate - Event template with kind, content, tags
+ * @returns {Promise<Object>} - The published event
  */
-const publishWithRetry = async (ndkEvent, maxRetries = 3, delay = 2000) => {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      console.log(`Publishing to NDK relays - attempt ${attempt}/${maxRetries}...`);
-      
-      // Ensure we're connected before publishing
-      await ensureConnection();
-      
-      // Publish the event
-      await ndkEvent.publish();
-      console.log('Successfully published with NDK');
-      return { success: true, error: null };
-    } catch (error) {
-      console.error(`NDK publish attempt ${attempt} failed:`, error);
-      if (attempt < maxRetries) {
-        console.log(`Waiting ${delay/1000}s before retry...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-  }
-  return { success: false, error: 'Failed to publish with NDK after all retry attempts' };
-};
-
-/**
- * Create and publish an event to the nostr network
- * Uses NDK with fallback to nostr-tools for reliable posting
- * @param {Object} eventTemplate - Event template 
- * @param {string|null} pubkeyOverride - Override for pubkey (optional)
- * @returns {Promise<Object>} Published event
- */
-export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null) => {
+export const createAndPublishEvent = async (eventTemplate) => {
   try {
-    // Get publishing strategy metadata to return to caller
-    const publishResult = {
-      success: false,
-      method: null,
-      signMethod: null,
-      error: null
-    };
-
-    let pubkey = pubkeyOverride;
-    let signedEvent;
-    
-    // Use platform-specific signing
-    if (Platform.OS === 'android') {
-      // Check if Amber is available
-      const isAmberAvailable = await AmberAuth.isAmberInstalled();
+    // Check if running in Android environment with window.Android
+    if (window.Android && window.Android.getNostrPrivateKey) {
+      // Get private key from Android
+      const privateKey = window.Android.getNostrPrivateKey();
+      const pubkey = getPublicKey(privateKey);
       
-      if (isAmberAvailable) {
-        // For Android with Amber, we use Amber for signing
-        if (!pubkey) {
-          // If no pubkey provided, we need to get it first
-          pubkey = localStorage.getItem('userPublicKey');
-          
-          if (!pubkey) {
-            throw new Error('No public key available. Please log in first.');
-          }
-        }
-        
-        // Create the event with user's pubkey
-        const event = {
-          ...eventTemplate,
-          pubkey,
-          created_at: Math.floor(Date.now() / 1000)
-        };
-        
-        // Sign using Amber
-        signedEvent = await AmberAuth.signEvent(event);
-        publishResult.signMethod = 'amber';
-        
-        // If signedEvent is null, the signing is happening asynchronously
-        // and we'll need to handle it via deep linking
-        if (!signedEvent) {
-          // In a real implementation, you would return a Promise that
-          // resolves when the deep link callback is received
-          return null;
-        }
-      }
-    }
-    
-    // For web or if Amber is not available/failed, use window.nostr
-    if (!signedEvent) {
-      if (!window.nostr) {
-        throw new Error('No signing method available');
-      }
-      
-      // Get the public key from nostr extension if not provided
-      if (!pubkey) {
-        pubkey = await window.nostr.getPublicKey();
-      }
-      
-      // Create the event with user's pubkey
+      // Create a complete event
       const event = {
         ...eventTemplate,
         pubkey,
-        created_at: Math.floor(Date.now() / 1000)
+        id: '',
+        sig: ''
       };
       
-      // Sign the event using the browser extension
-      signedEvent = await window.nostr.signEvent(event);
-      publishResult.signMethod = 'extension';
-    }
-    
-    // APPROACH 1: Try NDK first
-    try {
-      // Make sure we're connected before attempting to publish
-      await ensureConnection();
+      // Calculate event hash
+      event.id = getEventHash(event);
       
-      // Create NDK Event and publish with retry
-      const ndkEvent = new NDKEvent(ndk, signedEvent);
-      const ndkResult = await publishWithRetry(ndkEvent);
+      // Sign the event
+      event.sig = signEvent(event, privateKey);
       
-      if (ndkResult.success) {
-        publishResult.success = true;
-        publishResult.method = 'ndk';
-        return { ...signedEvent, ...publishResult };
+      // Publish the event
+      await pool.publish(RELAYS, event);
+      return event;
+    } else {
+      // Use NIP-07 browser extension if available
+      if (window.nostr) {
+        // Get public key from extension
+        const pubkey = await window.nostr.getPublicKey();
+        
+        // Create a complete event
+        const event = {
+          ...eventTemplate,
+          pubkey,
+          id: '',
+          sig: ''
+        };
+        
+        // Calculate event hash
+        event.id = getEventHash(event);
+        
+        // Sign with extension
+        const signedEvent = await window.nostr.signEvent(event);
+        
+        // Publish the event
+        await pool.publish(RELAYS, signedEvent);
+        return signedEvent;
+      } else {
+        throw new Error('No Nostr signing method available');
       }
-    } catch (ndkError) {
-      console.error('Error in NDK publishing:', ndkError);
-      // Continue to fallback
     }
-    
-    // APPROACH 2: Fallback to nostr-tools if NDK failed
-    console.log('NDK publishing failed, falling back to nostr-tools...');
-    try {
-      // Use nostr-tools as fallback
-      await publishWithNostrTools(signedEvent);
-      publishResult.success = true;
-      publishResult.method = 'nostr-tools';
-      console.log('Successfully published with nostr-tools fallback');
-    } catch (fallbackError) {
-      console.error('Fallback to nostr-tools also failed:', fallbackError);
-      publishResult.error = fallbackError.message;
-      throw new Error(`Failed to publish with both NDK and nostr-tools: ${fallbackError.message}`);
-    }
-    
-    return { ...signedEvent, ...publishResult };
   } catch (error) {
-    console.error('Error in createAndPublishEvent:', error);
+    console.error('Error publishing to Nostr:', error);
     throw error;
   }
 };
@@ -635,6 +537,7 @@ export const handleAppBackground = () => {
     sub.close();
   }
   activeSubscriptions.clear();
+  pool.close(RELAYS);
 };
 
 /**
@@ -860,13 +763,7 @@ export const testRelayConnections = async () => {
  * @returns {number} Number of connected relays
  */
 export const getConnectedRelaysCount = () => {
-  if (!ndk || !ndk.pool || !ndk.pool.relays) {
-    return 0;
-  }
-  
-  return Array.from(ndk.pool.relays)
-    .filter(relay => relay.status === 1)
-    .length;
+  return pool.getConnectedRelayCount();
 };
 
 export { ndk };

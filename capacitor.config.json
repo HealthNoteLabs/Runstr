@@ -11,7 +11,18 @@
       "debug": true,
       "stopOnTerminate": false,
       "startForeground": true
-    }
+    },
+    "App": {
+      "backgroundColor": "#000000"
+    },
+    "Preferences": {},
+    "Network": {},
+    "Haptics": {},
+    "Toast": {
+      "duration": "short",
+      "style": "center"
+    },
+    "Dialog": {}
   },
   "android": {
     "useLegacyBridge": true

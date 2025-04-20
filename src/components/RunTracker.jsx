@@ -9,6 +9,9 @@ import { createAndPublishEvent, createWorkoutEvent } from '../utils/nostr';
 import SplitsTable from './SplitsTable';
 import DashboardRunCard from './DashboardRunCard';
 import ImagePicker from './ImagePicker';
+import { useMobileStorage } from '../contexts/MobileStorageContext';
+import { vibrate, showToast, showDialog } from '../utils/platform';
+import './RunTracker.css';
 
 export const RunTracker = () => {
   const { 
@@ -27,6 +30,7 @@ export const RunTracker = () => {
 
   const { getActivityText } = useActivityMode();
   const { distanceUnit } = useSettings();
+  const storage = useMobileStorage();
 
   const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const [isCountingDown, setIsCountingDown] = useState(false);
@@ -43,23 +47,22 @@ export const RunTracker = () => {
 
   // Load the most recent run
   useEffect(() => {
-    const loadRecentRun = () => {
-      const storedRuns = localStorage.getItem('runHistory');
-      if (storedRuns) {
-        try {
-          const parsedRuns = JSON.parse(storedRuns);
-          if (parsedRuns.length > 0) {
-            // Sort runs by date (most recent first)
-            const sortedRuns = [...parsedRuns].sort((a, b) => new Date(b.date) - new Date(a.date));
-            setRecentRun(sortedRuns[0]);
-          }
-        } catch (error) {
-          console.error('Error loading recent run:', error);
+    const loadRecentRun = async () => {
+      try {
+        const storedRuns = await storage.getJSON('runHistory', []);
+        if (storedRuns.length > 0) {
+          // Sort runs by date (most recent first)
+          const sortedRuns = [...storedRuns].sort((a, b) => new Date(b.date) - new Date(a.date));
+          setRecentRun(sortedRuns[0]);
         }
+      } catch (error) {
+        console.error('Error loading recent run:', error);
       }
     };
     
-    loadRecentRun();
+    if (storage.isReady) {
+      loadRecentRun();
+    }
     
     // Listen for run completed events
     const handleRunCompleted = () => {
@@ -72,11 +75,15 @@ export const RunTracker = () => {
     return () => {
       document.removeEventListener('runCompleted', handleRunCompleted);
     };
-  }, []);
+  }, [storage.isReady, storage]);
 
   // Handle posting to Nostr
   const handlePostToNostr = () => {
     if (!recentRun) return;
+    
+    // Provide haptic feedback when opening post dialog
+    vibrate('light');
+    
     setAdditionalContent('');
     setSelectedImages([]);
     setShowPostModal(true);
@@ -90,6 +97,7 @@ export const RunTracker = () => {
   const handleImageSelected = (file, url) => {
     // Add new image to the selectedImages array
     setSelectedImages(prev => [...prev, { file, url }]);
+    vibrate('light'); // Haptic feedback for image selection
   };
 
   /**
@@ -104,6 +112,7 @@ export const RunTracker = () => {
       newImages.splice(index, 1);
       return newImages;
     });
+    vibrate('light'); // Haptic feedback for image removal
   };
 
   /**
@@ -194,20 +203,19 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       setAdditionalContent('');
       setSelectedImages([]);
       
-      // Show success message
-      if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Successfully posted to Nostr!');
-      } else {
-        alert('Successfully posted to Nostr!');
-      }
+      // Provide success haptic feedback
+      vibrate('success');
+      
+      // Show success toast
+      showToast('Successfully posted to Nostr!');
     } catch (error) {
       console.error('Error posting to Nostr:', error);
       
-      if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Failed to post to Nostr: ' + error.message);
-      } else {
-        alert('Failed to post to Nostr: ' + error.message);
-      }
+      // Provide error haptic feedback
+      vibrate('error');
+      
+      // Show error toast
+      showToast('Failed to post to Nostr: ' + error.message, 'long');
     } finally {
       setIsPosting(false);
       setShowPostModal(false);
@@ -216,38 +224,71 @@ ${additionalContent ? `\n${additionalContent}` : ''}
 
   // Check if permissions have been granted on component mount
   useEffect(() => {
-    const permissionsGranted = localStorage.getItem('permissionsGranted') === 'true';
+    const checkPermissions = async () => {
+      try {
+        const permissionsGranted = await storage.getItem('permissionsGranted') === 'true';
+        
+        // If this is the first time the user opens the app, show the permission dialog
+        if (!permissionsGranted) {
+          setShowPermissionDialog(true);
+        }
+      } catch (error) {
+        console.error('Error checking permissions:', error);
+        // Default to showing the permission dialog on error
+        setShowPermissionDialog(true);
+      }
+    };
     
-    // If this is the first time the user opens the app, show the permission dialog
-    if (!permissionsGranted) {
-      setShowPermissionDialog(true);
+    if (storage.isReady) {
+      checkPermissions();
     }
-  }, []);
+  }, [storage.isReady, storage]);
 
-  const initiateRun = () => {
+  const initiateRun = async () => {
     // Check if the user has already granted permissions
-    const permissionsGranted = localStorage.getItem('permissionsGranted');
-    
-    if (permissionsGranted === 'true') {
-      // If permissions already granted, start the countdown
-      startCountdown('start');
-    } else {
-      // If permissions haven't been granted yet, show a message
-      alert('Location permission is required for tracking. Please restart the app to grant permissions.');
-      // Set the flag to show permission dialog next time the app starts
-      localStorage.removeItem('permissionsGranted');
+    try {
+      const permissionsGranted = await storage.getItem('permissionsGranted');
+      
+      if (permissionsGranted === 'true') {
+        // If permissions already granted, start the countdown
+        // Provide haptic feedback when initiating run
+        vibrate('medium');
+        startCountdown('start');
+      } else {
+        // If permissions haven't been granted yet, show a message
+        await showDialog({
+          title: 'Permission Required',
+          message: 'Location permission is required for tracking. Please restart the app to grant permissions.',
+          buttonLabels: ['OK']
+        });
+        
+        // Reset permission flag
+        await storage.removeItem('permissionsGranted');
+      }
+    } catch (error) {
+      console.error('Error checking permissions:', error);
+      showToast('Error checking permissions', 'short');
     }
   };
 
-  const handlePermissionContinue = () => {
+  const handlePermissionContinue = async () => {
     // User has acknowledged the permission requirements
-    localStorage.setItem('permissionsGranted', 'true');
-    setShowPermissionDialog(false);
+    try {
+      await storage.setItem('permissionsGranted', 'true');
+      setShowPermissionDialog(false);
+      // Provide acknowledgment haptic feedback
+      vibrate('success');
+    } catch (error) {
+      console.error('Error saving permissions:', error);
+      showToast('Error saving permissions', 'short');
+    }
   };
 
   const handlePermissionCancel = () => {
     // User declined to proceed
     setShowPermissionDialog(false);
+    // Provide cancellation haptic feedback
+    vibrate('error');
   };
 
   const startCountdown = (type) => {
@@ -255,8 +296,16 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     setIsCountingDown(true);
     setCountdown(5);
     
+    // Initial countdown haptic feedback
+    vibrate('medium');
+    
     const countdownInterval = setInterval(() => {
       setCountdown((prevCount) => {
+        // Haptic feedback for each second
+        if (prevCount > 0) {
+          vibrate('light');
+        }
+        
         if (prevCount <= 1) {
           clearInterval(countdownInterval);
           
@@ -267,8 +316,10 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             // Execute the appropriate action after countdown finishes
             if (type === 'start') {
               startRun();
+              vibrate('success'); // Stronger feedback when run starts
             } else if (type === 'stop') {
               stopRun();
+              vibrate('heavy'); // Strong feedback when run stops
             }
           }, 200);
           
@@ -285,21 +336,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     distanceUnit
   );
   
-  // Helper function to determine time of day based on timestamp
-  const getTimeOfDay = (timestamp) => {
-    if (!timestamp) {
-      // For runs without timestamp, use a generic name
-      return "Regular";
-    }
-    
-    const hours = new Date(timestamp).getHours();
-    
-    if (hours >= 5 && hours < 12) return "Morning";
-    if (hours >= 12 && hours < 17) return "Afternoon";
-    if (hours >= 17 && hours < 21) return "Evening";
-    return "Night";
-  };
-
   // Helper function to format the run date in a user-friendly way
   const formatRunDate = (dateString) => {
     if (!dateString) return "Unknown date";
@@ -340,20 +376,19 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       // Update UI to show success
       setWorkoutSaved(true);
       
-      // Show success message
-      if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Workout record saved to Nostr!');
-      } else {
-        alert('Workout record saved to Nostr!');
-      }
+      // Provide success haptic feedback
+      vibrate('success');
+      
+      // Show success toast
+      showToast('Workout record saved to Nostr!');
     } catch (error) {
       console.error('Error saving workout record:', error);
       
-      if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Failed to save workout record: ' + error.message);
-      } else {
-        alert('Failed to save workout record: ' + error.message);
-      }
+      // Provide error haptic feedback
+      vibrate('error');
+      
+      // Show error toast
+      showToast('Failed to save workout record: ' + error.message, 'long');
     } finally {
       setIsSavingWorkout(false);
     }
@@ -363,27 +398,34 @@ ${additionalContent ? `\n${additionalContent}` : ''}
   const handleDeleteRun = async () => {
     if (!recentRun) return;
     
-    const confirmDelete = window.confirm("Are you sure you want to delete this run? This action cannot be undone.");
-    if (!confirmDelete) return;
-    
-    setIsDeleting(true);
-    
     try {
+      const confirmDeleteResult = await showDialog({
+        title: 'Confirm Delete',
+        message: 'Are you sure you want to delete this run? This action cannot be undone.',
+        buttonLabels: ['Delete', 'Cancel']
+      });
+      
+      if (confirmDeleteResult !== 0) {
+        // User cancelled the delete operation
+        return;
+      }
+      
+      setIsDeleting(true);
+      
       // Get current run history
-      const runHistory = JSON.parse(localStorage.getItem('runHistory') || '[]');
+      const runHistory = await storage.getJSON('runHistory', []);
       
       // Filter out the run to delete
       const updatedRunHistory = runHistory.filter(run => run.id !== recentRun.id);
       
-      // Save updated history back to localStorage
-      localStorage.setItem('runHistory', JSON.stringify(updatedRunHistory));
+      // Save updated history back to storage
+      await storage.setJSON('runHistory', updatedRunHistory);
+      
+      // Provide haptic feedback for successful deletion
+      vibrate('warning');
       
       // Show success message
-      if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Run deleted successfully');
-      } else {
-        alert('Run deleted successfully');
-      }
+      showToast('Run deleted successfully');
       
       // If there are other runs, load the next most recent run
       if (updatedRunHistory.length > 0) {
@@ -395,99 +437,95 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       }
     } catch (error) {
       console.error('Error deleting run:', error);
-      
-      if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Failed to delete run: ' + error.message);
-      } else {
-        alert('Failed to delete run: ' + error.message);
-      }
+      vibrate('error');
+      showToast('Failed to delete run: ' + error.message, 'long');
     } finally {
       setIsDeleting(false);
     }
   };
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#111827] text-white relative">
+    <div className="run-tracker-container">
       {/* Title Banner */}
-      <div className="bg-gradient-to-r from-indigo-800 to-purple-800 p-4 mb-6 text-center">
-        <h2 className="text-2xl font-bold text-white">{getActivityText('header')}</h2>
+      <div className="title-banner">
+        <h2 className="title-text">{getActivityText('header')}</h2>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 gap-3 p-4">
+      <div className="stats-grid">
         {/* Distance Card */}
-        <div className="bg-gradient-to-br from-[#111827] to-[#1a222e] p-4 rounded-xl shadow-lg flex flex-col">
-          <div className="flex items-center mb-2">
-            <div className="w-7 h-7 rounded-full bg-[#10B981]/20 flex items-center justify-center mr-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#10B981]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="stat-card">
+          <div className="stat-header">
+            <div className="stat-icon-container distance-icon-container">
+              <svg xmlns="http://www.w3.org/2000/svg" className="distance-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </div>
-            <span className="text-sm text-gray-400">Distance</span>
+            <span className="stat-label">Distance</span>
           </div>
-          <div className="text-3xl font-bold">{convertDistance(distance, distanceUnit)}</div>
-          <div className="text-sm text-gray-400">{distanceUnit}</div>
+          <div className="stat-value">{convertDistance(distance, distanceUnit)}</div>
+          <div className="stat-unit">{distanceUnit}</div>
         </div>
 
         {/* Time Card */}
-        <div className="bg-gradient-to-br from-[#111827] to-[#1a222e] p-4 rounded-xl shadow-lg flex flex-col">
-          <div className="flex items-center mb-2">
-            <div className="w-7 h-7 rounded-full bg-[#3B82F6]/20 flex items-center justify-center mr-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#3B82F6]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="stat-card">
+          <div className="stat-header">
+            <div className="stat-icon-container time-icon-container">
+              <svg xmlns="http://www.w3.org/2000/svg" className="time-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <span className="text-sm text-gray-400">Time</span>
+            <span className="stat-label">Time</span>
           </div>
-          <div className="text-3xl font-bold">{runDataService.formatTime(duration)}</div>
+          <div className="stat-value">{runDataService.formatTime(duration)}</div>
         </div>
 
         {/* Pace Card */}
-        <div className="bg-gradient-to-br from-[#111827] to-[#1a222e] p-4 rounded-xl shadow-lg flex flex-col">
-          <div className="flex items-center mb-2">
-            <div className="w-7 h-7 rounded-full bg-[#F59E0B]/20 flex items-center justify-center mr-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#F59E0B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="stat-card">
+          <div className="stat-header">
+            <div className="stat-icon-container pace-icon-container">
+              <svg xmlns="http://www.w3.org/2000/svg" className="pace-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
               </svg>
             </div>
-            <span className="text-sm text-gray-400">Pace</span>
+            <span className="stat-label">Pace</span>
           </div>
-          <div className="text-3xl font-bold">{formattedPace.split(' ')[0]}</div>
-          <div className="text-sm text-gray-400">{formattedPace.split(' ')[1]}</div>
+          <div className="stat-value">{formattedPace.split(' ')[0]}</div>
+          <div className="stat-unit">{formattedPace.split(' ')[1]}</div>
         </div>
 
         {/* Elevation Card */}
-        <div className="bg-gradient-to-br from-[#111827] to-[#1a222e] p-4 rounded-xl shadow-lg flex flex-col">
-          <div className="flex items-center mb-2">
-            <div className="w-7 h-7 rounded-full bg-[#F97316]/20 flex items-center justify-center mr-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#F97316]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="stat-card">
+          <div className="stat-header">
+            <div className="stat-icon-container elevation-icon-container">
+              <svg xmlns="http://www.w3.org/2000/svg" className="elevation-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
               </svg>
             </div>
-            <span className="text-sm text-gray-400">Elevation</span>
+            <span className="stat-label">Elevation</span>
           </div>
-          <div className="text-3xl font-bold">{elevation ? formatElevation(elevation.gain, distanceUnit) : '0'}</div>
-          <div className="text-sm text-gray-400">{distanceUnit === 'mi' ? 'ft' : 'm'}</div>
+          <div className="stat-value">{elevation ? formatElevation(elevation.gain, distanceUnit) : '0'}</div>
+          <div className="stat-unit">{distanceUnit === 'mi' ? 'ft' : 'm'}</div>
         </div>
       </div>
       
       {/* Splits Table - Show only when tracking and splits exist */}
       {isTracking && splits && splits.length > 0 && (
-        <div className="bg-[#1a222e] rounded-xl shadow-lg mt-2 mx-4 p-4 overflow-hidden">
-          <div className="flex items-center mb-2">
-            <div className="w-6 h-6 rounded-full bg-[#8B5CF6]/20 flex items-center justify-center mr-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-[#8B5CF6]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="splits-container">
+          <div className="splits-header">
+            <div className="splits-icon-container">
+              <svg xmlns="http://www.w3.org/2000/svg" className="splits-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             </div>
-            <span className="text-sm font-medium text-gray-300">Split Times</span>
+            <span className="splits-label">Split Times</span>
           </div>
-          <div className="mt-2">
+          <div>
             <SplitsTable splits={splits} distanceUnit={distanceUnit} />
           </div>
           {splits.length > 5 && (
-            <p className="text-xs text-gray-400 text-center mt-2">
+            <p className="splits-help-text">
               Swipe to see more splits if needed
             </p>
           )}
@@ -497,34 +535,36 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       {/* Start Activity Button */}
       {!isTracking ? (
         <button 
-          className="mx-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 px-6 rounded-xl shadow-lg flex items-center justify-center text-lg font-semibold my-4"
+          className="control-button"
           onClick={initiateRun}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          {getActivityText('start')}
+          Start {getActivityText()}
         </button>
       ) : (
-        <div className="flex justify-between px-4 my-4">
+        <div>
           {isPaused ? (
             <button 
-              className="bg-green-600 text-white py-3 px-6 rounded-xl shadow-lg flex-1 mr-2 font-semibold"
-              onClick={resumeRun}
+              className="control-button"
+              onClick={() => {
+                resumeRun();
+                vibrate('medium');
+              }}
             >
               Resume
             </button>
           ) : (
             <button 
-              className="bg-yellow-600 text-white py-3 px-6 rounded-xl shadow-lg flex-1 mr-2 font-semibold"
-              onClick={pauseRun}
+              className="control-button"
+              onClick={() => {
+                pauseRun();
+                vibrate('medium');
+              }}
             >
               Pause
             </button>
           )}
           <button 
-            className="bg-red-600 text-white py-3 px-6 rounded-xl shadow-lg flex-1 ml-2 font-semibold"
+            className="control-button"
             onClick={() => startCountdown('stop')}
           >
             Stop
@@ -532,97 +572,86 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         </div>
       )}
       
-      {/* Recent Activities Section with New DashboardRunCard */}
-      {!isTracking && recentRun && (
-        <div className="mt-6 mx-4">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-lg font-semibold">{getActivityText('recent')}</h3>
-            <span className="text-xs text-gray-400">See All</span>
-          </div>
-          
-          <DashboardRunCard
-            run={{
-              ...recentRun,
-              title: recentRun.title || `${getTimeOfDay(recentRun.timestamp)} ${recentRun.activityType === 'walk' ? 'Walk' : recentRun.activityType === 'cycle' ? 'Cycle' : 'Run'}`,
-              date: formatRunDate(recentRun.date)
-            }}
-            formatTime={runDataService.formatTime}
-            displayDistance={displayDistance}
-            distanceUnit={distanceUnit}
-            onShare={handlePostToNostr}
-            onSave={handleSaveWorkoutRecord}
-            onDelete={handleDeleteRun}
-            isSaving={isSavingWorkout}
-            isWorkoutSaved={workoutSaved}
-            isDeleting={isDeleting}
-          />
-        </div>
+      {/* Recent Run Card */}
+      {recentRun && !isTracking && (
+        <DashboardRunCard 
+          run={recentRun} 
+          distanceUnit={distanceUnit} 
+          onDelete={handleDeleteRun}
+          onShare={handlePostToNostr}
+          isDeleting={isDeleting}
+          onSaveWorkout={handleSaveWorkoutRecord}
+          isSavingWorkout={isSavingWorkout}
+          workoutSaved={workoutSaved}
+        />
       )}
-      
-      {/* Display permission dialog if needed */}
+
+      {/* Permission Dialog */}
       {showPermissionDialog && (
-        <PermissionDialog
+        <PermissionDialog 
           onContinue={handlePermissionContinue}
           onCancel={handlePermissionCancel}
         />
       )}
       
-      {/* Countdown overlay */}
-      {isCountingDown && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="flex flex-col items-center">
-            <div className="text-6xl font-bold mb-4">{countdown}</div>
-            <div className="text-xl">
-              {countdownType === 'start' ? 'Starting run...' : 'Stopping run...'}
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Post to Nostr modal */}
+      {/* Post to Nostr Modal */}
       {showPostModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="bg-[#1a222e] rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-xl font-semibold mb-4">Post Run to Nostr</h3>
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Share Your Run</h3>
             
-            {/* Add ImagePicker component */}
-            <ImagePicker
-              onImageSelected={handleImageSelected}
-              onImageRemoved={handleImageRemoved}
-              selectedImages={selectedImages}
-              maxImages={3}
-            />
+            <div>
+              <p>
+                <strong>Date:</strong> {formatRunDate(recentRun.date)}<br />
+                <strong>Duration:</strong> {runDataService.formatTime(recentRun.duration)}<br />
+                <strong>Distance:</strong> {displayDistance(recentRun.distance, distanceUnit)}<br />
+                <strong>Pace:</strong> {formatPaceWithUnit(recentRun.pace, distanceUnit)}
+              </p>
+            </div>
             
             <textarea
               value={additionalContent}
               onChange={(e) => setAdditionalContent(e.target.value)}
-              placeholder="Add any additional comments or hashtags..."
+              placeholder="Add a comment about your run..."
               rows={4}
-              className="w-full bg-[#111827] border border-gray-700 rounded-lg p-3 mb-4 text-white"
               disabled={isPosting}
             />
-            <div className="flex justify-end space-x-3">
-              <button 
-                onClick={() => {
-                  setShowPostModal(false);
-                  // Clean up image URLs to prevent memory leaks
-                  selectedImages.forEach(image => {
-                    URL.revokeObjectURL(image.url);
-                  });
-                  setSelectedImages([]);
-                }} 
-                disabled={isPosting}
-                className="px-4 py-2 rounded-lg border border-gray-600 text-gray-300"
-              >
+            
+            {/* Image Selection */}
+            <ImagePicker
+              images={selectedImages}
+              onImageSelected={handleImageSelected}
+              onImageRemoved={handleImageRemoved}
+              disabled={isPosting}
+              maxImages={4}
+            />
+            
+            <div className="modal-buttons">
+              <button onClick={() => {
+                setShowPostModal(false);
+                vibrate('light');
+              }} disabled={isPosting}>
                 Cancel
               </button>
               <button 
                 onClick={handlePostSubmit} 
                 disabled={isPosting}
-                className="px-4 py-2 rounded-lg bg-indigo-600 text-white"
+                className="post-nostr-btn"
               >
-                {isPosting ? 'Posting...' : 'Post'}
+                {isPosting ? 'Posting...' : 'Post to Nostr'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Countdown Overlay */}
+      {isCountingDown && (
+        <div className="countdown-overlay">
+          <div className="countdown-container">
+            <div className="countdown-number">{countdown}</div>
+            <div className="countdown-text">
+              {countdownType === 'start' ? 'Starting Soon' : 'Finishing Soon'}
             </div>
           </div>
         </div>

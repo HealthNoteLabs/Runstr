@@ -4,9 +4,12 @@ import {
   fetchRunningPosts, 
   loadSupplementaryData, 
   processPostsWithData,
-  searchRunningContent
+  searchRunningContent,
+  fetchEvents,
+  subscribeToEvents
 } from '../utils/nostr';
 import { NostrContext } from '../contexts/NostrContext';
+import { RUNNING_FOCUSED_RELAYS } from '../config/relays';
 
 // Global state for caching posts across component instances
 const globalState = {
@@ -16,6 +19,9 @@ const globalState = {
   activeSubscription: null,
 };
 
+/**
+ * Hook to fetch and subscribe to run feed from Nostr
+ * @param {string[]} tags - Tags to filter posts by
 export const useRunFeed = () => {
   const { publicKey } = useContext(NostrContext);
   const [posts, setPosts] = useState([]);

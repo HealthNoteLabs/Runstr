@@ -1,0 +1,254 @@
+/* RunTracker Component Styles */
+
+.run-tracker-container {
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  position: relative;
+}
+
+/* Stats Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.stat-card {
+  background: linear-gradient(to bottom right, #111827, #1a222e);
+  padding: 1rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-icon-container {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0.5rem;
+}
+
+.stat-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.stat-label {
+  font-size: 0.875rem;
+  color: #9ca3af;
+}
+
+.stat-value {
+  font-size: 1.875rem;
+  font-weight: 700;
+}
+
+.stat-unit {
+  font-size: 0.875rem;
+  color: #9ca3af;
+}
+
+/* Distance stat */
+.distance-icon-container {
+  background-color: rgba(16, 185, 129, 0.2);
+}
+
+.distance-icon {
+  height: 1rem;
+  width: 1rem;
+  color: #10B981;
+}
+
+/* Time stat */
+.time-icon-container {
+  background-color: rgba(59, 130, 246, 0.2);
+}
+
+.time-icon {
+  height: 1rem;
+  width: 1rem;
+  color: #3B82F6;
+}
+
+/* Pace stat */
+.pace-icon-container {
+  background-color: rgba(245, 158, 11, 0.2);
+}
+
+.pace-icon {
+  height: 1rem;
+  width: 1rem;
+  color: #F59E0B;
+}
+
+/* Elevation stat */
+.elevation-icon-container {
+  background-color: rgba(249, 115, 22, 0.2);
+}
+
+.elevation-icon {
+  height: 1rem;
+  width: 1rem;
+  color: #F97316;
+}
+
+/* Splits table container */
+.splits-container {
+  background-color: #1a222e;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  margin: 0.5rem 1rem;
+  padding: 1rem;
+  overflow: hidden;
+}
+
+.splits-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.splits-icon-container {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  background-color: rgba(139, 92, 246, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0.5rem;
+}
+
+.splits-icon {
+  height: 0.75rem;
+  width: 0.75rem;
+  color: #8B5CF6;
+}
+
+.splits-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #d1d5db;
+}
+
+.splits-help-text {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  text-align: center;
+  margin-top: 0.5rem;
+}
+
+/* Title Banner */
+.title-banner {
+  background: linear-gradient(to right, #6366f1, #8b5cf6);
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.title-text {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: white;
+}
+
+/* Control button */
+.control-button {
+  margin: 1rem;
+  background: linear-gradient(to right, #6366f1, #8b5cf6);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+/* Countdown overlay */
+.countdown-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.countdown-container {
+  background-color: rgba(26, 34, 46, 0.9);
+  border-radius: 1rem;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  animation: scale-in 0.3s ease-out;
+}
+
+.countdown-number {
+  font-size: 4rem;
+  font-weight: 700;
+  color: white;
+  margin-bottom: 1rem;
+  animation: pulse 1s infinite;
+}
+
+.countdown-text {
+  font-size: 1.25rem;
+  color: #d1d5db;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes scale-in {
+  from {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Media Queries */
+@media (max-width: 768px) {
+  .countdown-container {
+    padding: 1.5rem;
+  }
+  
+  .countdown-number {
+    font-size: 3rem;
+  }
+  
+  .countdown-text {
+    font-size: 1rem;
+  }
+} 
