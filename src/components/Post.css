@@ -1,0 +1,161 @@
+.comment-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.comment-image-container {
+  width: 120px;
+  height: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.comment-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.comment-image-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 0 12px;
+}
+
+.comment-image-preview-item {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.comment-image-thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.remove-comment-image {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  background-color: rgba(0, 0, 0, 0.6);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+}
+
+.comment-input {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.comment-input input {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background-color: rgba(0, 0, 0, 0.2);
+  color: white;
+}
+
+.comment-add-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0 8px;
+  background-color: transparent;
+  color: #6366f1;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.comment-add-image:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.comment-image-options {
+  position: absolute;
+  right: 50px;
+  bottom: 50px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: #1a222e;
+  border-radius: 8px;
+  padding: 8px;
+  border: 1px solid #2d3748;
+  z-index: 10;
+}
+
+.comment-image-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+}
+
+.comment-image-option.camera {
+  background-color: #4f46e5;
+  color: white;
+}
+
+.comment-image-option.gallery {
+  background-color: #6366f1;
+  color: white;
+}
+
+.comment-image-option.cancel {
+  background-color: #374151;
+  color: #e5e7eb;
+}
+
+.fullscreen-image-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.fullscreen-image-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.9);
+}
+
+.fullscreen-image {
+  max-width: 95%;
+  max-height: 95%;
+  z-index: 1;
+  object-fit: contain;
+} 

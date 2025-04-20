@@ -788,4 +788,62 @@ export const createWorkoutEvent = (run, distanceUnit) => {
   };
 };
 
+/**
+ * Test connection to Nostr relays and report results
+ * @returns {Promise<Object>} Connection test results
+ */
+export const testRelayConnections = async () => {
+  try {
+    // Initialize Nostr if not already done
+    await initializeNostr();
+    
+    const results = {
+      connectedCount: 0,
+      totalCount: RELAYS.length,
+      relayStatus: {}
+    };
+    
+    // Try to fetch a small number of any events to check connectivity
+    const testEvents = await ndk.fetchEvents({
+      kinds: [1],
+      limit: 3
+    });
+    
+    // Get the list of active relays
+    const activeRelays = Array.from(ndk.pool?.relays?.values() || []);
+    
+    // Map relays to their status
+    RELAYS.forEach(relayUrl => {
+      const relay = activeRelays.find(r => r.url === relayUrl);
+      
+      if (relay && relay.connected) {
+        results.connectedCount++;
+        results.relayStatus[relayUrl] = 'Connected';
+      } else if (relay) {
+        results.relayStatus[relayUrl] = 'Connecting';
+      } else {
+        results.relayStatus[relayUrl] = 'Not connected';
+      }
+    });
+    
+    // If we got events, but don't have any connected relays, something is still working
+    if (testEvents.size > 0 && results.connectedCount === 0) {
+      results.connectedCount = 1;
+      results.relayStatus['unknown'] = 'Connected (via fallback)';
+    }
+    
+    return results;
+  } catch (error) {
+    console.error('Error testing relay connections:', error);
+    
+    return {
+      connectedCount: 0,
+      totalCount: RELAYS.length,
+      relayStatus: {
+        error: error.message
+      }
+    };
+  }
+};
+
 export { ndk };

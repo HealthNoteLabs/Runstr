@@ -1,9 +1,10 @@
-import { useEffect, useContext, useState } from 'react';
+import { useEffect, useContext, useState, useCallback } from 'react';
 import { NostrContext } from '../contexts/NostrContext';
 import { useAuth } from '../hooks/useAuth';
 import { useRunFeed } from '../hooks/useRunFeed';
 import { usePostInteractions } from '../hooks/usePostInteractions';
 import { PostList } from '../components/PostList';
+import { PullToRefresh } from '../components/PullToRefresh';
 import { handleAppBackground } from '../utils/nostr';
 
 export const RunClub = () => {
@@ -16,6 +17,7 @@ export const RunClub = () => {
     posts,
     setPosts,
     loading,
+    refreshing,
     error,
     userLikes,
     setUserLikes,
@@ -23,8 +25,10 @@ export const RunClub = () => {
     setUserReposts,
     loadSupplementaryData,
     loadMorePosts,
+    refreshFeed,
     fetchRunPostsViaSubscription,
-    loadedSupplementaryData
+    loadedSupplementaryData,
+    canLoadMore
   } = useRunFeed();
   
   const {
@@ -61,44 +65,25 @@ export const RunClub = () => {
 
   // Simple diagnostic function to test connectivity
   const diagnoseConnection = async () => {
-    setDiagnosticInfo('Testing connection to Nostr relays...');
     try {
-      // Import the diagnose function from our simplified nostr.js
-      const { diagnoseConnection } = await import('../utils/nostr');
+      setDiagnosticInfo('Running diagnostic...');
       
-      // Run the comprehensive diagnostic
-      const results = await diagnoseConnection();
+      // Check if we have window.nostr (NIP-07 extension) available
+      const hasNip07 = !!window.nostr;
       
-      if (results.error) {
-        setDiagnosticInfo(`Connection error: ${results.error}`);
-        return;
-      }
+      // Check navigator.onLine
+      const isOnline = navigator.onLine;
       
-      if (results.generalEvents > 0) {
-        // We can at least connect and fetch some posts
-        setDiagnosticInfo(`Connection successful! Fetched ${results.generalEvents} general posts.`);
-        
-        if (results.runningEvents > 0) {
-          // We found running-specific posts too
-          setDiagnosticInfo(`Success! Found ${results.runningEvents} running-related posts. Refreshing feed...`);
-          fetchRunPostsViaSubscription();
-        } else {
-          // Connected but no running posts
-          setDiagnosticInfo('Connected to relays and found general posts, but no running posts found. Trying broader search...');
-          
-          // Try the content-based search as a fallback
-          const { searchRunningContent } = await import('../utils/nostr');
-          const contentResults = await searchRunningContent(50, 72); // Search last 72 hours
-          
-          if (contentResults.length > 0) {
-            setDiagnosticInfo(`Success! Found ${contentResults.length} posts mentioning running in their content. Refreshing feed...`);
-            // You'll need to process these events similarly to how fetchRunPostsViaSubscription does
-            // For now, just refresh the feed
-            fetchRunPostsViaSubscription();
-          } else {
-            setDiagnosticInfo('No running-related posts found by tag or content. There may not be any recent running posts on the network.');
-          }
-        }
+      // Try to connect to relays directly
+      const { testRelayConnections } = await import('../utils/nostr');
+      const results = await testRelayConnections();
+      
+      if (results.connectedCount > 0) {
+        setDiagnosticInfo(
+          `Connected to ${results.connectedCount}/${results.totalCount} relays. ` +
+          `NIP-07: ${hasNip07 ? 'Available' : 'Not available'}. ` +
+          `Online: ${isOnline ? 'Yes' : 'No'}`
+        );
       } else {
         // We connected but got no events
         const relayStatus = Object.entries(results.relayStatus)
@@ -113,22 +98,15 @@ export const RunClub = () => {
     }
   };
 
-  // Simple scroll handler
-  useEffect(() => {
-    const handleScroll = () => {
-      const scrollPosition = window.scrollY || document.documentElement.scrollTop;
-      const height = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-      const screenHeight = window.innerHeight || document.documentElement.clientHeight;
-      
-      // Load more when we're close to the bottom
-      if (scrollPosition + screenHeight > height - 300) {
-        loadMorePosts();
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [loadMorePosts]);
+  // Scroll to bottom detection for infinite scrolling
+  const handleScroll = useCallback((e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    
+    // If we're close to the bottom of the scroll container and can load more
+    if (scrollHeight - scrollTop - clientHeight < 200 && canLoadMore() && !loading && !refreshing) {
+      loadMorePosts();
+    }
+  }, [canLoadMore, loadMorePosts, loading, refreshing]);
 
   return (
     <div className="run-club-container">
@@ -171,21 +149,36 @@ export const RunClub = () => {
           </button>
         </div>
       ) : (
-        <PostList
-          posts={posts}
-          loading={loading}
-          page={1}
-          userLikes={userLikes}
-          userReposts={userReposts}
-          handleLike={handleLike}
-          handleRepost={handleRepost}
-          handleZap={(post) => handleZap(post, wallet)}
-          handleCommentClick={handleCommentClick}
-          handleComment={handleComment}
-          commentText={commentText}
-          setCommentText={setCommentText}
-          wallet={wallet}
-        />
+        <PullToRefresh 
+          onRefresh={refreshFeed} 
+          isRefreshing={refreshing}
+        >
+          <div className="scrollable-feed-container" onScroll={handleScroll}>
+            <PostList
+              posts={posts}
+              loading={loading}
+              page={1}
+              userLikes={userLikes}
+              userReposts={userReposts}
+              handleLike={handleLike}
+              handleRepost={handleRepost}
+              handleZap={(post) => handleZap(post, wallet)}
+              handleCommentClick={handleCommentClick}
+              handleComment={handleComment}
+              commentText={commentText}
+              setCommentText={setCommentText}
+              wallet={wallet}
+            />
+            
+            {/* Loading indicator for infinite scroll */}
+            {loading && posts.length > 0 && (
+              <div className="infinite-scroll-loader">
+                <div className="loading-spinner"></div>
+                <span>Loading more posts...</span>
+              </div>
+            )}
+          </div>
+        </PullToRefresh>
       )}
     </div>
   );

@@ -8,6 +8,7 @@ import { formatPaceWithUnit, displayDistance, convertDistance, formatElevation }
 import { createAndPublishEvent, createWorkoutEvent } from '../utils/nostr';
 import SplitsTable from './SplitsTable';
 import DashboardRunCard from './DashboardRunCard';
+import ImagePicker from './ImagePicker';
 
 export const RunTracker = () => {
   const { 
@@ -38,6 +39,7 @@ export const RunTracker = () => {
   const [workoutSaved, setWorkoutSaved] = useState(false);
   const [isSavingWorkout, setIsSavingWorkout] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedImages, setSelectedImages] = useState([]);
 
   // Load the most recent run
   useEffect(() => {
@@ -76,7 +78,46 @@ export const RunTracker = () => {
   const handlePostToNostr = () => {
     if (!recentRun) return;
     setAdditionalContent('');
+    setSelectedImages([]);
     setShowPostModal(true);
+  };
+
+  /**
+   * Handle when an image is selected from camera or gallery
+   * @param {File} file - The selected image file
+   * @param {string} url - Object URL for the image
+   */
+  const handleImageSelected = (file, url) => {
+    // Add new image to the selectedImages array
+    setSelectedImages(prev => [...prev, { file, url }]);
+  };
+
+  /**
+   * Handle when an image is removed
+   * @param {number} index - Index of the image to remove
+   */
+  const handleImageRemoved = (index) => {
+    setSelectedImages(prev => {
+      const newImages = [...prev];
+      // Release the object URL to prevent memory leaks
+      URL.revokeObjectURL(newImages[index].url);
+      newImages.splice(index, 1);
+      return newImages;
+    });
+  };
+
+  /**
+   * Convert image file to base64 string for posting
+   * @param {File} file - Image file to convert
+   * @returns {Promise<string>} Base64 encoded image
+   */
+  const fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = (error) => reject(error);
+    });
   };
 
   const handlePostSubmit = async () => {
@@ -101,13 +142,42 @@ ${additionalContent ? `\n${additionalContent}` : ''}
 #Runstr #Running
 `.trim();
 
-      // Create the event template for nostr-tools
+      // Process any attached images
+      const imageUrls = [];
+      const imageTags = [];
+      
+      if (selectedImages.length > 0) {
+        // Process each selected image
+        for (let i = 0; i < selectedImages.length; i++) {
+          try {
+            // Convert image to base64
+            const base64Image = await fileToBase64(selectedImages[i].file);
+            
+            // In a real implementation, you would upload the image to a service
+            // Here we'd typically do something like:
+            // const uploadResponse = await uploadImageToService(base64Image);
+            // const imageUrl = uploadResponse.url;
+            
+            // For now, we'll just use the base64 image directly in the post
+            // Note: In a production app, you should upload images to a service
+            imageUrls.push(base64Image);
+            
+            // Add image url to the content
+            imageTags.push(['image', base64Image]);
+          } catch (error) {
+            console.error('Error processing image:', error);
+          }
+        }
+      }
+
+      // Create the event template for nostr-tools with image tags
       const eventTemplate = {
         kind: 1,
         created_at: Math.floor(Date.now() / 1000),
         tags: [
           ['t', 'Runstr'],
-          ['t', 'Running']
+          ['t', 'Running'],
+          ...imageTags
         ],
         content: content
       };
@@ -115,8 +185,14 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       // Use the createAndPublishEvent function from nostr-tools
       await createAndPublishEvent(eventTemplate);
       
+      // Clean up image URLs to prevent memory leaks
+      selectedImages.forEach(image => {
+        URL.revokeObjectURL(image.url);
+      });
+      
       setShowPostModal(false);
       setAdditionalContent('');
+      setSelectedImages([]);
       
       // Show success message
       if (window.Android && window.Android.showToast) {
@@ -508,6 +584,15 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="bg-[#1a222e] rounded-xl p-6 w-full max-w-md">
             <h3 className="text-xl font-semibold mb-4">Post Run to Nostr</h3>
+            
+            {/* Add ImagePicker component */}
+            <ImagePicker
+              onImageSelected={handleImageSelected}
+              onImageRemoved={handleImageRemoved}
+              selectedImages={selectedImages}
+              maxImages={3}
+            />
+            
             <textarea
               value={additionalContent}
               onChange={(e) => setAdditionalContent(e.target.value)}
@@ -518,7 +603,14 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             />
             <div className="flex justify-end space-x-3">
               <button 
-                onClick={() => setShowPostModal(false)} 
+                onClick={() => {
+                  setShowPostModal(false);
+                  // Clean up image URLs to prevent memory leaks
+                  selectedImages.forEach(image => {
+                    URL.revokeObjectURL(image.url);
+                  });
+                  setSelectedImages([]);
+                }} 
                 disabled={isPosting}
                 className="px-4 py-2 rounded-lg border border-gray-600 text-gray-300"
               >

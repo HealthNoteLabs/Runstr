@@ -18,17 +18,18 @@ const globalState = {
 export const useRunFeed = () => {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false); // New state for pull-to-refresh
   const [error, setError] = useState(null);
   const [userLikes, setUserLikes] = useState(new Set());
   const [userReposts, setUserReposts] = useState(new Set());
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadedSupplementaryData, setLoadedSupplementaryData] = useState(new Set());
-  const [displayLimit, setDisplayLimit] = useState(7); // New state for display limit
+  const [displayLimit, setDisplayLimit] = useState(7); // Number of posts to display initially
   const [allPosts, setAllPosts] = useState(globalState.allPosts || []); // Use global cache
   const timeoutRef = useRef(null);
   const initialLoadRef = useRef(globalState.isInitialized);
-  const subscriptionRef = useRef(null);
+  const loadingMoreRef = useRef(false); // Track if we're already loading more posts
 
   // Initialize Nostr as soon as the hook is used, even if component isn't visible
   useEffect(() => {
@@ -43,92 +44,19 @@ export const useRunFeed = () => {
     initNostr();
   }, []);
 
-  // Background fetch for new posts
+  // Function to setup background fetches
   const setupBackgroundFetch = useCallback(() => {
     // Clear any existing timeouts
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
-
-    // Set up a recurring fetch every 60 seconds
-    timeoutRef.current = setInterval(async () => {
-      console.log('Background fetch: Checking for new posts');
-      
-      try {
-        // Only fetch posts that are newer than our most recent post
-        const newestPostTime = globalState.allPosts.length > 0 
-          ? Math.max(...globalState.allPosts.map(p => p.created_at)) * 1000
-          : undefined;
-          
-        // Only fetch if we haven't fetched in the last 30 seconds
-        const now = Date.now();
-        if (now - globalState.lastFetchTime < 30000) {
-          console.log('Skipping background fetch, last fetch was too recent');
-          return;
-        }
-        
-        globalState.lastFetchTime = now;
-        
-        // Fetch new posts
-        const limit = 10; // Fetch just a few new posts
-        const runPostsArray = await fetchRunningPosts(limit, newestPostTime);
-        
-        if (runPostsArray.length === 0) {
-          console.log('No new posts found in background fetch');
-          return;
-        }
-        
-        console.log(`Background fetch: Found ${runPostsArray.length} new posts`);
-        
-        // Load supplementary data in parallel
-        const supplementaryData = await loadSupplementaryData(runPostsArray);
-        
-        // Process posts with all the data
-        const processedPosts = await processPostsWithData(runPostsArray, supplementaryData);
-        
-        // Update global cache with new posts
-        if (processedPosts.length > 0) {
-          // Remove duplicates and merge with existing posts
-          const existingIds = new Set(globalState.allPosts.map(p => p.id));
-          const newPosts = processedPosts.filter(p => !existingIds.has(p.id));
-          
-          if (newPosts.length > 0) {
-            globalState.allPosts = [...newPosts, ...globalState.allPosts];
-            
-            // Update local state if component is mounted
-            setAllPosts(prevPosts => {
-              const mergedPosts = [...newPosts, ...prevPosts];
-              return mergedPosts;
-            });
-            
-            // Update displayed posts
-            setPosts(prevPosts => {
-              // Create merged array with new posts at the top
-              const mergedPosts = [...newPosts, ...prevPosts];
-              
-              // Only display up to the display limit
-              return mergedPosts.slice(0, displayLimit);
-            });
-            
-            // Update user interactions
-            updateUserInteractions(supplementaryData);
-          }
-        }
-      } catch (error) {
-        console.error('Error in background fetch:', error);
-        // Don't set error state - this is a background operation
-      }
-    }, 60000); // Check every minute
     
-    // Store reference to cleanup
-    subscriptionRef.current = timeoutRef.current;
-    return () => {
-      if (timeoutRef.current) {
-        clearInterval(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-    };
-  }, [displayLimit]);
+    // Set up a background fetch every 3 minutes
+    timeoutRef.current = setTimeout(() => {
+      console.log('Running background fetch...');
+      fetchRunPostsViaSubscription();
+    }, 3 * 60 * 1000);
+  }, []);
 
   // Extract user interactions logic to reuse
   const updateUserInteractions = useCallback((supplementaryData) => {
@@ -162,9 +90,13 @@ export const useRunFeed = () => {
   }, [userLikes, userReposts]);
 
   // Main function to fetch run posts
-  const fetchRunPostsViaSubscription = useCallback(async () => {
+  const fetchRunPostsViaSubscription = useCallback(async (isRefresh = false) => {
     try {
-      setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
 
       if (timeoutRef.current) {
@@ -175,9 +107,9 @@ export const useRunFeed = () => {
       // Initialize Nostr first
       await initializeNostr();
 
-      // Check if we have cached posts that are recent enough (less than 5 minutes old)
+      // For a refresh, bypass the cache
       const now = Date.now();
-      const isCacheValid = globalState.allPosts.length > 0 && 
+      const isCacheValid = !isRefresh && globalState.allPosts.length > 0 && 
                         (now - globalState.lastFetchTime < 5 * 60 * 1000);
                         
       if (isCacheValid) {
@@ -185,6 +117,7 @@ export const useRunFeed = () => {
         setAllPosts(globalState.allPosts);
         setPosts(globalState.allPosts.slice(0, displayLimit));
         setLoading(false);
+        setRefreshing(false);
         
         // Still update in the background for freshness
         setupBackgroundFetch();
@@ -227,6 +160,7 @@ export const useRunFeed = () => {
           
           setHasMore(contentPosts.length >= limit);
           setLoading(false);
+          setRefreshing(false);
           initialLoadRef.current = true;
           
           // Set up background fetch
@@ -248,6 +182,7 @@ export const useRunFeed = () => {
           setError('No running posts found. Try again later.');
         }
         setLoading(false);
+        setRefreshing(false);
         return;
       }
       
@@ -257,12 +192,14 @@ export const useRunFeed = () => {
       // Process posts with all the data
       const processedPosts = await processPostsWithData(runPostsArray, supplementaryData);
       
-      // Update global cache
-      globalState.allPosts = processedPosts;
-      globalState.lastFetchTime = now;
+      // Update global cache if this is a fresh load or refresh (not for pagination)
+      if (page === 1 || isRefresh) {
+        globalState.allPosts = processedPosts;
+        globalState.lastFetchTime = now;
+      }
       
       // Update state with processed posts
-      if (page === 1) {
+      if (page === 1 || isRefresh) {
         setAllPosts(processedPosts);
         setPosts(processedPosts.slice(0, displayLimit)); // Only display up to the limit
       } else {
@@ -272,8 +209,10 @@ export const useRunFeed = () => {
           const newPosts = processedPosts.filter(p => !existingIds.has(p.id));
           const mergedPosts = [...prevPosts, ...newPosts];
           
-          // Update global cache
-          globalState.allPosts = mergedPosts;
+          // Update global cache with merged posts
+          if (newPosts.length > 0) {
+            globalState.allPosts = mergedPosts;
+          }
           
           return mergedPosts;
         });
@@ -291,7 +230,7 @@ export const useRunFeed = () => {
             }
           });
           
-          return uniquePosts.slice(0, displayLimit); // Only display up to the limit
+          return uniquePosts.slice(0, displayLimit + (page - 1) * 7); // Only display up to the expanded limit
         });
       }
       
@@ -307,25 +246,41 @@ export const useRunFeed = () => {
       setError(`Failed to load posts: ${err.message}`);
     } finally {
       setLoading(false);
+      setRefreshing(false);
+      loadingMoreRef.current = false;
     }
   }, [page, displayLimit, updateUserInteractions, setupBackgroundFetch]);
 
-  // Load more posts function - increases the display limit
+  // Load more posts by increasing the display limit
   const loadMorePosts = useCallback(() => {
-    setDisplayLimit(prevLimit => prevLimit + 7); // Increase display limit by 7
-  }, []);
+    if (loadingMoreRef.current || loading || refreshing) return;
+    
+    // If we've already shown all cached posts and there might be more on the server
+    if (allPosts.length <= displayLimit) {
+      if (hasMore && !loading) {
+        loadingMoreRef.current = true;
+        // Load the next page from the server
+        setPage(prevPage => prevPage + 1);
+      }
+    } else {
+      // Just show more from the cache
+      setDisplayLimit(prevLimit => prevLimit + 7);
+    }
+  }, [allPosts.length, displayLimit, hasMore, loading, refreshing]);
+
+  // Function for pull-to-refresh
+  const refreshFeed = useCallback(() => {
+    if (refreshing || loading) return;
+    console.log('Refreshing feed...');
+    // Reset to page 1 for a fresh load
+    setPage(1);
+    fetchRunPostsViaSubscription(true);
+  }, [fetchRunPostsViaSubscription, refreshing, loading]);
 
   // Check if we can load more posts
   const canLoadMore = useCallback(() => {
-    return allPosts.length > displayLimit;
-  }, [allPosts.length, displayLimit]);
-
-  // Load next page of posts from the network
-  const loadNextPage = useCallback(() => {
-    if (!loading && hasMore) {
-      setPage(prevPage => prevPage + 1);
-    }
-  }, [loading, hasMore]);
+    return (allPosts.length > displayLimit) || hasMore;
+  }, [allPosts.length, displayLimit, hasMore]);
 
   // Initial load
   useEffect(() => {
@@ -347,12 +302,7 @@ export const useRunFeed = () => {
     if (allPosts.length > 0) {
       setPosts(allPosts.slice(0, displayLimit));
     }
-    
-    // If we're showing all available posts but there might be more on the server
-    if (allPosts.length <= displayLimit && hasMore && !loading) {
-      loadNextPage();
-    }
-  }, [displayLimit, allPosts, hasMore, loading, loadNextPage]);
+  }, [displayLimit, allPosts]);
 
   // Handle comment click to toggle comment visibility
   const handleCommentClick = async (postId) => {
@@ -406,6 +356,7 @@ export const useRunFeed = () => {
     posts,
     setPosts,
     loading,
+    refreshing,
     error,
     userLikes,
     setUserLikes,
@@ -413,6 +364,7 @@ export const useRunFeed = () => {
     setUserReposts,
     loadSupplementaryData,
     loadMorePosts,
+    refreshFeed,
     fetchRunPostsViaSubscription,
     loadedSupplementaryData,
     canLoadMore,

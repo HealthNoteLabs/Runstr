@@ -1,7 +1,8 @@
 import { formatPostContent } from '../utils/postFormatters';
 import PropTypes from 'prop-types';
 import { useState, useCallback, memo } from 'react';
-import { Heart, MessageSquare, Repeat, Zap } from "lucide-react";
+import { Heart, MessageSquare, Repeat, Zap, Camera, X, ImageIcon } from "lucide-react";
+import './Post.css';
 
 /**
  * Comment component - memoized to prevent unnecessary re-renders
@@ -23,6 +24,35 @@ const Comment = memo(({ comment, handleAvatarError }) => {
           {comment.author.profile.name || 'Anonymous'}
         </strong>
         <p>{comment.content}</p>
+        
+        {/* Display comment images if present */}
+        {comment.images && comment.images.length > 0 && (
+          <div className="comment-images">
+            {comment.images.map((imageUrl, index) => (
+              <div key={index} className="comment-image-container">
+                <img 
+                  src={imageUrl} 
+                  alt={`Comment image ${index + 1}`}
+                  className="comment-image"
+                  loading="lazy"
+                  onClick={() => {
+                    // Show image in full screen when clicked
+                    const imageElement = document.createElement('div');
+                    imageElement.className = 'fullscreen-image-container';
+                    imageElement.innerHTML = `
+                      <div class="fullscreen-image-backdrop"></div>
+                      <img src="${imageUrl}" alt="Full size" class="fullscreen-image" />
+                    `;
+                    imageElement.addEventListener('click', () => {
+                      document.body.removeChild(imageElement);
+                    });
+                    document.body.appendChild(imageElement);
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -42,7 +72,8 @@ Comment.propTypes = {
         name: PropTypes.string,
         picture: PropTypes.string
       })
-    }).isRequired
+    }).isRequired,
+    images: PropTypes.arrayOf(PropTypes.string)
   }).isRequired,
   handleAvatarError: PropTypes.func.isRequired
 };
@@ -61,10 +92,14 @@ export const Post = ({
   handleComment,
   commentText,
   setCommentText,
-  wallet
+  wallet,
+  commentImages = [],
+  handleAddCommentImage,
+  handleRemoveCommentImage
 }) => {
   // Track if comments are loading
   const [commentsLoading, setCommentsLoading] = useState(false);
+  const [showImageOptions, setShowImageOptions] = useState(false);
 
   // Android optimization: handle avatar error
   const handleAvatarError = (event) => {
@@ -137,6 +172,56 @@ export const Post = ({
       handleCommentClick(postId);
     }
   }, [post, commentsLoading, handleCommentClick]);
+
+  /**
+   * Handles camera capture for comments
+   */
+  const handleCameraCapture = () => {
+    setShowImageOptions(false);
+    
+    // Create file input element
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.capture = 'environment'; // Use the back camera
+    
+    // Handle file selection
+    input.onchange = (e) => {
+      if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        const imageUrl = URL.createObjectURL(file);
+        handleAddCommentImage(file, imageUrl);
+      }
+    };
+    
+    // Trigger file selection dialog
+    input.click();
+  };
+
+  /**
+   * Handles gallery selection for comments
+   */
+  const handleGallerySelect = () => {
+    setShowImageOptions(false);
+    
+    // Create file input element
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    // No capture attribute means it will open gallery
+    
+    // Handle file selection
+    input.onchange = (e) => {
+      if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        const imageUrl = URL.createObjectURL(file);
+        handleAddCommentImage(file, imageUrl);
+      }
+    };
+    
+    // Trigger file selection dialog
+    input.click();
+  };
 
   return (
     <div className="post-card" data-post-id={post.id}>
@@ -282,6 +367,28 @@ export const Post = ({
               </>
             )}
           </div>
+          
+          {/* Display selected images for comments */}
+          {commentImages.length > 0 && (
+            <div className="comment-image-preview">
+              {commentImages.map((image, index) => (
+                <div key={index} className="comment-image-preview-item">
+                  <img 
+                    src={image.url} 
+                    alt={`Comment image ${index + 1}`} 
+                    className="comment-image-thumbnail"
+                  />
+                  <button 
+                    className="remove-comment-image"
+                    onClick={() => handleRemoveCommentImage(index)}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          
           <div className="comment-input">
             <input
               type="text"
@@ -294,9 +401,42 @@ export const Post = ({
                 }
               }}
             />
+            
+            {/* Image options menu */}
+            {showImageOptions ? (
+              <div className="comment-image-options">
+                <button 
+                  className="comment-image-option camera"
+                  onClick={handleCameraCapture}
+                >
+                  <Camera size={16} />
+                </button>
+                <button 
+                  className="comment-image-option gallery"
+                  onClick={handleGallerySelect}
+                >
+                  <ImageIcon size={16} />
+                </button>
+                <button 
+                  className="comment-image-option cancel"
+                  onClick={() => setShowImageOptions(false)}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              <button 
+                className="comment-add-image"
+                onClick={() => setShowImageOptions(true)}
+                disabled={commentImages.length >= 3}
+              >
+                <Camera size={16} />
+              </button>
+            )}
+            
             <button 
               onClick={() => handleComment(post.id)}
-              disabled={!commentText.trim()}
+              disabled={!commentText.trim() && commentImages.length === 0}
             >
               Post
             </button>
@@ -336,4 +476,7 @@ Post.propTypes = {
   commentText: PropTypes.string.isRequired,
   setCommentText: PropTypes.func.isRequired,
   wallet: PropTypes.object,
+  commentImages: PropTypes.array,
+  handleAddCommentImage: PropTypes.func,
+  handleRemoveCommentImage: PropTypes.func
 }; 

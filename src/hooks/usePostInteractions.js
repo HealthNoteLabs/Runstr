@@ -11,6 +11,7 @@ export const usePostInteractions = ({
 }) => {
   const [commentText, setCommentText] = useState('');
   const [activeCommentPost, setActiveCommentPost] = useState(null);
+  const [commentImages, setCommentImages] = useState([]);
 
   const handleCommentClick = useCallback((postId) => {
     // Make sure we have post's comments loaded
@@ -27,7 +28,12 @@ export const usePostInteractions = ({
     
     // Set this as the active post for commenting
     setActiveCommentPost(postId);
-  }, [loadSupplementaryData, loadedSupplementaryData, setPosts]);
+    
+    // Reset comment images if the active post changes
+    if (activeCommentPost !== postId) {
+      setCommentImages([]);
+    }
+  }, [loadSupplementaryData, loadedSupplementaryData, setPosts, activeCommentPost]);
 
   const handleLike = useCallback(async (post) => {
     if (!window.nostr) {
@@ -211,20 +217,77 @@ export const usePostInteractions = ({
     }
   }, [defaultZapAmount, setPosts]);
 
+  /**
+   * Convert image file to base64 string for posting
+   * @param {File} file - Image file to convert
+   * @returns {Promise<string>} Base64 encoded image
+   */
+  const fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
+  /**
+   * Handle adding an image to a comment
+   * @param {File} file - The selected image file
+   * @param {string} url - The object URL for the image preview
+   */
+  const handleAddCommentImage = useCallback((file, url) => {
+    setCommentImages(prev => [...prev, { file, url }]);
+  }, []);
+
+  /**
+   * Handle removing an image from a comment
+   * @param {number} index - Index of the image to remove
+   */
+  const handleRemoveCommentImage = useCallback((index) => {
+    setCommentImages(prev => {
+      const newImages = [...prev];
+      // Release the object URL to prevent memory leaks
+      URL.revokeObjectURL(newImages[index].url);
+      newImages.splice(index, 1);
+      return newImages;
+    });
+  }, []);
+
   const handleComment = useCallback(async (postId) => {
-    if (!commentText.trim() || !window.nostr) {
-      alert('Please login and enter a comment');
+    if ((!commentText.trim() && commentImages.length === 0) || !window.nostr) {
+      alert('Please login and enter a comment or add an image');
       return;
     }
 
     try {
+      // Process images if any
+      const imageTags = [];
+      
+      if (commentImages.length > 0) {
+        // Process each selected image
+        for (let i = 0; i < commentImages.length; i++) {
+          try {
+            // Convert image to base64
+            const base64Image = await fileToBase64(commentImages[i].file);
+            
+            // Add image tag
+            imageTags.push(['image', base64Image]);
+          } catch (error) {
+            console.error('Error processing image:', error);
+          }
+        }
+      }
+
+      // Create comment event with images
       const commentEvent = {
         kind: 1,
         created_at: Math.floor(Date.now() / 1000),
         content: commentText,
         tags: [
           ['e', postId, '', 'reply'],
-          ['k', '1']
+          ['k', '1'],
+          ...imageTags
         ],
         pubkey: await window.nostr.getPublicKey()
       };
@@ -251,7 +314,11 @@ export const usePostInteractions = ({
                   author: {
                     pubkey: signedEvent.pubkey,
                     profile: userProfile
-                  }
+                  },
+                  // Add images to the comment for display
+                  images: commentImages.length > 0 ? 
+                    commentImages.map(img => img.url) : 
+                    []
                 }
               ]
             };
@@ -260,17 +327,26 @@ export const usePostInteractions = ({
         })
       );
 
-      // Clear comment text
+      // Clean up image URLs
+      commentImages.forEach(image => {
+        URL.revokeObjectURL(image.url);
+      });
+
+      // Clear comment text and images
       setCommentText('');
+      setCommentImages([]);
     } catch (error) {
       console.error('Error posting comment:', error);
       alert('Failed to post comment: ' + error.message);
     }
-  }, [commentText, setPosts]);
+  }, [commentText, setPosts, commentImages]);
 
   return {
     commentText,
     setCommentText,
+    commentImages,
+    handleAddCommentImage,
+    handleRemoveCommentImage,
     handleCommentClick,
     handleLike,
     handleRepost,

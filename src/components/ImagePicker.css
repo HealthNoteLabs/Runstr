@@ -1,0 +1,96 @@
+.image-picker {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.selected-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.image-preview-container {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.image-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.remove-image-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background-color: rgba(0, 0, 0, 0.6);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+.image-picker-controls {
+  width: 100%;
+}
+
+.add-image-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: rgba(79, 70, 229, 0.1);
+  border: 1px dashed #4f46e5;
+  border-radius: 8px;
+  padding: 10px 16px;
+  color: #4f46e5;
+  width: 100%;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.image-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: #1a222e;
+  border-radius: 8px;
+  padding: 8px;
+  border: 1px solid #2d3748;
+}
+
+.image-option-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  text-align: left;
+}
+
+.camera-btn {
+  background-color: #4f46e5;
+  color: white;
+}
+
+.gallery-btn {
+  background-color: #6366f1;
+  color: white;
+}
+
+.cancel-btn {
+  background-color: #374151;
+  color: #e5e7eb;
+} 

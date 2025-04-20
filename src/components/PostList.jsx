@@ -1,4 +1,5 @@
 import { Post } from './Post';
+import PropTypes from 'prop-types';
 
 export const PostList = ({
   posts,
@@ -13,7 +14,10 @@ export const PostList = ({
   handleComment,
   commentText,
   setCommentText,
-  wallet
+  wallet,
+  commentImages,
+  handleAddCommentImage,
+  handleRemoveCommentImage
 }) => {
   return (
     <div className="posts-container">
@@ -31,6 +35,9 @@ export const PostList = ({
           commentText={commentText}
           setCommentText={setCommentText}
           wallet={wallet}
+          commentImages={commentImages}
+          handleAddCommentImage={handleAddCommentImage}
+          handleRemoveCommentImage={handleRemoveCommentImage}
         />
       ))}
       {loading && page > 1 && (
@@ -38,4 +45,23 @@ export const PostList = ({
       )}
     </div>
   );
+};
+
+PostList.propTypes = {
+  posts: PropTypes.array.isRequired,
+  loading: PropTypes.bool.isRequired,
+  page: PropTypes.number.isRequired,
+  userLikes: PropTypes.instanceOf(Set).isRequired,
+  userReposts: PropTypes.instanceOf(Set).isRequired,
+  handleLike: PropTypes.func.isRequired,
+  handleRepost: PropTypes.func.isRequired,
+  handleZap: PropTypes.func.isRequired,
+  handleCommentClick: PropTypes.func.isRequired,
+  handleComment: PropTypes.func.isRequired,
+  commentText: PropTypes.string.isRequired,
+  setCommentText: PropTypes.func.isRequired,
+  wallet: PropTypes.object,
+  commentImages: PropTypes.array,
+  handleAddCommentImage: PropTypes.func,
+  handleRemoveCommentImage: PropTypes.func
 }; 
