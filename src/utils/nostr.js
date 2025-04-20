@@ -1,5 +1,4 @@
 import { SimplePool, getEventHash } from 'nostr-tools';
-import NDK from '@nostr-dev-kit/ndk';
 import { createAndPublishEvent as publishWithNostrTools } from './nostrClient';
 
 // Initialize relay pool
@@ -15,11 +14,6 @@ export const RELAYS = [
   'wss://relay.snort.social'
 ];
 
-// Create a new NDK instance with optimized relay configuration
-const ndk = new NDK({
-  explicitRelayUrls: RELAYS
-});
-
 // Storage for subscriptions
 const activeSubscriptions = new Set();
 
@@ -34,9 +28,16 @@ const CONNECTION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
  */
 export const initializeNostr = async () => {
   try {
-    // Connect to relays
-    await ndk.connect();
-    console.log('Connected to NDK relays');
+    // Ensure we're connected to the relays
+    for (const relay of RELAYS) {
+      try {
+        await pool.ensureRelay(relay);
+      } catch (error) {
+        console.warn(`Failed to connect to relay: ${relay}`, error);
+      }
+    }
+    
+    console.log('Connected to Nostr relays');
     isConnected = true;
     lastConnectionCheck = Date.now();
     return true;
@@ -66,8 +67,7 @@ export const ensureConnection = async () => {
       // If we have no connected relays, reconnect
       if (!connectionStatus.connectedRelays || connectionStatus.connectedRelays.length === 0) {
         console.log('No active relay connections, reconnecting...');
-        await ndk.connect();
-        isConnected = true;
+        await initializeNostr();
       } else {
         console.log(`Connected to ${connectionStatus.connectedRelays.length} relays`);
         isConnected = true;
@@ -76,8 +76,7 @@ export const ensureConnection = async () => {
       console.error('Error checking connection:', error);
       // Attempt to reconnect
       try {
-        await ndk.connect();
-        isConnected = true;
+        await initializeNostr();
       } catch (reconnectError) {
         console.error('Failed to reconnect:', reconnectError);
         isConnected = false;
@@ -126,13 +125,12 @@ export const fetchRunningPosts = async (limit = 7, since = undefined) => {
       since: sinceTimestamp
     };
     
-    const events = await ndk.fetchEvents(hashtagFilter);
-    let eventArray = Array.from(events);
+    const events = await pool.list(RELAYS, [hashtagFilter]);
     
     // If hashtag search found results, return them
-    if (eventArray.length > 0) {
-      console.log(`Found ${eventArray.length} posts with hashtags`);
-      return eventArray;
+    if (events && events.length > 0) {
+      console.log(`Found ${events.length} posts with hashtags`);
+      return events;
     }
     
     // Fallback to content-based filtering
@@ -143,8 +141,7 @@ export const fetchRunningPosts = async (limit = 7, since = undefined) => {
       since: sinceTimestamp
     };
     
-    const contentEvents = await ndk.fetchEvents(contentFilter);
-    const allEvents = Array.from(contentEvents);
+    const allEvents = await pool.list(RELAYS, [contentFilter]);
     
     // Filter for running content client-side
     const runningKeywords = ["running", "run", "runner", "5k", "10k", "marathon", "jog"];
@@ -526,16 +523,9 @@ export const diagnoseConnection = async () => {
   try {
     console.log('Starting connection diagnostics...');
     
-    // Check if NDK is initialized
-    if (!ndk || !ndk.pool || !ndk.pool.relays) {
-      console.log('NDK not initialized, initializing...');
-      await initializeNostr();
-    }
-    
-    // Check connected relays
-    const connectedRelays = Array.from(ndk.pool.relays || [])
-      .filter(r => r.status === 1)
-      .map(r => r.url);
+    // Get connected relays from the pool
+    const connectedRelays = Object.keys(pool.getRelayStatuses())
+      .filter(url => pool.getRelayStatuses()[url] === 1);
     
     console.log(`Connected to ${connectedRelays.length} relays: ${connectedRelays.join(', ')}`);
     
@@ -553,9 +543,8 @@ export const diagnoseConnection = async () => {
     };
     
     console.log('Testing relay connectivity with simple filter...');
-    const generalEvents = await ndk.fetchEvents(simpleFilter);
-    const generalArray = Array.from(generalEvents);
-    console.log(`Retrieved ${generalArray.length} general events`);
+    const generalEvents = await pool.list(RELAYS, [simpleFilter]);
+    console.log(`Retrieved ${generalEvents.length} general events`);
     
     // Test if we can fetch running-related events
     const runningFilter = {
@@ -565,22 +554,19 @@ export const diagnoseConnection = async () => {
     };
     
     console.log('Testing relay connectivity with running filter...');
-    const runningEvents = await ndk.fetchEvents(runningFilter);
-    const runningArray = Array.from(runningEvents);
-    console.log(`Retrieved ${runningArray.length} running events`);
+    const runningEvents = await pool.list(RELAYS, [runningFilter]);
+    console.log(`Retrieved ${runningEvents.length} running events`);
     
     return {
       connectedRelays,
-      generalEvents: generalArray.length,
-      runningEvents: runningArray.length
+      generalEvents: generalEvents.length,
+      runningEvents: runningEvents.length
     };
   } catch (error) {
     console.error('Diagnostic error:', error);
     return { 
       error: error.message,
-      connectedRelays: Array.from(ndk.pool?.relays || [])
-        .filter(r => r.status === 1)
-        .map(r => r.url)
+      connectedRelays: []
     };
   }
 };
@@ -695,22 +681,22 @@ export const testRelayConnections = async () => {
     };
     
     // Try to fetch a small number of any events to check connectivity
-    const testEvents = await ndk.fetchEvents({
+    const testEvents = await pool.list(RELAYS, [{
       kinds: [1],
       limit: 3
-    });
+    }]);
     
-    // Get the list of active relays
-    const activeRelays = Array.from(ndk.pool?.relays?.values() || []);
+    // Get the connection statuses
+    const relayStatuses = pool.getRelayStatuses();
     
     // Map relays to their status
     RELAYS.forEach(relayUrl => {
-      const relay = activeRelays.find(r => r.url === relayUrl);
+      const status = relayStatuses[relayUrl];
       
-      if (relay && relay.connected) {
+      if (status === 1) {
         results.connectedCount++;
         results.relayStatus[relayUrl] = 'Connected';
-      } else if (relay) {
+      } else if (status === 0) {
         results.relayStatus[relayUrl] = 'Connecting';
       } else {
         results.relayStatus[relayUrl] = 'Not connected';
@@ -718,7 +704,7 @@ export const testRelayConnections = async () => {
     });
     
     // If we got events, but don't have any connected relays, something is still working
-    if (testEvents.size > 0 && results.connectedCount === 0) {
+    if (testEvents.length > 0 && results.connectedCount === 0) {
       results.connectedCount = 1;
       results.relayStatus['unknown'] = 'Connected (via fallback)';
     }
@@ -744,5 +730,3 @@ export const testRelayConnections = async () => {
 export const getConnectedRelaysCount = () => {
   return pool.getConnectedRelayCount();
 };
-
-export { ndk };
