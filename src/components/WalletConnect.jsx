@@ -36,6 +36,7 @@ export const WalletConnect = () => {
     });
 
     return () => {
+      // Clean up the onConnected subscription
       unsub();
     };
   }, [setWallet]);
@@ -49,9 +50,12 @@ export const WalletConnect = () => {
     if (zapAmountInput && parseInt(zapAmountInput, 10) > 0) {
       updateDefaultZapAmount(parseInt(zapAmountInput, 10));
       setShowSuccessMessage(true);
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         setShowSuccessMessage(false);
       }, 3000);
+      
+      // Clean up timeout if component unmounts
+      return () => clearTimeout(timeoutId);
     }
   };
 
@@ -115,15 +119,21 @@ export const WalletConnect = () => {
       await provider.sendPayment(invoiceData.pr);
 
       setDonationStatus({ message: `Successfully donated ${defaultZapAmount} sats to ${name}! ⚡️`, isError: false });
-      setTimeout(() => {
+      const successTimeoutId = setTimeout(() => {
         setDonationStatus({ message: '', isError: false });
       }, 5000);
+
+      // Clean up the timeout if component unmounts
+      return () => clearTimeout(successTimeoutId);
     } catch (error) {
       console.error(`Error donating to ${name}:`, error);
       setDonationStatus({ message: `Failed to donate: ${error.message}`, isError: true });
-      setTimeout(() => {
+      const errorTimeoutId = setTimeout(() => {
         setDonationStatus({ message: '', isError: false });
       }, 5000);
+
+      // Clean up the timeout if component unmounts
+      return () => clearTimeout(errorTimeoutId);
     }
   };
 

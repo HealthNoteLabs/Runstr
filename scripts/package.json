@@ -1,14 +1,9 @@
 {
-  "name": "runstr-scripts",
-  "version": "1.0.0",
-  "description": "Utility scripts for RUNSTR application",
-  "type": "module",
-  "main": "check-group-membership.js",
-  "scripts": {
-    "check-membership": "node check-group-membership.js"
-  },
+  "name": "runstr-diagnostics",
+  "version": "0.1.0",
+  "description": "Diagnostic tools for RUNSTR app",
+  "private": true,
   "dependencies": {
-    "nostr-tools": "^1.14.0",
-    "ws": "^8.14.2"
+    "chalk": "^4.1.2"
   }
 } 

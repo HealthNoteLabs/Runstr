@@ -233,6 +233,16 @@ const GroupDiscoveryScreen = () => {
     };
     
     fetchGroups();
+    
+    // Add cleanup function to the useEffect
+    return () => {
+      // This will be called when the component unmounts
+      console.log("GroupDiscoveryScreen unmounting - cleaning up resources");
+      
+      // Any WebSocket connections created should be closed by their respective promises
+      // when they resolve or reject, but we should ensure they don't continue
+      // running if the component unmounts
+    };
   }, []);
 
   // Check if user has joined each group

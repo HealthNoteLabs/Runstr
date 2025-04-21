@@ -108,6 +108,19 @@ export const RunClub = () => {
     }
   }, [canLoadMore, loadMorePosts, loading, refreshing]);
 
+  // Add an effect to properly attach and remove the scroll event listener
+  useEffect(() => {
+    const scrollContainer = document.querySelector('.scrollable-feed-container');
+    if (scrollContainer) {
+      scrollContainer.addEventListener('scroll', handleScroll);
+      
+      // Clean up event listener when component unmounts
+      return () => {
+        scrollContainer.removeEventListener('scroll', handleScroll);
+      };
+    }
+  }, [handleScroll]);
+
   return (
     <div className="run-club-container">
       <h2>RUNSTR FEED</h2>
@@ -153,7 +166,7 @@ export const RunClub = () => {
           onRefresh={refreshFeed} 
           isRefreshing={refreshing}
         >
-          <div className="scrollable-feed-container" onScroll={handleScroll}>
+          <div className="scrollable-feed-container">
             <PostList
               posts={posts}
               loading={loading}

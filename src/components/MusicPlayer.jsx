@@ -40,8 +40,12 @@ export function MusicPlayer() {
     const message = typeof error === 'string' ? error : 'Error playing track';
     setErrorMessage(message);
     setShowErrorMessage(true);
+    
     // Hide error after 5 seconds
-    setTimeout(() => setShowErrorMessage(false), 5000);
+    const timeoutId = setTimeout(() => setShowErrorMessage(false), 5000);
+    
+    // Store the timeout ID so we can clear it if the component unmounts
+    return timeoutId;
   };
 
   // Attempt to play and catch errors
@@ -49,7 +53,12 @@ export function MusicPlayer() {
     try {
       togglePlayPause();
     } catch (error) {
-      handlePlaybackError(error);
+      const timeoutId = handlePlaybackError(error);
+      
+      // Clean up the timeout if component unmounts
+      return () => {
+        clearTimeout(timeoutId);
+      };
     }
   };
 

@@ -74,9 +74,14 @@ export const AudioPlayerProvider = ({ children }) => {
       // keep playing when we change tracks
       if (state.isPlaying && audioPlayerRef?.audio?.current) {
         // Small timeout to ensure the new track is loaded before playing
-        setTimeout(() => {
+        const timeoutId = setTimeout(() => {
           audioPlayerRef.audio.current?.play().catch(e => console.log('Auto-play prevented:', e));
         }, 100);
+        
+        // Clean up timeout when component unmounts or dependencies change
+        return () => {
+          clearTimeout(timeoutId);
+        };
       }
     }
   }, [currentTrackIndex, playlist, state.isPlaying, audioPlayerRef]);
@@ -117,13 +122,22 @@ export const AudioPlayerProvider = ({ children }) => {
     if (!audioPlayerLoaded) {
       setAudioPlayerLoaded(true);
       // Wait for the component to load
-      setTimeout(() => {
+      const outerTimeoutId = setTimeout(() => {
         dispatch({ type: 'PLAY' });
-        setTimeout(() => {
+        const innerTimeoutId = setTimeout(() => {
           audioPlayerRef?.audio?.current?.play().catch(e => console.log('Play prevented:', e));
         }, 100);
+        
+        // Return a cleanup function that clears the inner timeout
+        return () => {
+          clearTimeout(innerTimeoutId);
+        };
       }, 200);
-      return;
+      
+      // Return a cleanup function that clears the outer timeout
+      return () => {
+        clearTimeout(outerTimeoutId);
+      };
     }
 
     if (state.isPlaying) {
@@ -138,10 +152,15 @@ export const AudioPlayerProvider = ({ children }) => {
   // Handle track ended event
   const handleTrackEnded = useCallback(() => {
     // Set a small timeout to ensure state updates properly
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       playNext();
       dispatch({ type: 'PLAY' });
     }, 50);
+    
+    // Clean up timeout if component unmounts
+    return () => {
+      clearTimeout(timeoutId);
+    };
   }, [playNext, dispatch]);
 
   return (

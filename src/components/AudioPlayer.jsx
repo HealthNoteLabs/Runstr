@@ -7,9 +7,7 @@ import 'react-h5-audio-player/lib/styles.css';
 
 export function AudioPlayer({ playlistId }) {
   const [playlist, setPlayList] = useState();
-
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
-
   const [currentTrack, setCurrentTrack] = useState();
 
   useEffect(() => {
