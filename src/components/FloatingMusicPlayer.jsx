@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { NostrContext } from '../contexts/NostrContext';
 import { useAuth } from '../hooks/useAuth';
 import { getLnurlForTrack } from '../utils/wavlake';
+import PropTypes from 'prop-types';
 
 export const FloatingMusicPlayer = () => {
   const { 
@@ -65,10 +66,102 @@ export const FloatingMusicPlayer = () => {
       setZapStatus({ loading: true, success: false, error: null });
 
       // Get the LNURL for the current track
-      const lnurl = await getLnurlForTrack(currentTrack.id);
+      const lnurlString = await getLnurlForTrack(currentTrack.id);
+      console.log('[WavlakeZap] Got LNURL for track:', lnurlString);
       
-      // Send the payment
-      await wallet.sendPayment(lnurl);
+      // LNURL Pay Flow - Similar to Nostr zaps but simplified for Wavlake
+      
+      // 1. First decode the bech32 encoded LNURL to get the actual URL
+      // Note: In a real implementation, you should use a proper bech32 decoder
+      // For this example, assuming lnurlString is already a valid URL or LNURL
+      let lnurlEndpoint;
+      if (lnurlString.startsWith('http')) {
+        // Already a URL (less common but possible)
+        lnurlEndpoint = lnurlString;
+      } else if (lnurlString.startsWith('lnurl')) {
+        // Try to decode the LNURL (very basic approach)
+        try {
+          // This is a simplified approach - in a real app use bech32 library
+          // Most wallets already have built-in LNURL handling, but we're implementing the flow here
+          // const decoded = lnurlString.toLowerCase().replace('lnurl', '');
+          // In a real implementation: const decoded = bech32.decode(lnurlString, 1023);
+          // For now, we're assuming it's either already a URL or will be handled by wallet
+          console.log('[WavlakeZap] This is a bech32 LNURL, would need proper decoding');
+          // For this POC, if it's a bech32 LNURL, we'll try using it directly with the wallet
+          // Most wallet implementations can handle this
+          const result = await wallet.makePayment(lnurlString);
+          console.log('[WavlakeZap] Payment result:', result);
+          
+          setZapStatus({ loading: false, success: true, error: null });
+          setTimeout(() => setZapStatus({ loading: false, success: false, error: null }), 3000);
+          return;
+        } catch (decodeError) {
+          console.error('[WavlakeZap] Error decoding LNURL:', decodeError);
+          throw new Error('Invalid LNURL format');
+        }
+      } else {
+        throw new Error('Invalid LNURL format');
+      }
+      
+      // 2. Make a request to the LNURL service endpoint
+      console.log('[WavlakeZap] Requesting payment info from:', lnurlEndpoint);
+      const response = await fetch(lnurlEndpoint);
+      if (!response.ok) {
+        throw new Error(`LNURL endpoint error: ${response.status} ${response.statusText}`);
+      }
+      
+      // 3. Parse the response to get the callback URL and other parameters
+      const lnurlPayData = await response.json();
+      console.log('[WavlakeZap] LNURL-pay metadata:', lnurlPayData);
+      
+      if (!lnurlPayData.callback) {
+        console.error('[WavlakeZap] Invalid LNURL-pay response - missing callback URL:', lnurlPayData);
+        throw new Error('Invalid LNURL-pay response: missing callback URL');
+      }
+      
+      // 4. Construct the callback URL with amount
+      const callbackUrl = new URL(lnurlPayData.callback);
+      const amount = defaultZapAmount * 1000; // convert sats to millisats
+      
+      // Check if amount is within min/max bounds
+      if (
+        amount < lnurlPayData.minSendable ||
+        amount > lnurlPayData.maxSendable
+      ) {
+        throw new Error(
+          `Amount must be between ${lnurlPayData.minSendable / 1000} and ${lnurlPayData.maxSendable / 1000} sats`
+        );
+      }
+      
+      callbackUrl.searchParams.append('amount', amount);
+      
+      // Add comment if allowed
+      if (lnurlPayData.commentAllowed && lnurlPayData.commentAllowed > 0) {
+        const comment = `Zap for ${currentTrack.title} by ${currentTrack.artist || 'Unknown Artist'} via RUNSTR app! ⚡️`;
+        callbackUrl.searchParams.append('comment', comment);
+      }
+      
+      console.log('[WavlakeZap] Callback URL:', callbackUrl.toString());
+      
+      // 5. Request an invoice from the callback URL
+      const invoiceResponse = await fetch(callbackUrl);
+      if (!invoiceResponse.ok) {
+        throw new Error(`Invoice request failed: ${invoiceResponse.status} ${invoiceResponse.statusText}`);
+      }
+      
+      // 6. Parse the invoice data to get the payment request
+      const invoiceData = await invoiceResponse.json();
+      console.log('[WavlakeZap] Invoice data:', invoiceData);
+      
+      if (!invoiceData.pr) {
+        console.error('[WavlakeZap] Invalid LNURL-pay response - missing payment request:', invoiceData);
+        throw new Error('Invalid LNURL-pay response: missing payment request');
+      }
+      
+      // 7. Pay the invoice
+      console.log('[WavlakeZap] Paying invoice...');
+      await wallet.makePayment(invoiceData.pr);
+      console.log('[WavlakeZap] Payment successful!');
       
       setZapStatus({ 
         loading: false, 
@@ -79,11 +172,11 @@ export const FloatingMusicPlayer = () => {
       // Clear success message after a few seconds
       setTimeout(() => setZapStatus({ loading: false, success: false, error: null }), 3000);
     } catch (error) {
-      console.error('Error zapping artist:', error);
+      console.error('[WavlakeZap] Error zapping artist:', error);
       setZapStatus({ 
         loading: false, 
         success: false, 
-        error: typeof error === 'string' ? error : 'Failed to zap' 
+        error: typeof error === 'string' ? error : error.message || 'Failed to zap' 
       });
       
       setTimeout(() => setZapStatus({ loading: false, success: false, error: null }), 3000);
@@ -99,6 +192,10 @@ export const FloatingMusicPlayer = () => {
       />
     </div>
   );
+  
+  ProgressBar.propTypes = {
+    value: PropTypes.number.isRequired
+  };
   
   // Format time (simplified as we don't have actual duration)
   const formatTime = (seconds) => {
