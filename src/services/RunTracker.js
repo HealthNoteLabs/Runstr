@@ -12,8 +12,6 @@ class RunTracker extends EventEmitter {
     this.pace = 0; // in seconds per meter
     this.splits = []; // Array to store split objects { km, time, pace }
     this.positions = [];
-<<<<<<< HEAD
-=======
     this.distanceUnit = localStorage.getItem('distanceUnit') || 'km'; // Get user's preferred unit
     
     // Add elevation tracking data
@@ -23,7 +21,6 @@ class RunTracker extends EventEmitter {
       loss: 0,
       lastAltitude: null
     };
->>>>>>> Simple-updates
 
     this.isTracking = false;
     this.isPaused = false;

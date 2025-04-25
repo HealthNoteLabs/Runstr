@@ -1,12 +1,3 @@
-<<<<<<< HEAD
-import { BrowserRouter as Router } from 'react-router-dom';
-import { NostrProvider } from './contexts/NostrProvider';
-import { AchievementProvider } from './contexts/AchievementContext.jsx';
-import { AppRoutes } from './AppRoutes';
-import { MenuBar } from './components/MenuBar';
-import './App.css';
-
-=======
 import { Suspense, lazy } from 'react';
 import { BrowserRouter as Router } from 'react-router-dom';
 import { NostrProvider } from './contexts/NostrProvider';
@@ -24,19 +15,10 @@ const LoadingFallback = () => (
   <div className="loading-spinner"></div>
 );
 
->>>>>>> Simple-updates
 const App = () => {
   return (
     <Router>
       <NostrProvider>
-<<<<<<< HEAD
-        <AchievementProvider>
-          <div className="app">
-            <MenuBar />
-            <AppRoutes />
-          </div>
-        </AchievementProvider>
-=======
         <AuthProvider>
           <AudioPlayerProvider>
             <div className="app">
@@ -52,7 +34,6 @@ const App = () => {
             </div>
           </AudioPlayerProvider>
         </AuthProvider>
->>>>>>> Simple-updates
       </NostrProvider>
     </Router>
   );

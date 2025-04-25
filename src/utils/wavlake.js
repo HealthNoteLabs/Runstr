@@ -135,20 +135,6 @@ export const fetchLikedPlaylist = async () => {
   const url = `${WAVLAKE_CATALOG_API_BASE_URL}/library/tracks`;
 
   try {
-<<<<<<< HEAD
-    const res = await fetch(url, {
-      headers: {
-        Authorization: await nip98.getToken(
-          url,
-          'get',
-          (event) => window.nostr.signEvent(event),
-          true
-        )
-      }
-    });
-
-    const tracks = await res.json().then((res) => res.data.tracks);
-=======
     // Ensure Nostr is connected before trying to fetch liked tracks
     if (!window.nostr) {
       throw new Error('Nostr extension not found. Please log in first to access your liked tracks.');
@@ -191,16 +177,11 @@ export const fetchLikedPlaylist = async () => {
       }
       return track;
     });
->>>>>>> Simple-updates
 
     return {
       id: LIKED,
       title: 'Liked',
-<<<<<<< HEAD
-      tracks,
-=======
       tracks: validatedTracks,
->>>>>>> Simple-updates
       isPrivate: true
     };
   } catch (error) {
@@ -210,29 +191,6 @@ export const fetchLikedPlaylist = async () => {
 };
 
 export const fetchPlaylistById = async (playlistId) => {
-<<<<<<< HEAD
-  const response = await fetch(
-    `${WAVLAKE_API_BASE_URL}/content/playlist/${playlistId}`
-  );
-  if (!response.ok) {
-    const error = new Error(`Failed to fetch playlist: ${response.statusText}`);
-    error.status = response.status;
-    throw error;
-  }
-  return { id: playlistId, ...(await response.json()) };
-};
-
-export const fetchPlaylist = async (playlistId) => {
-  switch (playlistId) {
-    case TOP_40:
-      return fetchTop40();
-    case TRENDING_ROCK_PLAYLIST_ID:
-      return fetchTrendingRock();
-    case TRENDING_HIPHOP_PLAYLIST_ID:
-      return fetchTrendingHipHop();
-    default:
-      return fetchPlaylistById(playlistId);
-=======
   try {
     const response = await fetch(
       `${WAVLAKE_API_BASE_URL}/content/playlist/${playlistId}`
@@ -289,6 +247,5 @@ export const fetchPlaylist = async (playlistId) => {
   } catch (error) {
     console.error(`Error in fetchPlaylist for ${playlistId}:`, error);
     throw error;
->>>>>>> Simple-updates
   }
 };

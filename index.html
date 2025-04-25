@@ -3,22 +3,6 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-<<<<<<< HEAD
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="msapplication-navbutton-color" content="#646cff" />
-    <meta name="firefox-theme-color" content="#646cff" />
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
-    <title>Running App</title>
-    <script 
-      src='https://www.unpkg.com/nostr-login@latest/dist/unpkg.js' 
-      data-perms="sign_event:1,nip04_encrypt" 
-      data-theme="purple"
-      data-title="Nostr Run Club"
-=======
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!-- Theme colors for browsers -->
     <meta name="theme-color" content="#242424" />
@@ -145,27 +129,10 @@
       data-perms="get_public_key,sign_event:0" 
       data-theme="purple"
       data-title="RUNSTR"
->>>>>>> Simple-updates
       data-description="Track your runs and connect with runners on Nostr"
     ></script>
   </head>
   <body>
-<<<<<<< HEAD
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then(registration => {
-              console.log('SW registered:', registration);
-            })
-            .catch(error => {
-              console.log('SW registration failed:', error);
-            });
-        });
-      }
-=======
     <div id="root">
       <div class="loading-spinner"></div>
     </div>
@@ -206,7 +173,6 @@
       // Run on resize and orientation change
       window.addEventListener('resize', fixViewportHeight);
       window.addEventListener('orientationchange', fixViewportHeight);
->>>>>>> Simple-updates
     </script>
   </body>
 </html>
