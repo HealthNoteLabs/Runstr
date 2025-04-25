@@ -47,18 +47,16 @@ export const FloatingMusicPlayer = () => {
   if (!currentTrack) return <span></span>;
 
   // Handle zap function - sends Bitcoin to the artist
-  const handleZapArtist = async (e) => {
-    if (e) e.stopPropagation(); // Prevent expanding/collapsing the player
-    
+  const handleZapArtist = async () => {
     if (!currentTrack) return;
     if (!wallet || !wallet.isEnabled()) {
       setZapStatus({ 
         loading: false, 
         success: false, 
-        error: 'Wallet not connected' 
+        error: 'Wallet not connected. Please connect a Lightning wallet in your settings.' 
       });
       
-      setTimeout(() => setZapStatus({ loading: false, success: false, error: null }), 3000);
+      setTimeout(() => setZapStatus({ loading: false, success: false, error: null }), 5000);
       return;
     }
     
@@ -69,48 +67,83 @@ export const FloatingMusicPlayer = () => {
       const lnurlString = await getLnurlForTrack(currentTrack.id);
       console.log('[WavlakeZap] Got LNURL for track:', lnurlString);
       
-      // LNURL Pay Flow - Similar to Nostr zaps but simplified for Wavlake
+      // LNURL Pay Flow - Follow the standard LNURL-pay protocol
       
-      // 1. First decode the bech32 encoded LNURL to get the actual URL
-      // Note: In a real implementation, you should use a proper bech32 decoder
-      // For this example, assuming lnurlString is already a valid URL or LNURL
-      let lnurlEndpoint;
-      if (lnurlString.startsWith('http')) {
-        // Already a URL (less common but possible)
-        lnurlEndpoint = lnurlString;
-      } else if (lnurlString.startsWith('lnurl')) {
-        // Try to decode the LNURL (very basic approach)
+      // First handle common LNURL formats
+      if (lnurlString.toLowerCase().startsWith('lnurl')) {
         try {
-          // This is a simplified approach - in a real app use bech32 library
-          // Most wallets already have built-in LNURL handling, but we're implementing the flow here
-          // const decoded = lnurlString.toLowerCase().replace('lnurl', '');
-          // In a real implementation: const decoded = bech32.decode(lnurlString, 1023);
-          // For now, we're assuming it's either already a URL or will be handled by wallet
-          console.log('[WavlakeZap] This is a bech32 LNURL, would need proper decoding');
-          // For this POC, if it's a bech32 LNURL, we'll try using it directly with the wallet
-          // Most wallet implementations can handle this
-          const result = await wallet.makePayment(lnurlString);
-          console.log('[WavlakeZap] Payment result:', result);
+          console.log('[WavlakeZap] Attempting direct payment with LNURL string');
+          // Try direct payment with the wallet - many wallet implementations can handle this
+          await wallet.makePayment(lnurlString);
+          console.log('[WavlakeZap] Direct payment successful');
           
-          setZapStatus({ loading: false, success: true, error: null });
-          setTimeout(() => setZapStatus({ loading: false, success: false, error: null }), 3000);
+          setZapStatus({ 
+            loading: false, 
+            success: true, 
+            error: null 
+          });
+          
+          setTimeout(() => setZapStatus({ loading: false, success: false, error: null }), 5000);
           return;
-        } catch (decodeError) {
-          console.error('[WavlakeZap] Error decoding LNURL:', decodeError);
-          throw new Error('Invalid LNURL format');
+        } catch (directError) {
+          console.error('[WavlakeZap] Direct payment failed, falling back to manual flow:', directError);
+          // Continue with the manual flow below
         }
-      } else {
-        throw new Error('Invalid LNURL format');
       }
       
-      // 2. Make a request to the LNURL service endpoint
+      // Determine endpoint from LNURL - handling various formats
+      let lnurlEndpoint;
+      
+      // Handle URL formats (http, https)
+      if (lnurlString.toLowerCase().startsWith('http')) {
+        // Already a URL
+        lnurlEndpoint = lnurlString;
+      } 
+      // Handle lightning addresses (user@domain.com)
+      else if (lnurlString.includes('@')) {
+        const [username, domain] = lnurlString.split('@');
+        lnurlEndpoint = `https://${domain}/.well-known/lnurlp/${username}`;
+      }
+      // Any other URL format (might be a non-standard URL without protocol)
+      else if (lnurlString.includes('.') && !lnurlString.toLowerCase().startsWith('lnurl')) {
+        // Try to interpret as URL, assume https if no protocol specified
+        if (lnurlString.includes('://')) {
+          lnurlEndpoint = lnurlString;
+        } else {
+          lnurlEndpoint = `https://${lnurlString}`;
+        }
+      }
+      // Try direct payment again as a last resort
+      else {
+        try {
+          console.log('[WavlakeZap] Attempting direct payment with unknown format LNURL');
+          await wallet.makePayment(lnurlString);
+          console.log('[WavlakeZap] Direct payment successful');
+          
+          setZapStatus({ 
+            loading: false, 
+            success: true, 
+            error: null 
+          });
+          
+          setTimeout(() => setZapStatus({ loading: false, success: false, error: null }), 5000);
+          return;
+        } catch (lastResortError) {
+          console.error('[WavlakeZap] Last resort payment failed:', lastResortError);
+          throw new Error('Unrecognized LNURL format. Please try again later.');
+        }
+      }
+      
+      console.log('[WavlakeZap] Using LNURL endpoint:', lnurlEndpoint);
+      
+      // Request payment details from the LNURL endpoint
       console.log('[WavlakeZap] Requesting payment info from:', lnurlEndpoint);
       const response = await fetch(lnurlEndpoint);
       if (!response.ok) {
         throw new Error(`LNURL endpoint error: ${response.status} ${response.statusText}`);
       }
       
-      // 3. Parse the response to get the callback URL and other parameters
+      // Parse the response
       const lnurlPayData = await response.json();
       console.log('[WavlakeZap] LNURL-pay metadata:', lnurlPayData);
       
@@ -119,11 +152,11 @@ export const FloatingMusicPlayer = () => {
         throw new Error('Invalid LNURL-pay response: missing callback URL');
       }
       
-      // 4. Construct the callback URL with amount
+      // Construct the callback URL
       const callbackUrl = new URL(lnurlPayData.callback);
       const amount = defaultZapAmount * 1000; // convert sats to millisats
       
-      // Check if amount is within min/max bounds
+      // Check amount against min/max limits
       if (
         amount < lnurlPayData.minSendable ||
         amount > lnurlPayData.maxSendable
@@ -133,6 +166,7 @@ export const FloatingMusicPlayer = () => {
         );
       }
       
+      // Add amount to callback URL
       callbackUrl.searchParams.append('amount', amount);
       
       // Add comment if allowed
@@ -143,13 +177,13 @@ export const FloatingMusicPlayer = () => {
       
       console.log('[WavlakeZap] Callback URL:', callbackUrl.toString());
       
-      // 5. Request an invoice from the callback URL
+      // Request an invoice from the callback URL
       const invoiceResponse = await fetch(callbackUrl);
       if (!invoiceResponse.ok) {
         throw new Error(`Invoice request failed: ${invoiceResponse.status} ${invoiceResponse.statusText}`);
       }
       
-      // 6. Parse the invoice data to get the payment request
+      // Parse the invoice data to get the payment request
       const invoiceData = await invoiceResponse.json();
       console.log('[WavlakeZap] Invoice data:', invoiceData);
       
@@ -158,28 +192,21 @@ export const FloatingMusicPlayer = () => {
         throw new Error('Invalid LNURL-pay response: missing payment request');
       }
       
-      // 7. Pay the invoice
+      // Pay the invoice
       console.log('[WavlakeZap] Paying invoice...');
       await wallet.makePayment(invoiceData.pr);
       console.log('[WavlakeZap] Payment successful!');
       
-      setZapStatus({ 
-        loading: false, 
-        success: true, 
-        error: null 
-      });
-      
-      // Clear success message after a few seconds
-      setTimeout(() => setZapStatus({ loading: false, success: false, error: null }), 3000);
+      setZapStatus({ loading: false, success: true, error: null });
+      setTimeout(() => setZapStatus({ loading: false, success: false, error: null }), 5000);
     } catch (error) {
-      console.error('[WavlakeZap] Error zapping artist:', error);
+      console.error('[WavlakeZap] Error during zap process:', error);
       setZapStatus({ 
         loading: false, 
         success: false, 
-        error: typeof error === 'string' ? error : error.message || 'Failed to zap' 
+        error: error.message || 'Error processing payment. Please try again.' 
       });
-      
-      setTimeout(() => setZapStatus({ loading: false, success: false, error: null }), 3000);
+      setTimeout(() => setZapStatus({ loading: false, success: false, error: null }), 5000);
     }
   };
 
