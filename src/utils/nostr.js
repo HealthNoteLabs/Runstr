@@ -3,45 +3,24 @@ import { Platform } from '../utils/react-native-shim';
 import AmberAuth from '../services/AmberAuth';
 // Import nostr-tools implementation for fallback
 import { createAndPublishEvent as publishWithNostrTools } from './nostrClient';
-// Import SimplePool from nostr-tools for health checks
-import { SimplePool } from 'nostr-tools';
 
-// Separate relay lists for different features
-export const FEED_RELAYS = [
+// Optimized relay list based on testing results
+export const RELAYS = [
   'wss://relay.damus.io',    // Most reliable for running content
-  'wss://nos.lol',           // Good secondary option
+  'wss://nos.lol',           // Good secondary option  // Has unique running content
   'wss://nostr.wine',        // Additional reliable relay
-  'wss://relay.snort.social' // Backup relay
-];
-
-export const GROUP_RELAYS = [
-  'wss://groups.0xchat.com', // Primary relay for NIP-29 groups
-  'wss://relay.0xchat.com'   // Secondary relay for NIP-29 support
-];
-
-// Additional specialized relays
-export const ADDITIONAL_RELAYS = [
-  'wss://eden.nostr.land',   
-  'wss://e.nos.lol',         
+  'wss://eden.nostr.land',   // Additional reliable relay
+  'wss://e.nos.lol',         // Additional reliable relay
+  'wss://relay.snort.social', // Backup relay
   'wss://feeds.nostr.band/running',
   'wss://feeds.nostr.band/popular',
+  'wss://feeds.nostr.band/memes',
   'wss://purplerelay.com',
-  'wss://nostr.bitcoiner.social'
+  'wss://nostr.bitcoiner.social',
+  'wss://relay.0xchat.com',  // NIP-29 group support for running clubs
 ];
 
-// Combined relay list for backward compatibility
-export const RELAYS = [...FEED_RELAYS, ...ADDITIONAL_RELAYS, ...GROUP_RELAYS];
-
-// Create NDK instances for different purposes
-const feedNdk = new NDK({
-  explicitRelayUrls: FEED_RELAYS
-});
-
-const groupNdk = new NDK({
-  explicitRelayUrls: GROUP_RELAYS
-});
-
-// Main NDK instance with all relays for backward compatibility
+// Create a new NDK instance with optimized relay configuration
 const ndk = new NDK({
   explicitRelayUrls: RELAYS
 });
@@ -54,34 +33,18 @@ let isConnected = false;
 let lastConnectionCheck = 0;
 const CONNECTION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
-// Track relay performance data
-const relayPerformance = {};
-
-// Health check interval (10 minutes)
-const HEALTH_CHECK_INTERVAL = 10 * 60 * 1000;
-
 /**
  * Initialize the Nostr client - connect to relays
  * @returns {Promise<boolean>} Success status
  */
 export const initializeNostr = async () => {
   try {
-    // Connect to all relay instances
-    const [feedConnected, groupConnected, allConnected] = await Promise.all([
-      feedNdk.connect().then(() => true).catch(() => false),
-      groupNdk.connect().then(() => true).catch(() => false),
-      ndk.connect().then(() => true).catch(() => false)
-    ]);
-    
-    console.log('NDK connection status:', {
-      feed: feedConnected ? 'connected' : 'failed',
-      group: groupConnected ? 'connected' : 'failed',
-      all: allConnected ? 'connected' : 'failed'
-    });
-    
-    isConnected = feedConnected || groupConnected || allConnected;
+    // Connect to relays
+    await ndk.connect();
+    console.log('Connected to NDK relays');
+    isConnected = true;
     lastConnectionCheck = Date.now();
-    return isConnected;
+    return true;
   } catch (error) {
     console.error('Error initializing Nostr:', error);
     isConnected = false;
@@ -133,60 +96,26 @@ export const ensureConnection = async () => {
 };
 
 /**
- * Fetch events with optimized relay selection
- * @param {Object} filter - Filter object
- * @param {string} type - Type of query ('feed', 'group', or 'all')
+ * Fetch events from Nostr
+ * @param {Object} filter - Nostr filter
  * @returns {Promise<Set>} Set of events
  */
-export const fetchEvents = async (filter, type = 'all') => {
+export const fetchEvents = async (filter) => {
   try {
-    await ensureConnection();
+    // Log what we're fetching - helpful for debugging
+    console.log('Fetching events with filter:', filter);
     
-    const startTime = Date.now();
-    
-    // Add a reasonable limit if none provided
+    // Set safe defaults
     if (!filter.limit) {
-      filter.limit = 50;
+      filter.limit = 30;
     }
     
-    // Get optimal relays based on performance data for direct queries
-    const optimalRelays = getOptimalRelays(type, 3);
-    console.log(`Using optimal relays for ${type} query:`, optimalRelays);
-    
-    // Select the appropriate NDK instance
-    const selectedNdk = 
-      type === 'feed' ? feedNdk :
-      type === 'group' ? groupNdk :
-      ndk; // Default to all relays
-    
-    // Use the selected NDK instance
-    const events = await selectedNdk.fetchEvents(filter);
-    
-    // Update performance metrics for the relay type
-    const responseTime = Date.now() - startTime;
-    const usedRelays = type === 'feed' ? FEED_RELAYS : 
-                       type === 'group' ? GROUP_RELAYS : 
-                       RELAYS;
-    
-    // Update metrics for all relays in the used set
-    // This is an approximation since NDK doesn't tell us which relay actually responded
-    usedRelays.forEach(relay => {
-      updateRelayPerformance(relay, true, responseTime / usedRelays.length);
-    });
-    
+    // Fetch events using NDK
+    const events = await ndk.fetchEvents(filter);
+    console.log(`Fetched ${events.size} events for filter:`, filter);
     return events;
   } catch (error) {
-    console.error(`Error fetching ${type} events:`, error);
-    
-    // Update performance metrics on failure
-    const usedRelays = type === 'feed' ? FEED_RELAYS : 
-                       type === 'group' ? GROUP_RELAYS : 
-                       RELAYS;
-                       
-    usedRelays.forEach(relay => {
-      updateRelayPerformance(relay, false, 0);
-    });
-    
+    console.error('Error fetching events:', error);
     return new Set();
   }
 };
@@ -197,74 +126,67 @@ export const fetchEvents = async (filter, type = 'all') => {
  * @param {number} since - Timestamp to fetch posts since
  * @returns {Promise<Array>} Array of running posts
  */
-export const fetchRunningPosts = async (limit = 20, since = undefined) => {
+export const fetchRunningPosts = async (limit = 7, since = undefined) => {
   try {
-    // Use 7 days instead of 30 for better performance
-    const defaultSince = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
+    // If no custom "since" provided, use 30 days
+    const defaultSince = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
     const sinceTimestamp = since ? Math.floor(since / 1000) : defaultSince;
     
-    console.log(`Fetching posts with #runstr hashtag from ${new Date(sinceTimestamp * 1000).toLocaleString()}`);
+    console.log(`Fetching posts with #runstr and #running hashtags from ${new Date(sinceTimestamp * 1000).toLocaleString()}`);
     
-    // Focus only on #runstr for better performance
-    const filter = {
+    // Simplified approach: Only fetch posts with the two specific hashtags
+    const events = await ndk.fetchEvents({
       kinds: [1], // Regular posts
       limit: limit,
-      "#t": ["runstr"], // Focus on just runstr hashtag
+      "#t": ["runstr", "running"],  // Only these two specific hashtags
       since: sinceTimestamp
-    };
-    
-    // Use the feed-specific NDK instance
-    const events = await feedNdk.fetchEvents(filter);
+    });
     
     // Convert to array and sort by created_at (newest first)
     const eventArray = Array.from(events)
       .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
       .slice(0, limit);
     
-    console.log(`Found ${eventArray.length} posts with #runstr hashtag`);
+    console.log(`Found ${eventArray.length} posts with #runstr and #running hashtags`);
     
     if (eventArray.length > 0) {
       return eventArray;
     }
     
-    // If no results, try with a broader time window but still focused on #runstr
-    console.log("No posts found with #runstr in last 7 days, trying with 30 days window...");
+    // Fallback if no posts found with both tags
+    console.log("No posts found with both tags, trying individual tag queries...");
     
-    const extendedSince = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
-    const extendedFilter = {
-      kinds: [1],
-      limit: limit,
-      "#t": ["runstr"],
-      since: extendedSince
-    };
+    // Try fetching with each tag separately and combine results
+    const [runstrEvents, runningEvents] = await Promise.all([
+      ndk.fetchEvents({
+        kinds: [1],
+        limit: limit,
+        "#t": ["runstr"],
+        since: sinceTimestamp
+      }),
+      ndk.fetchEvents({
+        kinds: [1],
+        limit: limit,
+        "#t": ["running"],
+        since: sinceTimestamp
+      })
+    ]);
     
-    const extendedEvents = await feedNdk.fetchEvents(extendedFilter);
-    const extendedArray = Array.from(extendedEvents)
+    // Combine and deduplicate events
+    const uniqueEvents = new Map();
+    
+    [...Array.from(runstrEvents), ...Array.from(runningEvents)].forEach(event => {
+      if (event && event.id && !uniqueEvents.has(event.id)) {
+        uniqueEvents.set(event.id, event);
+      }
+    });
+    
+    // Sort by created_at and limit
+    const fallbackArray = Array.from(uniqueEvents.values())
       .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
       .slice(0, limit);
     
-    console.log(`Found ${extendedArray.length} posts with #runstr in 30 day window`);
-    
-    if (extendedArray.length > 0) {
-      return extendedArray;
-    }
-    
-    // Last resort: check for #running tag
-    console.log("No posts found with #runstr, trying with #running hashtag as fallback...");
-    
-    const fallbackFilter = {
-      kinds: [1],
-      limit: limit,
-      "#t": ["running"],
-      since: extendedSince
-    };
-    
-    const fallbackEvents = await feedNdk.fetchEvents(fallbackFilter);
-    const fallbackArray = Array.from(fallbackEvents)
-      .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
-      .slice(0, limit);
-    
-    console.log(`Found ${fallbackArray.length} posts with #running hashtag`);
+    console.log(`Found ${fallbackArray.length} posts with individual hashtags`);
     return fallbackArray;
   } catch (error) {
     console.error('Error fetching hashtag posts:', error);
@@ -273,7 +195,7 @@ export const fetchRunningPosts = async (limit = 20, since = undefined) => {
 };
 
 /**
- * Load all supplementary data for posts in parallel with caching
+ * Load all supplementary data for posts in parallel
  * @param {Array} posts - Array of posts to load data for
  * @returns {Promise<Object>} Object containing all supplementary data
  */
@@ -286,148 +208,51 @@ export const loadSupplementaryData = async (posts) => {
     zapReceipts: new Set()
   };
   
-  try {
-    // Generate a cache key based on the post IDs (first 3 characters of each ID to keep it short)
-    const postFingerprint = posts
-      .slice(0, 10) // Only use up to 10 posts for the fingerprint
-      .map(post => post.id.substring(0, 3))
-      .sort()
-      .join('');
-    const cacheKey = `supp_data_${postFingerprint}_${posts.length}`;
-    
-    // Check memory cache first (for this session)
-    if (window.runstrCache && window.runstrCache[cacheKey]) {
-      console.log('Using in-memory cache for supplementary data');
-      const cachedData = window.runstrCache[cacheKey];
-      
-      // Only use cache if it's less than 5 minutes old
-      if (cachedData.timestamp && (Date.now() - cachedData.timestamp < 5 * 60 * 1000)) {
-        return cachedData.data;
-      }
-    }
-    
-    // Extract all post IDs and unique author public keys
-    const postIds = posts.map(post => post.id);
-    const authors = [...new Set(posts.map(post => post.pubkey))];
-    
-    console.log(`Loading supplementary data for ${postIds.length} posts from ${authors.length} authors`);
-    
-    // Split profiles query into batches if there are many authors
-    let profileEvents = new Set();
-    if (authors.length > 0) {
-      if (authors.length <= 10) {
-        // Small batch, use a single query
-        profileEvents = await fetchEvents({
-          kinds: [0],
-          authors
-        }, 'feed');
-      } else {
-        // Larger batch, split into smaller queries to avoid timeouts
-        const batchSize = 10;
-        const profileBatches = [];
-        
-        for (let i = 0; i < authors.length; i += batchSize) {
-          const authorBatch = authors.slice(i, i + batchSize);
-          profileBatches.push(fetchEvents({
-            kinds: [0],
-            authors: authorBatch
-          }, 'feed'));
-        }
-        
-        // Execute batches in parallel
-        const batchResults = await Promise.all(profileBatches);
-        
-        // Combine results
-        profileEvents = new Set([...batchResults.flatMap(set => Array.from(set))]);
-      }
-    }
-    
-    // Run interaction queries in parallel
-    const [comments, likes, reposts, zapReceipts] = await Promise.all([
-      // Comments - split into batches if many posts
-      (postIds.length <= 10) 
-        ? fetchEvents({ kinds: [1], '#e': postIds }, 'feed')
-        : batchFetchEvents(postIds, [1], '#e', 10, 'feed'),
-      
-      // Likes
-      (postIds.length <= 10)
-        ? fetchEvents({ kinds: [7], '#e': postIds }, 'feed')
-        : batchFetchEvents(postIds, [7], '#e', 10, 'feed'),
-      
-      // Reposts
-      (postIds.length <= 10)
-        ? fetchEvents({ kinds: [6], '#e': postIds }, 'feed')
-        : batchFetchEvents(postIds, [6], '#e', 10, 'feed'),
-      
-      // Zap receipts
-      (postIds.length <= 10)
-        ? fetchEvents({ kinds: [9735], '#e': postIds }, 'feed')
-        : batchFetchEvents(postIds, [9735], '#e', 10, 'feed')
-    ]);
-    
-    // Compile the final result
-    const result = {
-      profileEvents,
-      comments,
-      likes,
-      reposts,
-      zapReceipts
-    };
-    
-    // Store in memory cache
-    if (typeof window !== 'undefined') {
-      if (!window.runstrCache) window.runstrCache = {};
-      window.runstrCache[cacheKey] = {
-        data: result,
-        timestamp: Date.now()
-      };
-      
-      // Delete any cache entries older than 10 minutes
-      const cacheCleanupTime = Date.now() - 10 * 60 * 1000; 
-      Object.keys(window.runstrCache).forEach(key => {
-        if (window.runstrCache[key].timestamp < cacheCleanupTime) {
-          delete window.runstrCache[key];
-        }
-      });
-    }
-    
-    return result;
-  } catch (error) {
-    console.error('Error loading supplementary data:', error);
-    // Return empty sets on error
-    return {
-      profileEvents: new Set(),
-      comments: new Set(),
-      likes: new Set(),
-      reposts: new Set(),
-      zapReceipts: new Set()
-    };
-  }
-};
-
-/**
- * Helper function to fetch events in batches
- * @param {Array} ids - Array of IDs to query 
- * @param {Array} kinds - Event kinds to fetch
- * @param {string} tagName - Tag name to use (e.g. '#e')
- * @param {number} batchSize - Size of each batch
- * @param {string} type - Type of query ('feed', 'group', or 'all')
- * @returns {Promise<Set>} Combined set of all fetched events
- */
-const batchFetchEvents = async (ids, kinds, tagName, batchSize = 10, type = 'all') => {
-  const batches = [];
-  for (let i = 0; i < ids.length; i += batchSize) {
-    const idBatch = ids.slice(i, i + batchSize);
-    const filter = { kinds };
-    filter[tagName] = idBatch;
-    batches.push(fetchEvents(filter, type));
-  }
+  // Extract all post IDs
+  const postIds = posts.map(post => post.id);
+  // Extract unique author public keys
+  const authors = [...new Set(posts.map(post => post.pubkey))];
   
-  // Execute batches in parallel
-  const batchResults = await Promise.all(batches);
+  // Run all queries in parallel like in the working implementation
+  const [profileEvents, comments, likes, reposts, zapReceipts] = await Promise.all([
+    // Profile information
+    fetchEvents({
+      kinds: [0],
+      authors
+    }),
+    
+    // Comments
+    fetchEvents({
+      kinds: [1],
+      '#e': postIds
+    }),
+    
+    // Likes
+    fetchEvents({
+      kinds: [7],
+      '#e': postIds
+    }),
+    
+    // Reposts
+    fetchEvents({
+      kinds: [6],
+      '#e': postIds
+    }),
+    
+    // Zap receipts
+    fetchEvents({
+      kinds: [9735],
+      '#e': postIds
+    })
+  ]);
   
-  // Combine results
-  return new Set([...batchResults.flatMap(set => Array.from(set))]);
+  return {
+    profileEvents,
+    comments,
+    likes,
+    reposts,
+    zapReceipts
+  };
 };
 
 /**
@@ -962,162 +787,5 @@ export const createWorkoutEvent = (run, distanceUnit) => {
     ]
   };
 };
-
-/**
- * Update relay performance metrics
- * @param {string} relay - Relay URL
- * @param {boolean} success - Whether the operation succeeded
- * @param {number} responseTime - Response time in ms
- */
-const updateRelayPerformance = (relay, success, responseTime) => {
-  if (!relayPerformance[relay]) {
-    relayPerformance[relay] = {
-      successCount: 0,
-      failCount: 0,
-      totalTime: 0,
-      avgTime: 0,
-      lastUpdated: Date.now()
-    };
-  }
-  
-  const stats = relayPerformance[relay];
-  stats.lastUpdated = Date.now();
-  
-  if (success) {
-    stats.successCount++;
-    stats.totalTime += responseTime;
-    stats.avgTime = stats.totalTime / stats.successCount;
-  } else {
-    stats.failCount++;
-  }
-  
-  // Calculate success rate
-  const total = stats.successCount + stats.failCount;
-  stats.successRate = total > 0 ? stats.successCount / total : 0;
-  
-  // Log only on significant changes or first few updates
-  if (total < 5 || total % 10 === 0) {
-    console.log(`Relay ${relay} performance: ${Math.round(stats.successRate * 100)}% success, ${Math.round(stats.avgTime)}ms avg time`);
-  }
-};
-
-/**
- * Get optimal relays for a specific operation
- * @param {string} operation - Operation type ('feed', 'group', or 'all')
- * @param {number} count - Number of relays to return
- * @returns {Array} Array of relay URLs
- */
-const getOptimalRelays = (operation, count = 3) => {
-  // Define base relay pool based on operation
-  let baseRelays = [];
-  switch (operation) {
-    case 'feed':
-      baseRelays = FEED_RELAYS;
-      break;
-    case 'group':
-      baseRelays = GROUP_RELAYS;
-      break;
-    default:
-      baseRelays = RELAYS;
-  }
-  
-  // If we don't have performance data yet, return the top N relays from base list
-  if (Object.keys(relayPerformance).length === 0) {
-    return baseRelays.slice(0, count);
-  }
-  
-  // Filter for relays that match the operation type
-  const candidateRelays = baseRelays.filter(relay => 
-    relayPerformance[relay] && relayPerformance[relay].lastUpdated > Date.now() - 30 * 60 * 1000
-  );
-  
-  // If no candidates with performance data, use the base relays
-  if (candidateRelays.length === 0) {
-    return baseRelays.slice(0, count);
-  }
-  
-  // Sort relays by performance (success rate and avg time)
-  const sortedRelays = candidateRelays.sort((a, b) => {
-    const statsA = relayPerformance[a];
-    const statsB = relayPerformance[b];
-    
-    // If success rates are significantly different, prioritize that
-    if (Math.abs(statsA.successRate - statsB.successRate) > 0.2) {
-      return statsB.successRate - statsA.successRate;
-    }
-    
-    // Otherwise prioritize by response time
-    return statsA.avgTime - statsB.avgTime;
-  });
-  
-  // Always include at least one relay from the base list if available
-  const result = sortedRelays.slice(0, count);
-  if (result.length < count && baseRelays.length > 0) {
-    for (const relay of baseRelays) {
-      if (!result.includes(relay)) {
-        result.push(relay);
-        if (result.length >= count) break;
-      }
-    }
-  }
-  
-  return result;
-};
-
-/**
- * Perform a health check on relays
- */
-const performRelayHealthCheck = async () => {
-  console.log('Performing relay health check...');
-  
-  // Create a dedicated pool for health checks
-  const healthCheckPool = new SimplePool({
-    eoseSubTimeout: 5000,
-    getTimeout: 5000,
-    connectTimeout: 3000
-  });
-  
-  // Check each relay with a simple filter
-  const testFilter = {
-    kinds: [1],
-    limit: 1
-  };
-  
-  // Test all relays
-  for (const relay of RELAYS) {
-    try {
-      const startTime = Date.now();
-      // Test with a simple query to each relay
-      await healthCheckPool.list([relay], [testFilter], { timeout: 5000 });
-      const responseTime = Date.now() - startTime;
-      updateRelayPerformance(relay, true, responseTime);
-    } catch (error) {
-      updateRelayPerformance(relay, false, 0);
-      console.warn(`Relay ${relay} failed health check:`, error.message);
-    }
-  }
-  
-  // Close the pool when done
-  try {
-    await healthCheckPool.close();
-  } catch (error) {
-    console.warn('Error closing health check pool:', error);
-  }
-  
-  console.log('Relay health check complete');
-};
-
-// Start regular health checks
-if (typeof window !== 'undefined') {
-  // Initial health check after a delay
-  setTimeout(() => {
-    performRelayHealthCheck();
-  }, 5000);
-  
-  // Regular health checks
-  setInterval(() => {
-    performRelayHealthCheck();
-  }, HEALTH_CHECK_INTERVAL);
-}
 
 export { ndk };

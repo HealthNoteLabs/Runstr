@@ -25,10 +25,7 @@ export const RunClub = () => {
     loadSupplementaryData,
     loadMorePosts,
     fetchRunPostsViaSubscription,
-    refreshFeed,
-    loadedSupplementaryData,
-    canLoadMore,
-    isFetchingMore
+    loadedSupplementaryData
   } = useRunFeed();
   
   const {
@@ -118,25 +115,18 @@ export const RunClub = () => {
   };
 
   // Function to refresh the feed when the header is clicked
-  const handleRefreshFeed = () => {
+  const refreshFeed = () => {
     // Don't allow multiple refreshes at once
     if (loading || isRefreshing) return;
     
     setIsRefreshing(true);
-    
-    // Use the optimized refreshFeed function from useRunFeed
-    refreshFeed()
+    fetchRunPostsViaSubscription()
       .finally(() => {
         // Reset the refreshing state after a delay to show animation
         setTimeout(() => {
           setIsRefreshing(false);
         }, 500);
       });
-  };
-
-  // Handle zap with wallet
-  const handleZapWithWallet = (post) => {
-    handleZap(post, wallet);
   };
 
   // Simple scroll handler
@@ -157,42 +147,69 @@ export const RunClub = () => {
   }, [loadMorePosts]);
 
   return (
-    <div className="run-club-page">
-      <div className="run-club-header" onClick={handleRefreshFeed}>
-        <h1>Global Feed {isRefreshing && '(Refreshing...)'}</h1>
-      </div>
+    <div className="run-club-container">
+      <button 
+        className={`feed-header-button ${isRefreshing ? 'refreshing' : ''}`}
+        onClick={refreshFeed}
+        disabled={loading || isRefreshing}
+      >
+        <h2>RUNSTR FEED</h2>
+        {isRefreshing && <span className="refresh-icon">↻</span>}
+      </button>
       
-      <PostList
-        posts={posts}
-        loading={loading || isRefreshing}
-        error={error}
-        userLikes={userLikes}
-        userReposts={userReposts}
-        onLike={handleLike}
-        onRepost={handleRepost}
-        onZap={handleZapWithWallet}
-        onComment={handleComment}
-        commentText={commentText}
-        setCommentText={setCommentText}
-        onCommentClick={handleCommentClick}
-        loadMorePosts={loadMorePosts}
-        canLoadMore={canLoadMore}
-        isLoadingMore={isFetchingMore}
-      />
-      
-      {error && (
-        <div className="error-actions">
-          <button onClick={diagnoseConnection} className="diagnose-button">
-            Diagnose Connection
+      {loading && posts.length === 0 ? (
+        <div className="loading-indicator">
+          <p>Loading posts...</p>
+        </div>
+      ) : error ? (
+        <div className="error-message">
+          <p>{error}</p>
+          <div className="error-buttons">
+            <button 
+              className="retry-button" 
+              onClick={refreshFeed}
+            >
+              Retry
+            </button>
+            <button 
+              className="diagnose-button" 
+              onClick={diagnoseConnection}
+            >
+              Diagnose Connection
+            </button>
+          </div>
+          {diagnosticInfo && (
+            <div className="diagnostic-info">
+              <p>{diagnosticInfo}</p>
+            </div>
+          )}
+        </div>
+      ) : posts.length === 0 ? (
+        <div className="no-posts-message">
+          <p>No running posts found</p>
+          <button 
+            className="retry-button" 
+            onClick={refreshFeed}
+          >
+            Refresh
           </button>
         </div>
-      )}
-      
-      {diagnosticInfo && (
-        <div className="diagnostic-info">
-          <h3>Diagnostic Info:</h3>
-          <pre>{diagnosticInfo}</pre>
-        </div>
+      ) : (
+        <PostList
+          posts={posts}
+          loading={loading}
+          page={1}
+          userLikes={userLikes}
+          userReposts={userReposts}
+          handleLike={handleLike}
+          handleRepost={handleRepost}
+          handleZap={(post) => handleZap(post, wallet)}
+          handleCommentClick={handleCommentClick}
+          handleComment={handleComment}
+          commentText={commentText}
+          setCommentText={setCommentText}
+          wallet={wallet}
+        />
       )}
     </div>
   );
