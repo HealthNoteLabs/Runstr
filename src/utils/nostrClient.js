@@ -9,15 +9,24 @@ const pool = new SimplePool({
   connectTimeout: 8_000
 });
 
-// Focus on a smaller set of the most reliable relays
-const relays = [
+// Export the pool for use in health checks
+export { pool };
+
+// Separate relay pools for different features
+const FEED_RELAYS = [
   'wss://relay.damus.io',
   'wss://nos.lol',
   'wss://relay.nostr.band',
-  'wss://relay.snort.social',
-  'wss://purplepag.es',
-  'wss://groups.0xchat.com'  // NIP-29 group support
+  'wss://nostr.mom'    // Replaced snort.social with nostr.mom
 ];
+
+const GROUP_RELAYS = [
+  'wss://groups.0xchat.com',  // Primary NIP-29 group support
+  'wss://relay.0xchat.com'    // Secondary NIP-29 support
+];
+
+// Combined relay list (removed ADDITIONAL_RELAYS)
+const relays = [...FEED_RELAYS, ...GROUP_RELAYS];
 
 // Storage for keys
 let cachedKeyPair = null;
@@ -48,16 +57,11 @@ export const initializeNostr = async () => {
       return false;
     }
     
-    // Ensure we have the primary NIP-29 relay
-    const primaryRelay = 'wss://groups.0xchat.com';
-    if (!relays.includes(primaryRelay)) {
-      relays.unshift(primaryRelay);
-    }
-    
     // Test connection to relays with priority on groups.0xchat.com
     const connectedRelays = [];
     
-    // Try primary relay first
+    // Try primary group relay first
+    const primaryRelay = GROUP_RELAYS[0];
     try {
       const conn = await pool.ensureRelay(primaryRelay);
       if (conn) {
@@ -68,10 +72,20 @@ export const initializeNostr = async () => {
       console.warn(`Failed to connect to primary relay: ${primaryRelay}`, error);
     }
     
-    // Then try other relays
-    for (const relay of relays) {
-      if (relay === primaryRelay) continue; // Skip primary, already tried
-      
+    // Connect to feed relays
+    for (const relay of FEED_RELAYS) {
+      try {
+        const conn = await pool.ensureRelay(relay);
+        if (conn) {
+          connectedRelays.push(relay);
+        }
+      } catch (error) {
+        console.warn(`Failed to connect to feed relay: ${relay}`, error);
+      }
+    }
+    
+    // Connect to remaining group relays
+    for (const relay of GROUP_RELAYS.slice(1)) {
       try {
         const conn = await pool.ensureRelay(relay);
         if (conn) {
@@ -336,23 +350,30 @@ export const sendGroupMessage = async (groupInfo, content) => {
 /**
  * Simple function to fetch events from relays
  * @param {Object} filter - Nostr filter
+ * @param {string} type - Type of query ('feed', 'group', or 'all')
  * @returns {Promise<Array>} Array of events
  */
-export const fetchEvents = async (filter) => {
+export const fetchEvents = async (filter, type = 'all') => {
   try {
-    console.log('Fetching events with filter:', filter);
+    console.log(`Fetching ${type} events with filter:`, filter);
     
     // Ensure we have a limit to prevent excessive data usage
     if (!filter.limit) {
       filter.limit = 50;
     }
     
+    // Select appropriate relay set based on type
+    const selectedRelays = 
+      type === 'feed' ? FEED_RELAYS :
+      type === 'group' ? GROUP_RELAYS :
+      relays; // Default to all relays
+    
     // Simple fetch with timeout
-    const events = await pool.list(relays, [filter], { timeout: 10000 });
-    console.log(`Fetched ${events.length} events`);
+    const events = await pool.list(selectedRelays, [filter], { timeout: 10000 });
+    console.log(`Fetched ${events.length} ${type} events`);
     return events;
   } catch (error) {
-    console.error('Error fetching events:', error);
+    console.error(`Error fetching ${type} events:`, error);
     return [];
   }
 };
@@ -360,14 +381,21 @@ export const fetchEvents = async (filter) => {
 /**
  * Subscribe to events from relays
  * @param {Object} filter - Nostr filter
+ * @param {string} type - Type of query ('feed', 'group', or 'all')
  * @returns {Object} Subscription object
  */
-export const subscribe = (filter) => {
+export const subscribe = (filter, type = 'all') => {
   try {
-    const sub = pool.sub(relays, [filter]);
+    // Select appropriate relay set based on type
+    const selectedRelays = 
+      type === 'feed' ? FEED_RELAYS :
+      type === 'group' ? GROUP_RELAYS :
+      relays; // Default to all relays
+      
+    const sub = pool.sub(selectedRelays, [filter]);
     return sub;
   } catch (error) {
-    console.error('Error subscribing to events:', error);
+    console.error(`Error subscribing to ${type} events:`, error);
     return null;
   }
 };
