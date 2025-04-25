@@ -9,6 +9,9 @@ const pool = new SimplePool({
   connectTimeout: 8_000
 });
 
+// Export the pool for use in health checks
+export { pool };
+
 // Separate relay pools for different features
 const FEED_RELAYS = [
   'wss://relay.damus.io',

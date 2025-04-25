@@ -1,8 +1,10 @@
 import NDK, { NDKEvent } from '@nostr-dev-kit/ndk';
 import { Platform } from '../utils/react-native-shim';
 import AmberAuth from '../services/AmberAuth';
-// Import nostr-tools implementation for fallback and pool for health checks
-import { createAndPublishEvent as publishWithNostrTools, pool } from './nostrClient';
+// Import nostr-tools implementation for fallback
+import { createAndPublishEvent as publishWithNostrTools } from './nostrClient';
+// Import SimplePool from nostr-tools for health checks
+import { SimplePool } from 'nostr-tools';
 
 // Separate relay lists for different features
 export const FEED_RELAYS = [
@@ -1068,6 +1070,13 @@ const getOptimalRelays = (operation, count = 3) => {
 const performRelayHealthCheck = async () => {
   console.log('Performing relay health check...');
   
+  // Create a dedicated pool for health checks
+  const healthCheckPool = new SimplePool({
+    eoseSubTimeout: 5000,
+    getTimeout: 5000,
+    connectTimeout: 3000
+  });
+  
   // Check each relay with a simple filter
   const testFilter = {
     kinds: [1],
@@ -1079,13 +1088,20 @@ const performRelayHealthCheck = async () => {
     try {
       const startTime = Date.now();
       // Test with a simple query to each relay
-      await pool.list([relay], [testFilter], { timeout: 5000 });
+      await healthCheckPool.list([relay], [testFilter], { timeout: 5000 });
       const responseTime = Date.now() - startTime;
       updateRelayPerformance(relay, true, responseTime);
     } catch (error) {
       updateRelayPerformance(relay, false, 0);
       console.warn(`Relay ${relay} failed health check:`, error.message);
     }
+  }
+  
+  // Close the pool when done
+  try {
+    await healthCheckPool.close();
+  } catch (error) {
+    console.warn('Error closing health check pool:', error);
   }
   
   console.log('Relay health check complete');
