@@ -3,16 +3,26 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { NostrContext } from '../contexts/NostrContext';
 import { ndk, initializeNostr } from '../utils/nostr';
 import { NDKEvent } from '@nostr-dev-kit/ndk';
+import { useNostr } from '../contexts/NostrContext';
+import { useGroups } from '../contexts/GroupsContext';
+import GroupDiscoveryScreen from '../components/GroupDiscoveryScreen';
 
-export const Team = () => {
+const TABS = {
+  MY_CLUBS: 'myClubs',
+  DISCOVER: 'discover'
+};
+
+export default function Team() {
   const navigate = useNavigate();
   const { teamId } = useParams();
   const { pubkey } = useContext(NostrContext);
+  const { publicKey } = useNostr();
+  const { myGroups, loadingGroups, refreshGroups } = useGroups();
   
   // State variables
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('myTeams'); // 'myTeams', 'create', 'join', 'teamProfile'
+  const [activeTab, setActiveTab] = useState(TABS.DISCOVER);
   const [myTeams, setMyTeams] = useState([]);
   const [currentTeam, setCurrentTeam] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -238,7 +248,7 @@ export const Team = () => {
         
         if (teamId) {
           // If teamId is provided in URL, try to join that team
-          setActiveTab('teamProfile');
+          setActiveTab(TABS.MY_CLUBS);
           await loadTeam(teamId);
         } else {
           // Otherwise load user's teams
@@ -300,7 +310,7 @@ export const Team = () => {
       });
       
       // Navigate to the new team's profile
-      setActiveTab('myTeams');
+      setActiveTab(TABS.MY_CLUBS);
       await loadUserTeams();
       
     } catch (err) {
@@ -424,7 +434,7 @@ export const Team = () => {
       await metadataEvent.publish();
       
       // Navigate back to team list
-      setActiveTab('myTeams');
+      setActiveTab(TABS.MY_CLUBS);
       await loadUserTeams();
       
     } catch (err) {
@@ -581,7 +591,7 @@ export const Team = () => {
               className="view-team-btn"
               onClick={() => {
                 setCurrentTeam(team);
-                setActiveTab('teamProfile');
+                setActiveTab(TABS.MY_CLUBS);
                 loadTeam(team.id);
               }}
             >
@@ -697,7 +707,7 @@ export const Team = () => {
           </button>
           <button
             className="cancel-btn"
-            onClick={() => setActiveTab('myTeams')}
+            onClick={() => setActiveTab(TABS.MY_CLUBS)}
           >
             Cancel
           </button>
@@ -732,33 +742,99 @@ export const Team = () => {
     );
   };
   
-  // Render My Teams Tab
-  const renderMyTeamsTab = () => {
-    return (
-      <div className="my-teams-tab">
-        <h3>My Teams</h3>
-        
-        <div className="my-teams-actions">
-          <button
-            className="create-team-btn"
-            onClick={() => setActiveTab('create')}
+  // Render My Clubs Tab
+  const renderMyClubsTab = () => {
+    // If user is not logged in
+    if (!publicKey) {
+      return (
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <h2 className="text-xl font-bold text-white mb-4">Authentication Required</h2>
+          <p className="text-gray-300 mb-6">
+            You need to connect your Nostr account to view your running clubs.
+          </p>
+          <button 
+            onClick={() => navigate('/settings')}
+            className="px-4 py-2 bg-blue-700 text-white rounded-md hover:bg-blue-600"
           >
-            Create New Team
-          </button>
-          <button
-            className="join-team-btn"
-            onClick={() => setActiveTab('join')}
-          >
-            Join a Team
+            Go to Settings
           </button>
         </div>
-        
-        <div className="teams-list">
-          {myTeams.length === 0 ? (
-            <p>You&apos;re not part of any teams yet. Create or join a team to get started!</p>
-          ) : (
-            myTeams.map(team => renderTeamItem(team, true))
-          )}
+      );
+    }
+
+    // If loading
+    if (loadingGroups) {
+      return (
+        <div className="flex items-center justify-center py-16">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        </div>
+      );
+    }
+
+    // If no groups
+    if (!myGroups || myGroups.length === 0) {
+      return (
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <h2 className="text-xl font-bold text-white mb-2">No Clubs Yet</h2>
+          <p className="text-gray-300 mb-6">
+            You haven't joined any running clubs yet. Check out the Discover tab to find clubs to join!
+          </p>
+          <button 
+            onClick={() => setActiveTab(TABS.DISCOVER)}
+            className="px-4 py-2 bg-blue-700 text-white rounded-md hover:bg-blue-600"
+          >
+            Discover Clubs
+          </button>
+        </div>
+      );
+    }
+
+    // Render the user's groups
+    return (
+      <div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {myGroups.map((group, index) => {
+            const content = typeof group.content === 'string' 
+              ? JSON.parse(group.content) 
+              : group.content || {};
+            
+            const name = content.name || "Unnamed Club";
+            const about = content.about || "No description available";
+            const picture = content.picture || null;
+            
+            return (
+              <div 
+                key={index} 
+                onClick={() => navigate(`/teams/${encodeURIComponent(group.naddr)}`)}
+                className="bg-gray-800 rounded-lg p-4 cursor-pointer hover:bg-gray-700 transition-colors"
+              >
+                <div className="flex items-start mb-4">
+                  {picture && (
+                    <div className="w-16 h-16 mr-4">
+                      <img 
+                        src={picture} 
+                        alt={name} 
+                        className="w-full h-full object-cover rounded-md"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = '/icons/runclub-placeholder.png';
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <h2 className="text-xl font-bold text-white">{name}</h2>
+                    <p className="text-gray-400 line-clamp-2">{about}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="px-3 py-1 bg-blue-900 text-blue-300 rounded-full text-xs">
+                    Member
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -775,7 +851,7 @@ export const Team = () => {
         <div className="team-header">
           <button
             className="back-btn"
-            onClick={() => setActiveTab('myTeams')}
+            onClick={() => setActiveTab(TABS.MY_CLUBS)}
           >
             ← Back to Teams
           </button>
@@ -876,46 +952,48 @@ export const Team = () => {
   };
   
   return (
-    <div className="team-container">
-      <h2>RUN CLUB</h2>
+    <div className="min-h-screen bg-gray-900 p-4">
+      <h1 className="text-2xl font-bold text-white mb-6">Running Clubs</h1>
       
-      {loading ? (
-        <div>Loading...</div>
-      ) : error ? (
-        <div className="error-message">{error}</div>
-      ) : (
-        <>
-          {!teamId && (
-            <div className="team-tabs">
-              <button
-                className={activeTab === 'myTeams' ? 'active' : ''}
-                onClick={() => setActiveTab('myTeams')}
-              >
-                My Teams
-              </button>
-              <button
-                className={activeTab === 'create' ? 'active' : ''}
-                onClick={() => setActiveTab('create')}
-              >
-                Create Team
-              </button>
-              <button
-                className={activeTab === 'join' ? 'active' : ''}
-                onClick={() => setActiveTab('join')}
-              >
-                Join Team
-              </button>
-            </div>
-          )}
-          
-          <div className="team-content">
-            {activeTab === 'myTeams' && renderMyTeamsTab()}
-            {activeTab === 'create' && renderCreateTeamTab()}
-            {activeTab === 'join' && renderJoinTeamTab()}
-            {activeTab === 'teamProfile' && renderTeamProfileTab()}
-          </div>
-        </>
+      {/* Display error message if any */}
+      {error && (
+        <div className="bg-red-900/50 p-4 mb-6 rounded-lg">
+          <p className="text-white">{error}</p>
+          <button 
+            onClick={() => setError(null)} 
+            className="mt-2 px-4 py-2 bg-red-800 text-white rounded-md"
+          >
+            Dismiss
+          </button>
+        </div>
       )}
+      
+      {/* Tabs */}
+      <div className="flex border-b border-gray-700 mb-6">
+        <button 
+          className={`py-2 px-4 relative ${
+            activeTab === TABS.MY_CLUBS 
+              ? 'text-blue-400 border-b-2 border-blue-400' 
+              : 'text-gray-400'
+          }`}
+          onClick={() => setActiveTab(TABS.MY_CLUBS)}
+        >
+          My Clubs
+        </button>
+        <button 
+          className={`py-2 px-4 relative ${
+            activeTab === TABS.DISCOVER 
+              ? 'text-blue-400 border-b-2 border-blue-400' 
+              : 'text-gray-400'
+          }`}
+          onClick={() => setActiveTab(TABS.DISCOVER)}
+        >
+          Discover
+        </button>
+      </div>
+      
+      {/* Tab content */}
+      {activeTab === TABS.MY_CLUBS ? renderMyClubsTab() : <GroupDiscoveryScreen />}
     </div>
   );
-}; 
+} 

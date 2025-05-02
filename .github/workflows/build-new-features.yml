@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - new-features
+      - nips-feed
   workflow_dispatch:  # Allows manual triggering
 
 jobs:

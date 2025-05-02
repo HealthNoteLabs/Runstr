@@ -4,7 +4,6 @@ import { NostrProvider } from './contexts/NostrProvider';
 import { AuthProvider } from './components/AuthProvider';
 import { AudioPlayerProvider } from './contexts/AudioPlayerProvider';
 import { RunTrackerProvider } from './contexts/RunTrackerContext';
-import { TeamsProvider } from './contexts/TeamsContext';
 import { ActivityModeProvider } from './contexts/ActivityModeContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { WalletProvider } from './contexts/WalletContext';
@@ -15,6 +14,7 @@ import ErrorFallback from './components/ErrorFallback';
 import { directFetchRunningPosts } from './utils/feedFetcher';
 import { lightweightProcessPosts } from './utils/feedProcessor';
 import { storeFeedCache, getFeedCache, isCacheFresh } from './utils/feedCache';
+import GroupsProvider from './contexts/GroupsContext';
 
 console.log("App.jsx is loading");
 
@@ -145,6 +145,43 @@ const App = () => {
     return () => window.removeEventListener('error', handleGlobalError);
   }, []);
   
+  // On first render, clean up any old localStorage data that's no longer needed
+  useEffect(() => {
+    const cleanupOldStorage = () => {
+      try {
+        // Keys to remove
+        const keysToRemove = [
+          'teamsData',
+          'teamMemberships',
+          'teamMessages',
+          'teamChallenges',
+          'teamPinnedPosts',
+          'groupsMigrationComplete'
+        ];
+        
+        // Find and remove all pinned_messages_* keys
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('pinned_messages_')) {
+            keysToRemove.push(key);
+          }
+        }
+        
+        // Remove each key
+        keysToRemove.forEach(key => {
+          if (localStorage.getItem(key)) {
+            localStorage.removeItem(key);
+            console.log(`Removed old data: ${key}`);
+          }
+        });
+      } catch (err) {
+        console.error('Error cleaning up old localStorage:', err);
+      }
+    };
+    
+    cleanupOldStorage();
+  }, []);
+  
   if (hasError) {
     return <ErrorFallback />;
   }
@@ -157,7 +194,7 @@ const App = () => {
             <SettingsProvider>
               <ActivityModeProvider>
                 <RunTrackerProvider>
-                  <TeamsProvider>
+                  <GroupsProvider>
                     <WalletProvider>
                       <div className="relative w-full h-full bg-[#111827] text-white">
                         <MenuBar />
@@ -168,7 +205,7 @@ const App = () => {
                         </main>
                       </div>
                     </WalletProvider>
-                  </TeamsProvider>
+                  </GroupsProvider>
                 </RunTrackerProvider>
               </ActivityModeProvider>
             </SettingsProvider>

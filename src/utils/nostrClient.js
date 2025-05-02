@@ -1,6 +1,7 @@
 import { SimplePool, finalizeEvent, verifyEvent } from 'nostr-tools';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { decode as decodeNip19 } from 'nostr-tools/nip19';
+import { NDKEvent } from '@nostr-dev-kit/ndk';
 
 // Create a simple pool with reasonable timeouts
 const pool = new SimplePool({
@@ -1007,5 +1008,114 @@ const removeGroupFromNip51List = async (groupInfo) => {
   } catch (error) {
     console.error('Error removing group from NIP-51 list:', error);
     throw error;
+  }
+};
+
+/**
+ * Create a Nostr event with the provided data
+ * @param {Object} eventData - The event data
+ * @returns {Promise<Object>} The created event
+ */
+export const createNostrEvent = async (eventData) => {
+  try {
+    const userPubkey = await getUserPublicKey();
+    if (!userPubkey) {
+      throw new Error('No user public key available');
+    }
+    
+    // Create the event using NDK
+    const event = new NDKEvent(ndk);
+    
+    // Add all event properties
+    Object.keys(eventData).forEach(key => {
+      event[key] = eventData[key];
+    });
+    
+    // Set created_at if not provided
+    if (!event.created_at) {
+      event.created_at = Math.floor(Date.now() / 1000);
+    }
+    
+    return event;
+  } catch (error) {
+    console.error('Error creating Nostr event:', error);
+    throw error;
+  }
+};
+
+/**
+ * Publish a Nostr event
+ * @param {Object} eventData - The event data to publish
+ * @returns {Promise<Object>} The published event
+ */
+export const publishEvent = async (eventData) => {
+  try {
+    // Check if we have NDK available
+    if (!ndk) {
+      await initializeNostr();
+      if (!ndk) {
+        throw new Error('NDK not initialized');
+      }
+    }
+    
+    // Get user public key
+    const userPubkey = await getUserPublicKey();
+    if (!userPubkey) {
+      throw new Error('No user public key available');
+    }
+    
+    // Create the event
+    const event = new NDKEvent(ndk);
+    
+    // Transfer all properties from eventData to the event
+    Object.keys(eventData).forEach(key => {
+      event[key] = eventData[key];
+    });
+    
+    // Ensure we have the required fields
+    if (!event.kind) {
+      throw new Error('Event kind is required');
+    }
+    
+    if (!event.created_at) {
+      event.created_at = Math.floor(Date.now() / 1000);
+    }
+    
+    // Publish the event
+    await event.publish();
+    
+    return event;
+  } catch (error) {
+    console.error('Error publishing Nostr event:', error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch events matching the given filter using NDK
+ * @param {Object} filter - The filter to apply
+ * @param {Array} relayUrls - Optional list of relay URLs to use
+ * @returns {Promise<Array>} The fetched events
+ */
+export const fetchEventsWithNDK = async (filter, relayUrls = relays) => {
+  try {
+    // Check if we have NDK available
+    if (!ndk) {
+      await initializeNostr();
+      if (!ndk) {
+        throw new Error('NDK not initialized');
+      }
+    }
+    
+    // Fetch events
+    const events = await ndk.fetchEvents(filter, {
+      relayUrls
+    });
+    
+    // Convert from Set to Array
+    return Array.from(events);
+  } catch (error) {
+    console.error('Error fetching Nostr events with NDK:', error);
+    return [];
   }
 }; 

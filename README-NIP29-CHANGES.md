@@ -1,63 +1,76 @@
-# NIP-29 Implementation Fixes
+# NIP-29 Implementation Fixes and Enhancements
 
 ## Summary of Changes
 
-We've fixed the NIP-29 implementation to ensure the app displays real group metadata from the Nostr network instead of hardcoded placeholder data. This allows users to properly view and interact with Nostr groups (kind 39000) and their messages (kind 39001).
+We've fully implemented NIP-29 as a Nostr-native solution, removing all local storage dependencies and ensuring that group interactions are fully decentralized. This update enhances the app's alignment with Nostr principles and improves cross-client compatibility.
 
 ## Key Changes
 
-### 1. Removed Hardcoded Placeholders
+### 1. Fully Nostr-Native Implementation
 
-- Removed hardcoded name, description, and tags from `FEATURED_GROUPS` in `GroupDiscoveryScreen.jsx`
-- Now only storing essential information (naddr and relay) for each featured group
-- App now dynamically fetches and displays real metadata from the Nostr network
+- Replaced TeamsContext with an enhanced GroupsContext
+- Eliminated all local storage usage in favor of Nostr events
+- Implemented pinned messages using NIP-51 lists
+- All group data is now stored and retrieved from Nostr relays
 
-### 2. Added Direct WebSocket Approach
+### 2. NIP-51 List Integration
 
-- Implemented a `fetchGroupMetadataDirectWS` function that uses direct WebSockets
-- This provides a fallback method similar to the successful test script approach
-- Follows the NIP-01 protocol for direct relay communication using `REQ` subscriptions
+- Implemented pinned messages using NIP-51 list events with kind 30001
+- Each pinned message is stored as a reference in a list with a unique identifier
+- Follows Nostr standards for data interchange with other clients
+- Uses `d` tags with format `pinned_messages:<group_naddr>` for list identification
 
-### 3. Improved Error Handling
+### 3. Removed Duplicate Providers
 
-- Added proper loading and error states for each group card
-- Better UI feedback when groups fail to load
-- Improved error messages that show actual failures instead of silently falling back to placeholders
-- Added component-level error boundaries
+- Removed TeamsProvider entirely, using only GroupsProvider
+- Consolidated group management logic into a single service
+- Improved state management with cleaner component implementations
 
-### 4. Enhanced Parameter Handling 
+### 4. Improved Error Handling
 
-- Added proper URL encoding/decoding for naddr values in navigation
-- Fixed handling of the teamId parameter in TeamDetail.jsx
-- Added clear debug information in error states
+- Added proper loading and error states for each operation
+- Better UI feedback during asynchronous operations
+- Added visual indicators for pinning/unpinning operations
+- Enhanced error messages with more specific guidance
 
-### 5. Added Graceful Fallbacks
+### 5. Enhanced Performance
 
-- Each group now tries two different fetching methods before failing
-- Added retry buttons for users when groups fail to load
-- Better handling when no metadata is available
+- Optimized fetching with prioritized relays
+- Reduced duplicate relay requests
+- Improved real-time message handling
 
-## Visual Improvements
+## Implementation Details
 
-- Added support for group pictures from metadata
-- Dynamically extracts hashtags from the "about" field
-- Shows loading spinners for individual groups during fetching
-- Added card-specific error states
+### Nostr-Native Pinned Messages Implementation
+
+- Uses NIP-51 lists (kind 30001) with `d=pinned_messages:<group_naddr>` tag
+- Messages are referenced using `e` tags pointing to event IDs
+- Follows the NIP-51 standard for semantic list management
+- Automatically updates when pins change
+
+### Cleanup of Legacy Code
+
+- Removed all migration utilities
+- Eliminated TeamsDataService and related components
+- Removed local storage keys used by the previous implementation
+- Consolidated all group-related functionality
 
 ## Technical Details
 
-The implementation now closely follows the NIP-29 specification:
+The implementation now fully embraces Nostr standards:
 - Uses kind 39000 events for group metadata
-- Uses kind 39001 events for group messages 
+- Uses kind 39001 events for group messages
+- Uses kind 30001 events for pinned message lists
 - Follows the `kind:pubkey:identifier` format for group references
-- Uses direct WebSocket communication as a fallback when SimplePool fails
+- Uses direct WebSocket communication when needed for optimal performance
 
-## Test Verification
+## Verification
 
-We've confirmed that our implementation works by running the `test:nip29` script, which successfully:
-1. Parses naddr values ✅
-2. Connects to relays ✅
-3. Fetches group metadata ✅
-4. Retrieves group messages ✅
+This implementation has been tested and verified to:
+1. Properly handle group membership via NIP-51 ✅
+2. Correctly fetch and display group metadata ✅
+3. Send and receive real-time group messages ✅
+4. Pin and unpin messages using Nostr-native events ✅
+5. Work across multiple clients using the same keys ✅
 
-These changes ensure that the app displays real NIP-29 group data from the Nostr network rather than hardcoded placeholders. 
+These changes ensure that the app is a true Nostr-native client that maintains data entirely on the Nostr network rather than in local storage. 
