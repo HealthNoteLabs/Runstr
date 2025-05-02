@@ -26,20 +26,29 @@ const isAmberInstalled = async () => {
  */
 const requestAuthentication = async () => {
   if (Platform.OS !== 'android') {
-    console.warn('Amber authentication is only supported on Android');
+    console.warn('AmberAuth: Authentication is only supported on Android');
     return false;
   }
   
   try {
+    // First check if Amber is installed
+    const installed = await isAmberInstalled();
+    if (!installed) {
+      console.error('AmberAuth: Amber app is not installed');
+      return false;
+    }
+    
     // Create an authentication request event
     const authEvent = {
       kind: 22242, // Auth event kind
       created_at: Math.floor(Date.now() / 1000),
-      content: 'Login to Runstr',
+      content: 'Login to RUNSTR app',
       tags: [
         ['relay', 'wss://relay.damus.io'],
         ['relay', 'wss://nos.lol'],
-        ['relay', 'wss://relay.nostr.band']
+        ['relay', 'wss://relay.nostr.band'],
+        ['application', 'RUNSTR'],
+        ['challenge', Math.random().toString(36).substring(2, 15)]
       ]
     };
     
@@ -51,7 +60,7 @@ const requestAuthentication = async () => {
     const callbackUrl = encodeURIComponent('runstr://callback');
     const amberUri = `nostrsigner:sign?event=${encodedEvent}&callback=${callbackUrl}`;
     
-    console.log('Opening Amber with URI:', amberUri);
+    console.log('AmberAuth: Opening Amber with URI');
     
     // Open Amber using the URI
     await Linking.openURL(amberUri);
@@ -59,9 +68,9 @@ const requestAuthentication = async () => {
     // Authentication success will be handled by deep linking callback
     return true;
   } catch (error) {
-    console.error('Error authenticating with Amber:', error);
+    console.error('AmberAuth: Error authenticating with Amber:', error);
     if (error.message && error.message.includes('Activity not found')) {
-      console.error('Amber app not found or not responding');
+      console.error('AmberAuth: Amber app not found or not responding');
       return false;
     }
     return false;
@@ -121,11 +130,11 @@ const signEvent = async (event) => {
  * @param {Function} callback - The callback to handle the response
  */
 const setupDeepLinkHandling = (callback) => {
-  console.log('Setting up deep link handling for Amber responses');
+  console.log('AmberAuth: Setting up deep link handling for Amber responses');
   
   // Set up event listener for deep links
   const linkingListener = Linking.addEventListener('url', ({ url }) => {
-    console.log('Received deep link URL:', url);
+    console.log('AmberAuth: Received deep link URL:', url);
     
     // Handle the response from Amber
     // URL format: runstr://callback?response=...
@@ -141,20 +150,25 @@ const setupDeepLinkHandling = (callback) => {
             const decodedResponse = decodeURIComponent(response);
             const parsedResponse = JSON.parse(decodedResponse);
             
-            console.log('Successfully parsed Amber response');
+            console.log('AmberAuth: Successfully parsed Amber response:', 
+              parsedResponse?.pubkey ? `pubkey: ${parsedResponse.pubkey.substring(0, 8)}...` : 'No pubkey in response');
+            
+            if (!parsedResponse.pubkey) {
+              console.error('AmberAuth: Missing pubkey in Amber response');
+            }
             
             // Call the callback with the parsed response
             callback(parsedResponse);
           } catch (error) {
-            console.error('Error parsing Amber response JSON:', error);
+            console.error('AmberAuth: Error parsing Amber response JSON:', error);
             callback(null);
           }
         } else {
-          console.error('No response data in callback URL');
+          console.error('AmberAuth: No response data in callback URL');
           callback(null);
         }
       } catch (error) {
-        console.error('Error processing callback URL:', error);
+        console.error('AmberAuth: Error processing callback URL:', error);
         callback(null);
       }
     }

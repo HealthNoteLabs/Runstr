@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import { NostrContext } from './NostrContext';
 import { Platform } from '../utils/react-native-shim';
 import AmberAuth from '../services/AmberAuth';
-import { setAmberUserPubkey } from '../utils/nostrClient'; // Ensure nostrClient is updated
+import { setAmberUserPubkey } from '../utils/nostrClient';
 
 export function NostrProvider({ children }) {
   const [publicKey, setPublicKey] = useState(null);
@@ -14,9 +14,9 @@ export function NostrProvider({ children }) {
     return stored ? parseInt(stored, 10) : 1000; // Default to 1000 sats if not set
   });
   
-  // Set up Amber deep linking handler
+  // Set up Amber deep linking handler - this is our ONLY authentication method
   useEffect(() => {
-    console.log("NostrProvider: Setting up deep link handler");
+    console.log("NostrProvider: Setting up Amber deep link handler");
     
     if (Platform.OS === 'android') {
       // Check if Amber is installed
@@ -56,52 +56,36 @@ export function NostrProvider({ children }) {
   }, []);
 
   /**
-   * Request authentication using appropriate method based on platform
+   * Request authentication using Amber (only method for Android)
    */
   const requestNostrPermissions = useCallback(async () => {
-    // For Android, use Amber if available
+    // On Android, use Amber
     if (Platform.OS === 'android' && isAmberAvailable) {
       try {
+        console.log("NostrProvider: Requesting Amber authentication");
         const result = await AmberAuth.requestAuthentication();
         // The actual public key will be set by the deep link handler
         return result;
       } catch (error) {
-        console.error('Error requesting Amber authentication:', error);
-        return false;
-      }
-    } 
-    // For web or if Amber is not available, use window.nostr
-    else if (window.nostr) {
-      try {
-        // This will trigger the extension permission dialog
-        const pubkey = await window.nostr.getPublicKey();
-        setPublicKey(pubkey);
-        setIsNostrReady(true);
-        localStorage.setItem('permissionsGranted', 'true');
-        return true;
-      } catch (error) {
-        console.error('Error getting Nostr public key:', error);
+        console.error('NostrProvider: Error requesting Amber authentication:', error);
         return false;
       }
     } else {
-      console.warn('No authentication method available');
+      console.warn('NostrProvider: Amber is not available for authentication');
       return false;
     }
   }, [isAmberAvailable]);
 
   /**
-   * Sign an event using appropriate method based on platform
+   * Sign an event using Amber (only method for Android)
    */
   const signEvent = useCallback(async (event) => {
-    // For Android, use Amber if available
+    // For Android, use Amber
     if (Platform.OS === 'android' && isAmberAvailable) {
+      console.log("NostrProvider: Signing event with Amber");
       return AmberAuth.signEvent(event);
-    } 
-    // For web or if Amber is not available, use window.nostr
-    else if (window.nostr) {
-      return window.nostr.signEvent(event);
     } else {
-      throw new Error('No signing method available');
+      throw new Error('NostrProvider: No signing method available');
     }
   }, [isAmberAvailable]);
 
@@ -110,27 +94,17 @@ export function NostrProvider({ children }) {
       // Only auto-initialize if permissions were already granted
       const permissionsGranted = localStorage.getItem('permissionsGranted') === 'true';
       
-      if (permissionsGranted) {
-        // For Android, we rely on the deep link handler to set the public key
-        if (Platform.OS === 'android' && isAmberAvailable) {
-          // We don't need to do anything here, as the deep link handler will handle it
-          return;
-        } 
-        // For web or if Amber is not available, use window.nostr
-        else if (window.nostr) {
-          try {
-            const pubkey = await window.nostr.getPublicKey();
-            setPublicKey(pubkey);
-            setIsNostrReady(true);
-          } catch (error) {
-            console.error('Error getting Nostr public key:', error);
-          }
-        }
+      if (permissionsGranted && Platform.OS === 'android' && isAmberAvailable) {
+        // On Android with Amber, we don't need to do anything here
+        // The deep link handler will set the public key when Amber responds
+        console.log("NostrProvider: Permissions already granted, waiting for Amber");
       }
     };
 
     initNostr();
   }, [isAmberAvailable]);
+
+  console.log("NostrProvider rendering with publicKey:", publicKey);
 
   return (
     <NostrContext.Provider value={{ 

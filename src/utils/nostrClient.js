@@ -103,18 +103,48 @@ export const initializeNostr = async () => {
 export const parseNaddr = (naddrString) => {
   try {
     if (!naddrString) {
-      console.error('No naddr string provided to parseNaddr');
+      console.error('nostrClient: No naddr string provided to parseNaddr');
       return null;
     }
     
-    console.log(`Attempting to parse naddr string: ${naddrString.substring(0, 30)}...`);
+    // Decode the naddr string
+    let type, data;
     
-    // Decode the naddr string using nostr-tools NIP19 decoder
-    const { type, data } = decodeNip19(naddrString);
-    console.log('Decoded naddr data:', { type, data });
+    try {
+      // Ensure it starts with naddr1
+      if (!naddrString.startsWith('naddr1')) {
+        console.warn('nostrClient: naddr string does not start with naddr1, trying to normalize');
+        
+        // Handle URL-encoded naddr
+        if (naddrString.includes('%')) {
+          naddrString = decodeURIComponent(naddrString);
+          console.log('nostrClient: Decoded URI component:', naddrString.substring(0, 20) + '...');
+        }
+        
+        // If it still doesn't start with naddr1, we can't parse it
+        if (!naddrString.startsWith('naddr1')) {
+          console.error('nostrClient: Unable to normalize naddr string');
+          return null;
+        }
+      }
+      
+      console.log('nostrClient: Parsing naddr:', naddrString.substring(0, 20) + '...');
+      const decoded = decodeNip19(naddrString);
+      type = decoded.type;
+      data = decoded.data;
+    } catch (decodeError) {
+      console.error('nostrClient: Error decoding naddr:', decodeError);
+      return null;
+    }
     
     if (type !== 'naddr' || !data) {
-      console.error('Invalid naddr format - expected type "naddr"');
+      console.error('nostrClient: Invalid naddr format - expected type "naddr"');
+      return null;
+    }
+    
+    // Verify required fields
+    if (!data.kind || !data.pubkey || !data.identifier) {
+      console.error('nostrClient: Missing required fields in naddr data');
       return null;
     }
     
@@ -125,11 +155,17 @@ export const parseNaddr = (naddrString) => {
       relays: data.relays || []
     };
     
-    console.log('Successfully parsed naddr to:', result);
+    console.log('nostrClient: Successfully parsed naddr to:', {
+      kind: result.kind,
+      pubkey: result.pubkey.substring(0, 8) + '...',
+      identifier: result.identifier,
+      relays: result.relays
+    });
+    
     return result;
   } catch (error) {
-    console.error('Error parsing naddr:', error);
-    console.error('Problematic naddr string:', naddrString);
+    console.error('nostrClient: Error parsing naddr:', error);
+    console.error('nostrClient: Problematic naddr string:', naddrString ? naddrString.substring(0, 30) + '...' : 'null');
     return null;
   }
 };
@@ -178,13 +214,31 @@ export const fetchGroupMessages = async (groupId, groupRelays = ['wss://groups.0
  */
 export const fetchGroupMetadataByNaddr = async (naddrString) => {
   try {
-    console.log(`nostrClient: Starting fetchGroupMetadataByNaddr with ${naddrString}`);
+    console.log(`nostrClient: Starting fetchGroupMetadataByNaddr with:`, naddrString ? naddrString.substring(0, 20) + '...' : 'null');
     
+    if (!naddrString) {
+      console.error('nostrClient: Invalid or empty naddr string');
+      return null;
+    }
+    
+    // Make sure we have a valid WebSocket implementation
+    if (!WebSocket) {
+      console.error('nostrClient: WebSocket not available');
+      return null;
+    }
+    
+    // Try to parse the naddr
     const groupInfo = parseNaddr(naddrString);
     if (!groupInfo) {
-      console.error('nostrClient: Invalid naddr format in fetchGroupMetadataByNaddr');
-      throw new Error('Invalid naddr format');
+      console.error('nostrClient: Failed to parse naddr');
+      return null;
     }
+    
+    console.log(`nostrClient: Successfully parsed naddr:`, {
+      kind: groupInfo.kind,
+      pubkey: groupInfo.pubkey ? groupInfo.pubkey.substring(0, 8) + '...' : 'null',
+      identifier: groupInfo.identifier
+    });
     
     // Add groups.0xchat.com as a primary relay for NIP-29 groups
     const groupRelays = [...new Set([
@@ -198,44 +252,67 @@ export const fetchGroupMetadataByNaddr = async (naddrString) => {
       '#d': [groupInfo.identifier]
     };
     
-    console.log(`nostrClient: Fetching group metadata for ${naddrString}`);
-    console.log(`nostrClient: Using filter:`, filter);
+    console.log(`nostrClient: Fetching group metadata with filter:`, filter);
     console.log(`nostrClient: Using relays:`, groupRelays);
     
-    // Try to ensure at least one relay is connected
-    await Promise.any(groupRelays.map(relay => pool.ensureRelay(relay)));
+    // Try to connect to at least one relay
+    let connectedRelays = [];
+    for (const relay of groupRelays) {
+      try {
+        await pool.ensureRelay(relay);
+        connectedRelays.push(relay);
+        console.log(`nostrClient: Connected to relay:`, relay);
+      } catch (err) {
+        console.warn(`nostrClient: Failed to connect to relay ${relay}:`, err);
+      }
+    }
     
-    const events = await pool.list(groupRelays, [filter]);
+    if (connectedRelays.length === 0) {
+      console.error('nostrClient: Could not connect to any relay');
+      return null;
+    }
+    
+    console.log(`nostrClient: Connected to ${connectedRelays.length} relays`);
+    
+    // Fetch events with a reasonable timeout
+    const events = await pool.list(connectedRelays, [filter], { timeout: 5000 });
     
     if (!events || events.length === 0) {
-      console.log(`nostrClient: No metadata found for group ${naddrString}`);
+      console.error(`nostrClient: No metadata found for group`);
       return null;
     }
     
     // Sort by created_at in descending order to get the latest
     const latestEvent = events.sort((a, b) => b.created_at - a.created_at)[0];
-    console.log(`nostrClient: Found metadata event:`, latestEvent.id);
+    console.log(`nostrClient: Found metadata event with ID:`, latestEvent.id);
     
     // Parse the content which contains the group metadata
-    let metadata;
+    let parsedContent;
     try {
-      metadata = JSON.parse(latestEvent.content);
+      if (typeof latestEvent.content === 'string') {
+        parsedContent = JSON.parse(latestEvent.content);
+      } else {
+        parsedContent = latestEvent.content;
+      }
+      
       console.log(`nostrClient: Parsed group metadata:`, {
-        name: metadata.name || 'Unknown',
-        about: metadata.about ? metadata.about.substring(0, 50) + '...' : 'No description'
+        name: parsedContent.name || 'Unknown',
+        about: parsedContent.about ? parsedContent.about.substring(0, 50) + '...' : 'No description'
       });
     } catch (e) {
       console.error('nostrClient: Error parsing group metadata content:', e);
-      metadata = { name: 'Unknown Group', about: 'Could not parse group metadata' };
+      parsedContent = { name: 'Unknown Group', about: 'Could not parse group metadata' };
     }
     
+    // Prepare standardized return format for the metadata
     return {
       id: latestEvent.id,
       pubkey: latestEvent.pubkey,
       created_at: latestEvent.created_at,
       kind: latestEvent.kind,
       tags: latestEvent.tags,
-      content: metadata
+      content: parsedContent,
+      naddr: naddrString // Include the original naddr for reference
     };
   } catch (error) {
     console.error('nostrClient: Error fetching group metadata by naddr:', error);
@@ -454,29 +531,16 @@ export const getSigningKey = async () => {
  */
 export const getUserPublicKey = async () => {
   try {
-    // First priority: Check if we have an Amber-authenticated pubkey
+    // For Android app, we only use Amber authentication
     if (amberUserPubkey) {
       console.log('nostrClient: Using Amber-authenticated public key:', amberUserPubkey.substring(0, 8) + '...');
       return amberUserPubkey;
     }
     
-    // Second priority: Try to get it from window.nostr (for browser extensions)
-    if (typeof window !== 'undefined' && window.nostr) {
-      try {
-        const pubkey = await window.nostr.getPublicKey();
-        if (pubkey) {
-          console.log('nostrClient: Using window.nostr public key:', pubkey.substring(0, 8) + '...');
-          return pubkey;
-        }
-      } catch (err) {
-        console.error('nostrClient: Error getting pubkey from window.nostr:', err);
-      }
-    }
-    
-    console.warn('nostrClient: No authenticated public key found');
+    console.warn('nostrClient: No Amber-authenticated public key found');
     return null;
   } catch (error) {
-    console.error('Error in getUserPublicKey:', error);
+    console.error('nostrClient: Error in getUserPublicKey:', error);
     return null;
   }
 };

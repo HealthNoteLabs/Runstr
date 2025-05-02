@@ -16,10 +16,10 @@ export default function TeamDetail() {
   const nostrContext = useContext(NostrContext);
   const nostrHook = useNostr();
   
-  // Use direct context access to ensure compatibility
-  const { publicKey } = useContext(NostrContext);
-  console.log("TeamDetail rendering with direct context publicKey:", publicKey);
-  console.log("TeamDetail context comparison - Context:", !!nostrContext, "Hook:", !!nostrHook);
+  // Get authentication state directly from context
+  const { publicKey } = nostrContext;
+
+  console.log("TeamDetail: Using direct NostrContext, publicKey:", publicKey ? publicKey.substring(0, 8) + '...' : 'null');
   
   const { 
     getGroupMetadata, 

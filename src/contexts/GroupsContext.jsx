@@ -17,12 +17,11 @@ export const useGroups = () => {
 };
 
 export const GroupsProvider = ({ children }) => {
-  // Get Nostr context
-  const contextValue = useContext(NostrContext);
-  const { publicKey: nostrPublicKey } = contextValue || {};
+  // Get Nostr context - direct access only, no intermediate variables
+  const nostrContext = useContext(NostrContext);
+  const { publicKey: nostrPublicKey } = nostrContext || {};
   
-  console.log("GroupsProvider: NostrContext value:", !!contextValue);
-  console.log("GroupsProvider: nostrPublicKey:", nostrPublicKey);
+  console.log("GroupsProvider: nostrPublicKey:", nostrPublicKey ? nostrPublicKey.substring(0, 8) + '...' : 'null');
   
   // State for user's groups
   const [myGroups, setMyGroups] = useState([]);
