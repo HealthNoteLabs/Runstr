@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { parseNaddr, subscribe } from '../utils/nostrClient';
 import { useGroups } from '../contexts/GroupsContext';
-import { useNostr } from '../contexts/NostrContext';
+import { useNostr } from '../contexts/useNostr';
 import '../components/RunClub.css';
 
 console.log("TeamDetail component file is loading");
