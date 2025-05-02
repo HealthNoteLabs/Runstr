@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { NostrContext } from '../contexts/NostrContext';
 import { ndk, initializeNostr } from '../utils/nostr';
 import { NDKEvent } from '@nostr-dev-kit/ndk';
-import { useNostr } from '../contexts/NostrContext';
+import { useNostr } from '../contexts/useNostr';
 import { useGroups } from '../contexts/GroupsContext';
 import GroupDiscoveryScreen from '../components/GroupDiscoveryScreen';
 
@@ -15,8 +15,18 @@ const TABS = {
 export default function Team() {
   const navigate = useNavigate();
   const { teamId } = useParams();
-  const { pubkey } = useContext(NostrContext);
-  const { publicKey } = useNostr();
+  
+  // Try both context access methods for maximum compatibility
+  const nostrContext = useContext(NostrContext);
+  const { publicKey: hookPublicKey } = useNostr();
+  
+  // Use the best available public key
+  const publicKey = hookPublicKey || nostrContext?.publicKey;
+  
+  console.log("Team component: Context publicKey:", nostrContext?.publicKey);
+  console.log("Team component: Hook publicKey:", hookPublicKey);
+  console.log("Team component: Using publicKey:", publicKey);
+  
   const { myGroups, loadingGroups, refreshGroups } = useGroups();
   
   // State variables
@@ -180,19 +190,19 @@ export default function Team() {
   // Load user's teams
   const loadUserTeams = useCallback(async () => {
     try {
-      if (!pubkey) return;
+      if (!publicKey) return;
       
       // Fetch teams (channels) where user is a member
       // NIP-28 uses kind 40 for channel creation
       const teamEvents = await ndk.fetchEvents({
         kinds: [40],
-        authors: [pubkey] // Teams created by the user
+        authors: [publicKey] // Teams created by the user
       });
 
       // Also fetch team metadata events that reference the user
       const teamMetadataEvents = await ndk.fetchEvents({
         kinds: [41], // Channel metadata
-        '#p': [pubkey] // Teams that mention the user
+        '#p': [publicKey] // Teams that mention the user
       });
       
       // Combine teams and process
@@ -235,7 +245,7 @@ export default function Team() {
       setError('Failed to load your teams. Please try again later.');
       setLoading(false);
     }
-  }, [pubkey, loadProfiles]);
+  }, [publicKey, loadProfiles]);
   
   // Initialize Nostr connection and load user's teams
   useEffect(() => {
@@ -264,12 +274,12 @@ export default function Team() {
     };
     
     setup();
-  }, [teamId, pubkey, loadTeam, loadUserTeams]);
+  }, [teamId, publicKey, loadTeam, loadUserTeams]);
   
   // Create a new team (NIP-28 kind 40 for channel creation)
   const createTeam = async () => {
     try {
-      if (!pubkey) {
+      if (!publicKey) {
         setError('You must be logged in to create a team.');
         return;
       }
@@ -322,7 +332,7 @@ export default function Team() {
   // Join a team by creating a metadata event that references it and includes the user
   const joinTeam = async (teamId) => {
     try {
-      if (!pubkey) {
+      if (!publicKey) {
         setError('You must be logged in to join a team.');
         return;
       }
@@ -366,11 +376,11 @@ export default function Team() {
       
       // Add user as member if not already a member
       const isAlreadyMember = teamEvent.tags.some(tag => 
-        tag[0] === 'p' && tag[1] === pubkey
+        tag[0] === 'p' && tag[1] === publicKey
       );
       
       if (!isAlreadyMember) {
-        metadataEvent.tags.push(['p', pubkey]);
+        metadataEvent.tags.push(['p', publicKey]);
       }
       
       // Sign and publish the updated event
@@ -388,7 +398,7 @@ export default function Team() {
   // Leave a team
   const leaveTeam = async (teamId) => {
     try {
-      if (!pubkey) {
+      if (!publicKey) {
         setError('You must be logged in to leave a team.');
         return;
       }
@@ -425,7 +435,7 @@ export default function Team() {
       
       // Copy existing tags except the user's 'p' tag
       teamEvent.tags.forEach(tag => {
-        if (!(tag[0] === 'p' && tag[1] === pubkey)) {
+        if (!(tag[0] === 'p' && tag[1] === publicKey)) {
           metadataEvent.tags.push(tag);
         }
       });
@@ -446,7 +456,7 @@ export default function Team() {
   // Send a message to the team chat (NIP-28 kind 42 for channel message)
   const sendMessage = async () => {
     try {
-      if (!pubkey || !currentTeam || !messageText.trim()) {
+      if (!publicKey || !currentTeam || !messageText.trim()) {
         return;
       }
       
@@ -892,7 +902,7 @@ export default function Team() {
               ) : (
                 messages.map(message => {
                   const profile = profiles.get(message.pubkey) || {};
-                  const isCurrentUser = message.pubkey === pubkey;
+                  const isCurrentUser = message.pubkey === publicKey;
                   
                   return (
                     <div
@@ -934,7 +944,7 @@ export default function Team() {
         </div>
         
         <div className="team-actions">
-          {currentTeam.pubkey === pubkey ? (
+          {currentTeam.pubkey === publicKey ? (
             <button className="manage-team-btn">
               Manage Team
             </button>

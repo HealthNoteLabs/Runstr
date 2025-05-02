@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { parseNaddr, subscribe } from '../utils/nostrClient';
 import { useGroups } from '../contexts/GroupsContext';
+import { NostrContext } from '../contexts/NostrContext';
 import { useNostr } from '../contexts/useNostr';
 import '../components/RunClub.css';
 
@@ -10,7 +11,16 @@ console.log("TeamDetail component file is loading");
 export default function TeamDetail() {
   const { teamId } = useParams();
   const navigate = useNavigate();
-  const { publicKey } = useNostr();
+  
+  // Use both direct context and the hook for debugging purposes
+  const nostrContext = useContext(NostrContext);
+  const nostrHook = useNostr();
+  
+  // Use direct context access to ensure compatibility
+  const { publicKey } = useContext(NostrContext);
+  console.log("TeamDetail rendering with direct context publicKey:", publicKey);
+  console.log("TeamDetail context comparison - Context:", !!nostrContext, "Hook:", !!nostrHook);
+  
   const { 
     getGroupMetadata, 
     sendGroupMessage, 

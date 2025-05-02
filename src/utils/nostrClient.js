@@ -178,8 +178,11 @@ export const fetchGroupMessages = async (groupId, groupRelays = ['wss://groups.0
  */
 export const fetchGroupMetadataByNaddr = async (naddrString) => {
   try {
+    console.log(`nostrClient: Starting fetchGroupMetadataByNaddr with ${naddrString}`);
+    
     const groupInfo = parseNaddr(naddrString);
     if (!groupInfo) {
+      console.error('nostrClient: Invalid naddr format in fetchGroupMetadataByNaddr');
       throw new Error('Invalid naddr format');
     }
     
@@ -195,25 +198,34 @@ export const fetchGroupMetadataByNaddr = async (naddrString) => {
       '#d': [groupInfo.identifier]
     };
     
-    console.log(`Fetching group metadata for ${naddrString} with filter:`, filter);
-    console.log(`Using relays:`, groupRelays);
+    console.log(`nostrClient: Fetching group metadata for ${naddrString}`);
+    console.log(`nostrClient: Using filter:`, filter);
+    console.log(`nostrClient: Using relays:`, groupRelays);
+    
+    // Try to ensure at least one relay is connected
+    await Promise.any(groupRelays.map(relay => pool.ensureRelay(relay)));
     
     const events = await pool.list(groupRelays, [filter]);
     
     if (!events || events.length === 0) {
-      console.log(`No metadata found for group ${naddrString}`);
+      console.log(`nostrClient: No metadata found for group ${naddrString}`);
       return null;
     }
     
     // Sort by created_at in descending order to get the latest
     const latestEvent = events.sort((a, b) => b.created_at - a.created_at)[0];
+    console.log(`nostrClient: Found metadata event:`, latestEvent.id);
     
     // Parse the content which contains the group metadata
     let metadata;
     try {
       metadata = JSON.parse(latestEvent.content);
+      console.log(`nostrClient: Parsed group metadata:`, {
+        name: metadata.name || 'Unknown',
+        about: metadata.about ? metadata.about.substring(0, 50) + '...' : 'No description'
+      });
     } catch (e) {
-      console.error('Error parsing group metadata content:', e);
+      console.error('nostrClient: Error parsing group metadata content:', e);
       metadata = { name: 'Unknown Group', about: 'Could not parse group metadata' };
     }
     
@@ -223,10 +235,10 @@ export const fetchGroupMetadataByNaddr = async (naddrString) => {
       created_at: latestEvent.created_at,
       kind: latestEvent.kind,
       tags: latestEvent.tags,
-      metadata
+      content: metadata
     };
   } catch (error) {
-    console.error('Error fetching group metadata by naddr:', error);
+    console.error('nostrClient: Error fetching group metadata by naddr:', error);
     return null;
   }
 };
@@ -444,10 +456,24 @@ export const getUserPublicKey = async () => {
   try {
     // First priority: Check if we have an Amber-authenticated pubkey
     if (amberUserPubkey) {
+      console.log('nostrClient: Using Amber-authenticated public key:', amberUserPubkey.substring(0, 8) + '...');
       return amberUserPubkey;
     }
     
-    console.warn('No Amber-authenticated public key found');
+    // Second priority: Try to get it from window.nostr (for browser extensions)
+    if (typeof window !== 'undefined' && window.nostr) {
+      try {
+        const pubkey = await window.nostr.getPublicKey();
+        if (pubkey) {
+          console.log('nostrClient: Using window.nostr public key:', pubkey.substring(0, 8) + '...');
+          return pubkey;
+        }
+      } catch (err) {
+        console.error('nostrClient: Error getting pubkey from window.nostr:', err);
+      }
+    }
+    
+    console.warn('nostrClient: No authenticated public key found');
     return null;
   } catch (error) {
     console.error('Error in getUserPublicKey:', error);

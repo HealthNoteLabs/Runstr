@@ -77,7 +77,15 @@ class NostrGroupsService {
    */
   async getGroupMetadata(naddr) {
     try {
-      return await fetchGroupMetadataByNaddr(naddr);
+      if (!naddr) {
+        console.error('NostrGroupsService: Cannot fetch group metadata - no naddr provided');
+        return null;
+      }
+      
+      console.log('NostrGroupsService: Fetching metadata for group:', naddr);
+      const metadata = await fetchGroupMetadataByNaddr(naddr);
+      console.log('NostrGroupsService: Metadata fetch result:', !!metadata);
+      return metadata;
     } catch (error) {
       console.error('NostrGroupsService: Error fetching group metadata:', error);
       throw error;
@@ -125,7 +133,15 @@ class NostrGroupsService {
    */
   async fetchUserGroups(pubkey) {
     try {
-      return await fetchUserGroupList(pubkey);
+      if (!pubkey) {
+        console.error('NostrGroupsService: Cannot fetch user groups - no pubkey provided');
+        return [];
+      }
+      
+      console.log('NostrGroupsService: Fetching groups for pubkey:', pubkey);
+      const groups = await fetchUserGroupList(pubkey);
+      console.log('NostrGroupsService: Fetched groups count:', groups?.length || 0);
+      return groups || [];
     } catch (error) {
       console.error('NostrGroupsService: Error fetching user groups:', error);
       return [];

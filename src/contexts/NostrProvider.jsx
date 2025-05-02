@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { NostrContext } from './NostrContext';
 import { Platform } from '../utils/react-native-shim';
 import AmberAuth from '../services/AmberAuth';
+import { setAmberUserPubkey } from '../utils/nostrClient'; // Ensure nostrClient is updated
 
 export function NostrProvider({ children }) {
   const [publicKey, setPublicKey] = useState(null);
@@ -15,17 +16,26 @@ export function NostrProvider({ children }) {
   
   // Set up Amber deep linking handler
   useEffect(() => {
+    console.log("NostrProvider: Setting up deep link handler");
+    
     if (Platform.OS === 'android') {
       // Check if Amber is installed
       AmberAuth.isAmberInstalled().then(installed => {
+        console.log("NostrProvider: Amber installed:", installed);
         setIsAmberAvailable(installed);
       });
       
       // Set up deep link handler for Amber responses
       const removeListener = AmberAuth.setupDeepLinkHandling((response) => {
+        console.log("NostrProvider: Deep link response received:", response);
         if (response && response.pubkey) {
+          console.log("NostrProvider: Setting pubkey from Amber:", response.pubkey);
           setPublicKey(response.pubkey);
           setIsNostrReady(true);
+          
+          // Also update the pubkey in nostrClient
+          setAmberUserPubkey(response.pubkey);
+          
           localStorage.setItem('permissionsGranted', 'true');
         }
       });

@@ -18,7 +18,11 @@ export const useGroups = () => {
 
 export const GroupsProvider = ({ children }) => {
   // Get Nostr context
-  const { publicKey: nostrPublicKey } = useContext(NostrContext);
+  const contextValue = useContext(NostrContext);
+  const { publicKey: nostrPublicKey } = contextValue || {};
+  
+  console.log("GroupsProvider: NostrContext value:", !!contextValue);
+  console.log("GroupsProvider: nostrPublicKey:", nostrPublicKey);
   
   // State for user's groups
   const [myGroups, setMyGroups] = useState([]);
@@ -41,25 +45,31 @@ export const GroupsProvider = ({ children }) => {
   useEffect(() => {
     // Set Nostr as initialized since we're using GroupsContext
     // This maintains compatibility with components that check this value
+    console.log("GroupsProvider: Setting nostrInitialized to true");
     setNostrInitialized(true);
   }, []);
 
   // Fetch user's groups when publicKey changes
   useEffect(() => {
+    console.log("GroupsProvider: publicKey changed:", nostrPublicKey);
+    
     const fetchGroups = async () => {
       if (!nostrPublicKey) {
+        console.log("GroupsProvider: No publicKey, clearing groups");
         setMyGroups([]);
         return;
       }
 
+      console.log("GroupsProvider: Fetching groups for publicKey:", nostrPublicKey);
       setLoadingGroups(true);
       setError(null);
 
       try {
         const userGroups = await NostrGroupsService.fetchUserGroups(nostrPublicKey);
+        console.log("GroupsProvider: Fetched groups:", userGroups?.length || 0);
         setMyGroups(userGroups || []);
       } catch (err) {
-        console.error('Error fetching user groups:', err);
+        console.error('GroupsProvider: Error fetching user groups:', err);
         setError('Failed to fetch your groups. Please try again later.');
       } finally {
         setLoadingGroups(false);
