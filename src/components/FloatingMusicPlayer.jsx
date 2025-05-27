@@ -42,7 +42,7 @@ export const FloatingMusicPlayer = () => {
     };
   }, [isPlaying]);
 
-  if (!currentTrack) return <span></span>;
+  if (!currentTrack) return null;
 
   // Handle zap success
   const handleZapSuccess = (/* result */) => {

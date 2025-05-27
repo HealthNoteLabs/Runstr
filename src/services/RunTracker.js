@@ -39,6 +39,7 @@ class RunTracker extends EventEmitter {
     this.watchId = null; // For geolocation watch id
     this.timerInterval = null; // For updating duration every second
     this.paceInterval = null; // For calculating pace at regular intervals
+    console.log('[RunTracker] Instance created'); // Initial log
   }
 
   // Helper method to get the current distance unit from localStorage
@@ -110,6 +111,13 @@ class RunTracker extends EventEmitter {
       // Don't process position updates when not actively tracking
       return;
     }
+
+    // Validate incoming position data
+    if (!newPosition || typeof newPosition.latitude !== 'number' || typeof newPosition.longitude !== 'number') {
+      console.warn('[RunTracker] addPosition called with invalid or incomplete newPosition:', newPosition);
+      return;
+    }
+    console.debug('[RunTracker] addPosition called with newPosition:', JSON.stringify(newPosition));
 
     // Normalise the incoming position so it always has a `coords` object – this is
     // the shape expected by the shared helper utilities (runCalculations etc.)
@@ -217,6 +225,7 @@ class RunTracker extends EventEmitter {
     }
 
     this.positions.push(currentPositionStd);
+    console.debug('[RunTracker] Position added, total positions:', this.positions.length);
   }
 
   startTimer() {
@@ -264,16 +273,18 @@ class RunTracker extends EventEmitter {
 
   async startTracking() {
     try {
+      console.log('[RunTracker] Attempting to startTracking...');
       // We should have already requested permissions by this point
       const permissionsGranted = localStorage.getItem('permissionsGranted') === 'true';
       
       if (!permissionsGranted) {
-        console.warn('Attempting to start tracking without permissions. This should not happen.');
+        console.warn('[RunTracker] Attempting to start tracking without permissions. This should not happen.');
         return;
       }
       
       // First, ensure any existing watchers are cleaned up
       await this.cleanupWatchers();
+      console.log('[RunTracker] Watchers cleaned up.');
       
       this.watchId = await BackgroundGeolocation.addWatcher(
         {
@@ -284,24 +295,40 @@ class RunTracker extends EventEmitter {
           requestPermissions: false, 
           distanceFilter: 10,
           highAccuracy: true,
-          staleLocationThreshold: 30000
+          staleLocationThreshold: 30000,
+          debug: true // Enable plugin debug mode for more logs
         },
         (location, error) => {
           if (error) {
+            console.error('[RunTracker] Watcher callback error:', JSON.stringify(error));
             if (error.code === 'NOT_AUTHORIZED') {
-              // Permissions were revoked after being initially granted
               localStorage.setItem('permissionsGranted', 'false');
-              alert('Location permission is required for tracking. Please enable it in your device settings.');
+              console.warn('Location permission is required for tracking. Please enable it in your device settings. (Original alert message)');
               BackgroundGeolocation.openSettings();
+            } else {
+              console.error(`Location watcher error: ${error.message || 'Unknown error'}. Code: ${error.code}`);
             }
-            return console.error(error);
+            return; // Stop processing on error
           }
 
-          this.addPosition(location);
+          if (location) {
+            console.debug('[RunTracker] Watcher callback received location:', JSON.stringify(location));
+            this.addPosition(location);
+          } else {
+            console.warn('[RunTracker] Watcher callback received null location without an error.');
+            // Optionally emit an error or handle as a minor issue
+          }
         }
       );
+
+      if (this.watchId) {
+        console.log('[RunTracker] BackgroundGeolocation.addWatcher successful, watchId:', this.watchId);
+      } else {
+        console.error('[RunTracker] BackgroundGeolocation.addWatcher returned invalid watchId.');
+      }
+      
     } catch (error) {
-      console.error('Error starting background tracking:', error);
+      console.error('[RunTracker] Error starting background tracking:', error);
     }
   }
 

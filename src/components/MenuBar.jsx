@@ -295,22 +295,18 @@ export const MenuBar = () => {
       )}
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 w-full bg-[#0a1525] py-2 z-40">
-        <div className="max-w-[375px] mx-auto">
-          <ul className="flex justify-around">
-            {menuItems.map((item) => (
-              <li key={item.name} className="text-center">
-                <Link 
-                  to={item.path} 
-                  className={`flex flex-col items-center px-2 py-1 rounded-md ${location.pathname === item.path ? 'text-indigo-400' : 'text-gray-400'}`}
-                >
-                  {item.icon}
-                  <span className="text-xs font-medium tracking-wider">{item.name}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
+      <nav className="fixed bottom-0 left-0 right-0 bg-[#0B101A] border-t border-gray-700 flex justify-around items-center h-16 z-40">
+        {menuItems.map((item) => (
+          <Link
+            key={item.name}
+            to={item.path}
+            className={`flex flex-col items-center justify-center text-xs font-medium transition-colors duration-150 ease-in-out h-full flex-1 
+                        ${location.pathname === item.path ? 'text-indigo-400' : 'text-gray-400 hover:text-indigo-300'}`}
+          >
+            {item.icon}
+            <span className="text-center">{item.name}</span>
+          </Link>
+        ))}
       </nav>
     </div>
   );

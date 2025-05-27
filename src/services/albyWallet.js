@@ -283,6 +283,7 @@ export class AlbyWallet {
   async makePayment(invoice) {
     try {
       console.log('[AlbyWallet] Making payment for invoice:', invoice.substring(0, 30) + '...');
+      console.log('[AlbyWallet] Current connection state:', this.getConnectionState());
       
       if (!await this.ensureConnected()) {
         console.error('[AlbyWallet] Wallet not connected');
@@ -305,12 +306,24 @@ export class AlbyWallet {
         const response = await this.lnClient.pay(invoice);
         clearTimeout(timeoutId);
         console.log('[AlbyWallet] Payment successful with LN client:', response);
+        
+        // Verify payment was actually successful
+        if (!response || (!response.preimage && !response.payment_hash)) {
+          console.error('[AlbyWallet] Payment response missing critical fields:', response);
+          throw new Error('Payment completed but verification failed');
+        }
+        
         return response;
       } catch (error) {
         clearTimeout(timeoutId);
         
-        // If LN client fails, fallback to NWC client
+        // Log detailed error information
         console.error('[AlbyWallet] LN client payment failed:', error);
+        console.error('[AlbyWallet] Error details:', {
+          message: error.message,
+          code: error.code,
+          stack: error.stack
+        });
         
         console.warn('[AlbyWallet] LN client payment failed, using NWC client instead');
         console.log('[AlbyWallet] Attempting payment with NWC client');
@@ -318,9 +331,21 @@ export class AlbyWallet {
         try {
           const nwcResponse = await this.nwcClient.payInvoice({ invoice });
           console.log('[AlbyWallet] Payment successful with NWC client:', nwcResponse);
+          
+          // Verify NWC payment was successful
+          if (!nwcResponse || (!nwcResponse.preimage && !nwcResponse.payment_hash)) {
+            console.error('[AlbyWallet] NWC payment response missing critical fields:', nwcResponse);
+            throw new Error('Payment completed but verification failed');
+          }
+          
           return nwcResponse;
         } catch (nwcError) {
           console.error('[AlbyWallet] NWC client payment also failed:', nwcError);
+          console.error('[AlbyWallet] NWC error details:', {
+            message: nwcError.message,
+            code: nwcError.code,
+            stack: nwcError.stack
+          });
           
           // If this is a connection issue, mark connection as broken
           if (nwcError.message && (

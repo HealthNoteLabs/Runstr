@@ -1,4 +1,5 @@
 import { NWCWalletConnector } from '../components/NWCWalletConnector';
+import { WalletDiagnostics } from '../components/WalletDiagnostics';
 
 export const NWC = () => {
   return (
@@ -8,6 +9,7 @@ export const NWC = () => {
         Connect your Lightning wallet using Nostr Wallet Connect (NWC). This allows you to send zaps and make payments directly through your preferred Lightning wallet.
       </p>
       <NWCWalletConnector />
+      <WalletDiagnostics />
     </div>
   );
 };

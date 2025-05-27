@@ -110,6 +110,16 @@ export const usePostInteractions = ({
   }, [loadSupplementaryData]);
 
   const handleZap = useCallback(async (post, wallet) => {
+    // Enable debug mode by checking localStorage
+    const debugMode = localStorage.getItem('debugZaps') === 'true';
+    
+    if (debugMode) {
+      console.log('[ZapFlow DEBUG] Starting zap with debug mode enabled');
+      console.log('[ZapFlow DEBUG] Post:', post);
+      console.log('[ZapFlow DEBUG] Wallet:', wallet);
+      console.log('[ZapFlow DEBUG] Default zap amount:', defaultZapAmount);
+    }
+    
     if (!window.nostr) {
       alert('Please login to send zaps');
       return;
@@ -126,6 +136,10 @@ export const usePostInteractions = ({
         console.log('[ZapFlow] Checking wallet connection before zapping');
         const isConnected = await wallet.checkConnection();
         
+        if (debugMode) {
+          console.log('[ZapFlow DEBUG] Wallet connection status:', isConnected);
+        }
+        
         if (!isConnected && wallet.ensureConnected) {
           console.log('[ZapFlow] Connection lost, attempting to reconnect wallet');
           // Try to reconnect before failing
@@ -140,6 +154,14 @@ export const usePostInteractions = ({
 
       // Determine recipient LNURL / lightning address from their Nostr profile
       let lnurl = post.author.lud16 || post.author.lud06 || null;
+      
+      if (debugMode) {
+        console.log('[ZapFlow DEBUG] Author LNURL data:', {
+          lud16: post.author.lud16,
+          lud06: post.author.lud06,
+          profile: post.author.profile
+        });
+      }
 
       // Fallback: derive LNURL-pay endpoint from verified nip05, if present
       if (!lnurl && post.author?.profile?.nip05 && post.author.profile.nip05.includes('@')) {
@@ -179,6 +201,16 @@ export const usePostInteractions = ({
         } catch (zapError) {
           // If direct zap fails, log error and fall back to manual LNURL flow
           console.error('[ZapFlow] Direct zap method failed, falling back to LNURL flow:', zapError);
+          // Don't silently fail - check if this is a critical error
+          if (zapError.message && (
+            zapError.message.includes('Wallet not connected') ||
+            zapError.message.includes('connection lost') ||
+            zapError.message.includes('Payment failed')
+          )) {
+            // These are critical errors that shouldn't fall back
+            alert(`Zap failed: ${zapError.message}. Please check your wallet connection.`);
+            return;
+          }
         }
       }
       
@@ -344,7 +376,28 @@ export const usePostInteractions = ({
       }
     } catch (error) {
       console.error('Error sending zap:', error);
-      console.warn('Zap failed (silenced):', error.message);
+      // Provide specific error messages to users
+      let userMessage = 'Failed to send zap. ';
+      
+      if (error.message) {
+        if (error.message.includes('timeout') || error.message.includes('timed out')) {
+          userMessage += 'The payment request timed out. Please try again.';
+        } else if (error.message.includes('Wallet not connected') || error.message.includes('connection')) {
+          userMessage += 'Wallet connection issue. Please reconnect your wallet.';
+        } else if (error.message.includes('422') || error.message.includes('not support zaps')) {
+          userMessage += 'Your wallet service may not support zaps. Try a different wallet.';
+        } else if (error.message.includes('Invalid LNURL') || error.message.includes('Invalid response')) {
+          userMessage += 'The recipient\'s Lightning address may be invalid.';
+        } else if (error.message.includes('Payment failed')) {
+          userMessage += 'Payment failed. Please check your wallet balance and try again.';
+        } else {
+          userMessage += error.message;
+        }
+      } else {
+        userMessage += 'Please try again.';
+      }
+      
+      alert(userMessage);
     }
   }, [defaultZapAmount, loadSupplementaryData]);
 

@@ -4,9 +4,8 @@ on:
   push:
     branches:
       - update-beta
-      - bug-fixes
-      - rewards-fix
-      - nostr-stats
+      - bugfixes1
+
   workflow_dispatch:  # Allows manual triggering
 
 jobs:

@@ -8,5 +8,8 @@ project(':capacitor-community-background-geolocation').projectDir = new File('..
 include ':capacitor-community-keep-awake'
 project(':capacitor-community-keep-awake').projectDir = new File('../node_modules/@capacitor-community/keep-awake/android')
 
+include ':capacitor-local-notifications'
+project(':capacitor-local-notifications').projectDir = new File('../node_modules/@capacitor/local-notifications/android')
+
 include ':capawesome-team-capacitor-android-battery-optimization'
 project(':capawesome-team-capacitor-android-battery-optimization').projectDir = new File('../node_modules/@capawesome-team/capacitor-android-battery-optimization/android')

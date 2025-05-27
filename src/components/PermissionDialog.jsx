@@ -2,6 +2,8 @@ import { useState, useContext, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { NostrContext } from '../contexts/NostrContext';
 import { registerPlugin } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { Capacitor } from '@capacitor/core';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
 
@@ -50,7 +52,8 @@ export const PermissionDialog = ({ onContinue, onCancel }) => {
             requestPermissions: true,
             distanceFilter: 10,
             highAccuracy: true,
-            staleLocationThreshold: 30000
+            staleLocationThreshold: 30000,
+            id: 'initialPermissionRequest'
           },
           (location, error) => {
             if (error) {
@@ -66,6 +69,20 @@ export const PermissionDialog = ({ onContinue, onCancel }) => {
         );
       } catch (locationError) {
         console.warn('Error requesting location permissions:', locationError);
+      }
+      
+      // Request Notification permissions (Android 13+)
+      try {
+        if (Capacitor.getPlatform() === 'android') {
+          const notificationPermStatus = await LocalNotifications.requestPermissions();
+          console.log('Notification permission status:', notificationPermStatus.display);
+          if (notificationPermStatus.display !== 'granted') {
+            console.warn('Notification permission not granted. Foreground service notifications might not display.');
+            // Optionally inform the user further, but don't block app usage solely for this.
+          }
+        }
+      } catch (notifError) {
+        console.warn('Error requesting notification permissions:', notifError);
       }
       
       // Ask user to whitelist the app from battery optimisations (GrapheneOS & Android)
