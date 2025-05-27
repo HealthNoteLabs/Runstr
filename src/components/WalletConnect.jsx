@@ -1,58 +1,47 @@
-<<<<<<< HEAD
-import { useEffect } from 'react';
-import { useAuth } from '../hooks/useAuth.jsx';
-import { Button, init, onConnected } from '@getalby/bitcoin-connect-react';
-=======
 import { useEffect, useState, useContext } from 'react';
-import { useAuth } from '../hooks/useAuth.jsx';
-import { Button, init, onConnected } from '@getalby/bitcoin-connect-react';
+// import { useAuth } from '../hooks/useAuth.jsx'; // No longer using setWallet from useAuth here
+import { Button, init } from '@getalby/bitcoin-connect-react'; // Removed onConnected, will use WalletContext
 import { NostrContext } from '../contexts/NostrContext';
->>>>>>> Simple-updates
+import { WalletContext } from './WalletContext'; // Import WalletContext to use its connection logic
 
 // Initialize Bitcoin Connect
 init({
   appName: 'Nostr Run Club'
 });
 
-<<<<<<< HEAD
-export const WalletConnect = () => {
-  const { setWallet } = useAuth();
-=======
 // RUNSTR and OpenSats Lightning addresses
 const RUNSTR_LIGHTNING = 'runstr@geyser.fund';
 
 export const WalletConnect = () => {
-  const { setWallet } = useAuth();
+  // const { setWallet } = useAuth(); // No longer using setWallet from useAuth here
+  const { connectWithUrl, wallet: walletFromContext, connectionState } = useContext(WalletContext); // Get connectWithUrl from WalletContext
   const { defaultZapAmount, updateDefaultZapAmount } = useContext(NostrContext);
   const [zapAmountInput, setZapAmountInput] = useState(defaultZapAmount.toString());
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [donationStatus, setDonationStatus] = useState({ message: '', isError: false });
->>>>>>> Simple-updates
+  const [isConnectingViaButton, setIsConnectingViaButton] = useState(false);
 
-  useEffect(() => {
-    // Set up connection event listener for wallet state management
-    const unsub = onConnected((provider) => {
-      // Create a wallet interface that matches your app's needs
-      const bitcoinWallet = {
-        provider,
-        makePayment: async (invoice) => {
-          return await provider.sendPayment(invoice);
-        },
-        getBalance: async () => {
-          return await provider.getBalance();
-        }
-      };
+  // This useEffect is no longer needed as WalletContext and WalletPersistenceService handle connection state
+  // useEffect(() => {
+  //   // Set up connection event listener for wallet state management
+  //   const unsub = onConnected((provider) => {
+  //     // Create a wallet interface that matches your app's needs
+  //     const bitcoinWallet = {
+  //       provider,
+  //       makePayment: async (invoice) => {
+  //         return await provider.sendPayment(invoice);
+  //       },
+  //       getBalance: async () => {
+  //         return await provider.getBalance();
+  //       }
+  //     };
+  //     // setWallet(bitcoinWallet); // This was the problematic part
+  //   });
+  //   return () => {
+  //     unsub();
+  //   };
+  // }, [setWallet]);
 
-      setWallet(bitcoinWallet);
-    });
-
-    return () => {
-      unsub();
-    };
-  }, [setWallet]);
-
-<<<<<<< HEAD
-=======
   // Update zapAmountInput when defaultZapAmount changes
   useEffect(() => {
     setZapAmountInput(defaultZapAmount.toString());
@@ -68,7 +57,58 @@ export const WalletConnect = () => {
     }
   };
 
+  const handleBitcoinConnectButton = async (provider) => {
+    if (!provider) {
+      console.warn('[WalletConnect] Provider not received from Bitcoin Connect button');
+      setDonationStatus({ message: 'Connection failed: No provider found.', isError: true });
+      return;
+    }
+    
+    console.log('[WalletConnect] Provider received from Bitcoin Connect button:', provider);
+    setIsConnectingViaButton(true);
+    setDonationStatus({ message: 'Processing connection...', isError: false });
+
+    // Attempt to extract NWC URL or Auth URL if the provider is an NWC provider from Alby SDK
+    // This is speculative as the provider from Bitcoin Connect might not be a direct NWCProvider instance
+    // or expose the URL easily.
+    let nwcUrlToConnect = null;
+    if (provider?.config?.nostrWalletConnectUrl) { // Alby NWCProvider specific property
+        nwcUrlToConnect = provider.config.nostrWalletConnectUrl;
+        console.log('[WalletConnect] Extracted NWC URL from provider:', nwcUrlToConnect);
+    } else if (provider?.config?.authUrl) { // Check for authUrl if direct NWC URL is not available
+        nwcUrlToConnect = provider.config.authUrl;
+        console.log('[WalletConnect] Extracted Auth URL from provider:', nwcUrlToConnect);
+    }
+    // Add more checks here if other wallet types from Bitcoin Connect expose their NWC/Auth URLs differently
+
+    if (nwcUrlToConnect) {
+        try {
+            const connected = await connectWithUrl(nwcUrlToConnect);
+            if (connected) {
+                console.log('[WalletConnect] Successfully connected via WalletContext using extracted URL.');
+                setDonationStatus({ message: 'Wallet connected!', isError: false });
+            } else {
+                console.error('[WalletConnect] WalletContext connectWithUrl failed with extracted URL.');
+                setDonationStatus({ message: 'Connection failed. Please try connecting manually via the NWC page if issues persist.', isError: true });
+            }
+        } catch (error) {
+            console.error('[WalletConnect] Error connecting with extracted URL via WalletContext:', error);
+            setDonationStatus({ message: `Connection error: ${error.message}. Try NWC page.`, isError: true });
+        }
+    } else {
+        console.warn('[WalletConnect] Could not extract NWC/Auth URL from the Bitcoin Connect provider. The wallet might not be NWC-based or the URL is not exposed. Users may need to connect manually via NWC page.');
+        setDonationStatus({ message: 'Could not automatically derive NWC URL. If this is an NWC wallet, try connecting via the NWC page.', isError: true });
+        // Potentially, we could fall back to a different handling mechanism if the provider is not NWC
+        // For now, we guide to NWC page.
+    }
+    setIsConnectingViaButton(false);
+  };
+
   const handleDonate = async (lightning, name) => {
+    if (!walletFromContext || connectionState !== 'connected') {
+      setDonationStatus({ message: 'Please connect your wallet first.', isError: true });
+      return;
+    }
     try {
       setDonationStatus({ message: `Sending ${defaultZapAmount} sats to ${name}...`, isError: false });
 
@@ -122,10 +162,8 @@ export const WalletConnect = () => {
         throw new Error('Invalid LNURL-pay response: missing payment request');
       }
 
-      // Use Bitcoin Connect to get the provider and pay
-      const { requestProvider } = await import('@getalby/bitcoin-connect');
-      const provider = await requestProvider();
-      await provider.sendPayment(invoiceData.pr);
+      // Use wallet from WalletContext to make payment
+      await walletFromContext.makePayment(invoiceData.pr);
 
       setDonationStatus({ message: `Successfully donated ${defaultZapAmount} sats to ${name}! ⚡️`, isError: false });
       setTimeout(() => {
@@ -140,24 +178,19 @@ export const WalletConnect = () => {
     }
   };
 
->>>>>>> Simple-updates
   return (
     <div className="wallet-connect">
       <div className="connection-section">
         <h3>Connect your Bitcoin Wallet</h3>
         <Button
-          onConnect={(provider) => {
-            // The onConnected event handler above will handle the wallet setup
-            console.log('Wallet connected through button:', provider);
-          }}
+          onConnect={handleBitcoinConnectButton} // Use the new handler
         />
         <p className="helper-text">
           Connect using Alby extension or other Bitcoin Connect compatible
-          wallets
+          wallets. For NWC string/Auth URL, please use the NWC page.
         </p>
+        {isConnectingViaButton && <p>Connecting...</p>}
       </div>
-<<<<<<< HEAD
-=======
 
       <div className="zap-settings-section">
         <h3>Default Zap Settings</h3>
@@ -210,7 +243,6 @@ export const WalletConnect = () => {
           Your donations help fund development of free and open source software.
         </p>
       </div>
->>>>>>> Simple-updates
     </div>
   );
 };
