@@ -130,6 +130,13 @@ export const usePostInteractions = ({
       return;
     }
 
+    // Validate wallet has required methods
+    if (!wallet.makePayment || typeof wallet.makePayment !== 'function') {
+      console.error('[ZapFlow] Wallet missing makePayment method:', wallet);
+      alert('Wallet is not properly initialized. Please reconnect your wallet.');
+      return;
+    }
+
     try {
       // More robust wallet connection check with reconnection attempt
       if (wallet.checkConnection) {
@@ -226,10 +233,8 @@ export const usePostInteractions = ({
           ['p', post.author.pubkey],
           ['e', post.id],
           ['amount', (defaultZapAmount * 1000).toString()], // millisats
-          // relay hints – improves probability relays see the zap receipt
-          ['relays', 'wss://relay.damus.io'],
-          ['relays', 'wss://nos.lol'],
-          ['relays', 'wss://relay.nostr.band']
+          // relay hints – NIP-57 format is a single array with 'relays' followed by URLs
+          ['relays', 'wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band']
         ],
         pubkey: await window.nostr.getPublicKey()
       };
@@ -301,7 +306,8 @@ export const usePostInteractions = ({
           };
           
           const nostrParam = JSON.stringify(compactEvent);
-          callbackUrl.searchParams.append('nostr', encodeURIComponent(nostrParam));
+          // Don't double-encode - the URL constructor will handle encoding
+          callbackUrl.searchParams.append('nostr', nostrParam);
           console.log('[ZapFlow] Added compacted nostr event to callback URL');
           
           // Add lnurl parameter if we have it (required by NIP-57)
@@ -336,7 +342,23 @@ export const usePostInteractions = ({
           clearTimeout(invoiceTimeoutId);
           
           if (!invoiceResponse.ok) {
-            throw new Error(`Invoice request failed: ${invoiceResponse.status} ${invoiceResponse.statusText}`);
+            // Try to get more details about the error
+            let errorDetails = '';
+            try {
+              const errorData = await invoiceResponse.json();
+              console.error('[ZapFlow] Invoice error response:', errorData);
+              if (errorData.reason || errorData.message || errorData.error) {
+                errorDetails = `: ${errorData.reason || errorData.message || errorData.error}`;
+              }
+            } catch (e) {
+              // If we can't parse the error response, just use the status
+              console.error('[ZapFlow] Could not parse error response');
+            }
+            
+            if (invoiceResponse.status === 400) {
+              throw new Error(`Bad request${errorDetails}. The payment server rejected the request. This user's Lightning address may not support zaps.`);
+            }
+            throw new Error(`Invoice request failed: ${invoiceResponse.status} ${invoiceResponse.statusText}${errorDetails}`);
           }
           
           // Parse invoice data with error handling

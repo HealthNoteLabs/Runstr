@@ -311,6 +311,11 @@ export const getWalletAPI = () => {
       if (!walletInstance) throw new Error('No wallet instance available');
       return walletInstance.makePayment(invoice);
     },
+    generateInvoice: async (amount, memo) => {
+      if (!walletInstance) await initWalletService();
+      if (!walletInstance) throw new Error('No wallet instance available');
+      return walletInstance.generateInvoice(amount, memo);
+    },
     generateZapInvoice: async (pubkey, amount, content) => {
       if (!walletInstance) await initWalletService();
       if (!walletInstance) throw new Error('No wallet instance available');
