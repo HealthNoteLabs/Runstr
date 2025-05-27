@@ -263,6 +263,9 @@ export const usePostInteractions = ({
         clearTimeout(metadataTimeoutId);
         
         if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error(`Lightning address not found. The user may have an invalid Lightning address configured.`);
+          }
           throw new Error(`Payment endpoint error: ${response.status} ${response.statusText}`);
         }
         
@@ -371,6 +374,10 @@ export const usePostInteractions = ({
       } catch (error) {
         if (error.name === 'AbortError') {
           throw new Error('Payment endpoint timed out. Please try again.');
+        }
+        // Handle network errors
+        if (error.message === 'Failed to fetch') {
+          throw new Error('Network error: Unable to reach payment server. Check your internet connection.');
         }
         throw error;
       }

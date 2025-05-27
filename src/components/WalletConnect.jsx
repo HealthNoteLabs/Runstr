@@ -2,7 +2,7 @@ import { useEffect, useState, useContext } from 'react';
 // import { useAuth } from '../hooks/useAuth.jsx'; // No longer using setWallet from useAuth here
 import { Button, init } from '@getalby/bitcoin-connect-react'; // Removed onConnected, will use WalletContext
 import { NostrContext } from '../contexts/NostrContext';
-import { WalletContext } from './WalletContext'; // Import WalletContext to use its connection logic
+import { WalletContext } from '../contexts/WalletContext'; // Fix import path - should be contexts, not components
 
 // Initialize Bitcoin Connect
 init({

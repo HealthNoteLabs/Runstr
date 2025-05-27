@@ -1,11 +1,14 @@
 import { useState, useContext } from 'react';
-import { WalletContext } from '../contexts/WalletContext';
+import { WalletContext, CONNECTION_STATES } from '../contexts/WalletContext';
 import './WalletDiagnostics.css';
 
 export const WalletDiagnostics = () => {
-  const { wallet, isConnected } = useContext(WalletContext);
+  const { wallet, connectionState } = useContext(WalletContext);
   const [diagnosticResults, setDiagnosticResults] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
+  
+  // Derive isConnected from connectionState
+  const isConnected = connectionState === CONNECTION_STATES.CONNECTED;
   
   const runDiagnostics = async () => {
     setIsRunning(true);
