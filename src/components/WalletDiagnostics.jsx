@@ -11,14 +11,32 @@ export const WalletDiagnostics = () => {
     setIsRunning(true);
     const results = [];
     
-    // Test 1: Basic connection
+    // Test 1: Basic connection (from context)
     results.push({
-      test: 'Wallet Connection',
+      test: 'Wallet Connection (Context)',
       status: isConnected ? 'PASS' : 'FAIL',
-      details: isConnected ? 'Wallet is connected' : 'Wallet is not connected'
+      details: isConnected ? 'Wallet is connected via context' : 'Wallet is NOT connected via context'
     });
     
     if (wallet) {
+      // Test 1b: Active connection check if context isConnected is false
+      if (!isConnected) {
+        try {
+          const activeCheck = await wallet.checkConnection();
+          results.push({
+            test: 'Wallet Connection (Active Check)',
+            status: activeCheck ? 'PASS' : 'FAIL',
+            details: activeCheck ? 'Wallet actively connected now' : 'Active connection check failed'
+          });
+        } catch (error) {
+          results.push({
+            test: 'Wallet Connection (Active Check)',
+            status: 'ERROR',
+            details: `Active check error: ${error.message}`
+          });
+        }
+      }
+      
       // Test 2: Check connection method
       try {
         const connectionCheck = await wallet.checkConnection();
@@ -100,6 +118,7 @@ export const WalletDiagnostics = () => {
   return (
     <div className="wallet-diagnostics">
       <h3>Wallet Diagnostics</h3>
+      <p className="diagnostic-note">Run these tests if you suspect issues with your wallet connection or zap functionality. Ensure your wallet is unlocked and responsive.</p>
       
       <div className="diagnostic-actions">
         <button 
