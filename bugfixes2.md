@@ -124,27 +124,71 @@ This document tracks the progress of fixing a series of identified bugs. We will
 ## 5. NWC (Nostr Wallet Connect) - Intermittent functionality
 
 *   **Description:** NWC connection is reportedly being lost when the user leaves and returns to the wallet page. Zaps are also reported to hardly work.
-*   **Status:** Pending
+*   **Status:** Completed
 *   **Progress:**
-    *   [ ] Review NWC connection management logic (initial connection, re-connection, session persistence).
-    *   [ ] Investigate state management around the NWC connection. Is it being cleared unintentionally?
-    *   [ ] Examine the zap sending flow: event creation, signing, relay submission, error handling.
-    *   [ ] Add detailed logging around NWC connection states and zap attempts.
-    *   [ ] Test extensively, focusing on app lifecycle events (backgrounding, resuming) and network changes.
+    *   [x] Review NWC connection management logic (initial connection, re-connection, session persistence).
+    *   [x] Investigate state management around the NWC connection. Is it being cleared unintentionally?
+    *   [x] Examine the zap sending flow: event creation, signing, relay submission, error handling.
+    *   [x] Add detailed logging around NWC connection states and zap attempts.
+    *   [x] Test extensively, focusing on app lifecycle events (backgrounding, resuming) and network changes.
 *   **Details/Notes:**
     *   Intermittent issues can be hard to debug; focus on robust error handling and state management.
     *   Check if there are any known issues with the NWC relays being used or the NWC library itself.
+*   **Implementation Details:**
+    *   **AlbyWallet Service Improvements:**
+        *   Reduced connection check interval from 2 minutes to 30 seconds for better responsiveness
+        *   Improved connection check throttling from 30s to 5s for faster detection
+        *   Enhanced error detection to identify WebSocket, network, and timeout errors
+        *   Added continuous monitoring that doesn't stop after max reconnection attempts
+        *   Improved reconnection logic with multiple attempts and better error recovery
+    *   **WalletPersistenceService Enhancements:**
+        *   Added proper reconnection attempts using both auth URL and connection string
+        *   Improved connection monitoring interval to 30 seconds
+        *   Added network online/offline event listeners for better connection management
+        *   Enhanced window focus and visibility change handlers with delays for network stabilization
+        *   Improved ensureConnected method to handle various connection scenarios
+        *   Added connection verification before all wallet operations
+    *   **NWC UI Integration:**
+        *   Added NWC wallet connection directly in the Settings modal
+        *   Users can now connect/disconnect wallet without navigating to separate page
+        *   Real-time connection status display
+        *   Clear error messages for connection failures
+    *   **Zap Flow Improvements:**
+        *   Added retry logic (3 attempts) for wallet reconnection
+        *   Added retry logic (3 attempts) for payment processing
+        *   Enhanced error detection for connection-related issues
+        *   Automatic wallet reconnection on connection errors during zaps
+        *   Better logging throughout the zap process
+        *   Graceful fallback from direct zap to manual LNURL flow
+    *   **Connection Stability:**
+        *   Wallet now attempts to reconnect automatically when connection is lost
+        *   Connection state is properly synchronized across all components
+        *   Network connectivity changes are properly handled
+        *   App lifecycle events (background/foreground) trigger connection checks
 
 ## 6. Amber - Intermittent functionality on Calyx
 
 *   **Description:** Multiple users on CalyxOS report unstable Amber connection. They had to remove the connection in Amber, log out of Runstr, delete the remembered profile, and re-establish the connection for posting to work. Some received a "no connection to key store" message.
-*   **Status:** Pending
+*   **Status:** Completed
 *   **Progress:**
-    *   [ ] Review Amber integration logic, particularly how connection state is managed and how signing requests are handled.
-    *   [ ] Investigate the "no connection to key store" message. Is this from Runstr, Amber, or CalyxOS?
-    *   [ ] Research any specific CalyxOS restrictions or behaviors related to inter-app communication or background services that might affect Amber.
-    *   [ ] Test the full lifecycle: connect Amber, post, background app, return, post again.
-    *   [ ] Add robust logging around Amber interactions.
+    *   [x] Review Amber integration logic, particularly how connection state is managed and how signing requests are handled.
+    *   [x] Investigate the "no connection to key store" message. Is this from Runstr, Amber, or CalyxOS?
+    *   [x] Research any specific CalyxOS restrictions or behaviors related to inter-app communication or background services that might affect Amber.
+    *   [x] Test the full lifecycle: connect Amber, post, background app, return, post again.
+    *   [x] Add robust logging around Amber interactions.
 *   **Details/Notes:**
     *   The need to fully reset the connection points to potential state corruption or stale connection data.
-    *   This involves interaction between Runstr, the Amber app, and CalyxOS, adding layers of complexity. 
+    *   This involves interaction between Runstr, the Amber app, and CalyxOS, adding layers of complexity.
+*   **Implementation Details:**
+    *   Added connection state management to track Amber connection validity
+    *   Implemented automatic connection restoration on app launch
+    *   Added connection validity checks with 5-minute timeout for idle connections
+    *   Implemented request tracking with unique IDs to match callbacks correctly
+    *   Added timeout handling for authentication (60s) and signing (30s)
+    *   Implemented retry logic for signing operations (2 attempts)
+    *   Added error-specific handling for permissions and connection issues
+    *   Improved deep link handling to process errors and connection states
+    *   Added connection status display in the permission dialog
+    *   Implemented periodic connection validity checks (every 30 seconds)
+    *   Added disconnect functionality to properly reset connection state
+    *   Better error messages for users when connection issues occur 

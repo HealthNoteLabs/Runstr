@@ -103,24 +103,33 @@ export class AlbyWallet {
       this.connectionCheckInterval = null;
     }
     
-    // Check connection every 2 minutes
+    // Check connection every 30 seconds for better responsiveness
     this.connectionCheckInterval = setInterval(async () => {
-      const isConnected = await this.checkConnection();
-      
-      // If not connected, try to reconnect
-      if (!isConnected && this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.reconnectAttempts++;
-        console.log(`Connection lost. Attempting reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-        await this.ensureConnected();
-      } else if (!isConnected) {
-        console.log('Max reconnection attempts reached. Please reconnect manually.');
-        clearInterval(this.connectionCheckInterval);
-        this.connectionCheckInterval = null;
-      } else {
-        // Reset reconnect attempts on successful connection
-        this.reconnectAttempts = 0;
+      try {
+        const isConnected = await this.checkConnection();
+        
+        // If not connected, try to reconnect
+        if (!isConnected && this.reconnectAttempts < this.maxReconnectAttempts) {
+          this.reconnectAttempts++;
+          console.log(`[AlbyWallet] Connection lost. Attempting reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+          
+          const reconnected = await this.ensureConnected();
+          if (reconnected) {
+            console.log('[AlbyWallet] Successfully reconnected');
+            this.reconnectAttempts = 0;
+          }
+        } else if (!isConnected) {
+          console.log('[AlbyWallet] Max reconnection attempts reached. Manual reconnection required.');
+          // Don't stop monitoring - keep trying every interval
+          this.reconnectAttempts = 0; // Reset counter for next cycle
+        } else {
+          // Reset reconnect attempts on successful connection
+          this.reconnectAttempts = 0;
+        }
+      } catch (error) {
+        console.error('[AlbyWallet] Error in connection monitoring:', error);
       }
-    }, 120000); // 2 minutes
+    }, 30000); // 30 seconds for better responsiveness
   }
 
   /**
@@ -130,7 +139,7 @@ export class AlbyWallet {
   async checkConnection() {
     // Throttle checks to prevent too many requests
     const now = Date.now();
-    if (now - this.lastConnectionCheck < 30000) {
+    if (now - this.lastConnectionCheck < 5000) { // Reduced from 30s to 5s
       return this.isConnected;
     }
     
@@ -138,16 +147,36 @@ export class AlbyWallet {
     
     try {
       if (!this.nwcClient || !this.lnClient) {
+        console.log('[AlbyWallet] No client instances available');
         this.isConnected = false;
         return false;
       }
       
       // Try to get wallet info to verify connection
-      await this.getInfo();
-      this.isConnected = true;
-      return true;
+      try {
+        await this.getInfo();
+        this.isConnected = true;
+        return true;
+      } catch (error) {
+        // If the error is specifically about connection, mark as disconnected
+        if (error.message && (
+          error.message.includes('WebSocket') ||
+          error.message.includes('ECONNREFUSED') ||
+          error.message.includes('ETIMEDOUT') ||
+          error.message.includes('network') ||
+          error.message.includes('connect')
+        )) {
+          console.log('[AlbyWallet] Connection error detected:', error.message);
+          this.isConnected = false;
+          return false;
+        }
+        
+        // For other errors, still consider connected but log warning
+        console.warn('[AlbyWallet] Non-connection error during check:', error);
+        return this.isConnected;
+      }
     } catch (error) {
-      console.warn('Wallet connection check failed:', error);
+      console.error('[AlbyWallet] Wallet connection check failed:', error);
       this.isConnected = false;
       return false;
     }

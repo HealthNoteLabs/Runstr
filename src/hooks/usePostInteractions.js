@@ -11,6 +11,8 @@ export const usePostInteractions = ({
 }) => {
   const [commentText, setCommentText] = useState('');
   const [activeCommentPost, setActiveCommentPost] = useState(null);
+  const [zappingPostId, setZappingPostId] = useState(null);
+  const [zapProgress, setZapProgress] = useState('');
 
   // Track likes that are being published so rapid double-taps don't send twice
   const inFlightLikes = useRef(new Set());
@@ -120,6 +122,10 @@ export const usePostInteractions = ({
       return;
     }
 
+    // Set zapping state
+    setZappingPostId(post.id);
+    setZapProgress('Checking wallet connection...');
+
     try {
       // More robust wallet connection check with reconnection attempt
       if (wallet.checkConnection) {
@@ -128,15 +134,33 @@ export const usePostInteractions = ({
         
         if (!isConnected && wallet.ensureConnected) {
           console.log('[ZapFlow] Connection lost, attempting to reconnect wallet');
-          // Try to reconnect before failing
-          const reconnected = await wallet.ensureConnected();
+          setZapProgress('Reconnecting wallet...');
+          // Try to reconnect before failing - with retry logic
+          let reconnected = false;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            console.log(`[ZapFlow] Reconnection attempt ${attempt}/3`);
+            setZapProgress(`Reconnecting wallet (attempt ${attempt}/3)...`);
+            try {
+              reconnected = await wallet.ensureConnected();
+              if (reconnected) {
+                console.log('[ZapFlow] Wallet successfully reconnected');
+                break;
+              }
+            } catch (reconnectError) {
+              console.error(`[ZapFlow] Reconnection attempt ${attempt} failed:`, reconnectError);
+            }
+            // Wait a bit between attempts
+            if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          
           if (!reconnected) {
-            alert('Wallet connection lost. Please reconnect your wallet in the NWC tab.');
+            alert('Wallet connection lost. Please reconnect your wallet in Settings or the NWC tab.');
             return;
           }
-          console.log('[ZapFlow] Wallet successfully reconnected');
         }
       }
+
+      setZapProgress('Preparing zap...');
 
       // Determine recipient LNURL / lightning address from their Nostr profile
       let lnurl = post.author.lud16 || post.author.lud06 || null;
@@ -156,18 +180,62 @@ export const usePostInteractions = ({
 
       // Log which zap method we're using
       console.log('[ZapFlow] Starting zap process for post:', post.id);
+      console.log('[ZapFlow] Target Lightning address:', lnurl);
       
       // First, try to use the wallet's built-in generateZapInvoice if it supports that method
       if (wallet.generateZapInvoice) {
         try {
           console.log('[ZapFlow] Wallet supports direct zap method, using wallet.generateZapInvoice');
+          setZapProgress('Creating zap invoice...');
           
           // If the wallet supports direct zapping, use that
           const invoice = await wallet.generateZapInvoice(post.author.pubkey, defaultZapAmount, 'Zap for your run! ⚡️');
           console.log('[ZapFlow] Successfully generated zap invoice:', invoice.substring(0, 30) + '...');
           
-          // Pay the invoice
-          await wallet.makePayment(invoice);
+          setZapProgress('Sending payment...');
+          
+          // Pay the invoice with retry logic
+          let paymentSuccess = false;
+          let lastPaymentError = null;
+          
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              console.log(`[ZapFlow] Payment attempt ${attempt}/3`);
+              if (attempt > 1) setZapProgress(`Retrying payment (attempt ${attempt}/3)...`);
+              await wallet.makePayment(invoice);
+              paymentSuccess = true;
+              console.log('[ZapFlow] Payment successful!');
+              break;
+            } catch (paymentError) {
+              console.error(`[ZapFlow] Payment attempt ${attempt} failed:`, paymentError);
+              lastPaymentError = paymentError;
+              
+              // If it's a connection error, try to reconnect
+              if (paymentError.message && (
+                paymentError.message.includes('connection') ||
+                paymentError.message.includes('timeout') ||
+                paymentError.message.includes('WebSocket')
+              )) {
+                console.log('[ZapFlow] Connection error detected, attempting to reconnect wallet');
+                setZapProgress('Reconnecting wallet...');
+                try {
+                  const reconnected = await wallet.ensureConnected();
+                  if (!reconnected) {
+                    throw new Error('Failed to reconnect wallet');
+                  }
+                } catch (reconnectError) {
+                  console.error('[ZapFlow] Reconnection failed:', reconnectError);
+                }
+              }
+              
+              // Wait between attempts
+              if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          }
+          
+          if (!paymentSuccess) {
+            throw lastPaymentError || new Error('Payment failed after 3 attempts');
+          }
           
           // Trigger fresh zap data load so UI updates
           if (loadSupplementaryData) {
@@ -179,6 +247,15 @@ export const usePostInteractions = ({
         } catch (zapError) {
           // If direct zap fails, log error and fall back to manual LNURL flow
           console.error('[ZapFlow] Direct zap method failed, falling back to LNURL flow:', zapError);
+          
+          // If it's a specific error about zaps not being supported, show a helpful message
+          if (zapError.message && (
+            zapError.message.includes('422') ||
+            zapError.message.includes('not support zaps') ||
+            zapError.message.includes('permission')
+          )) {
+            console.warn('[ZapFlow] Wallet does not support zaps, falling back to manual LNURL flow');
+          }
         }
       }
       
@@ -345,6 +422,28 @@ export const usePostInteractions = ({
     } catch (error) {
       console.error('Error sending zap:', error);
       console.warn('Zap failed (silenced):', error.message);
+      
+      // Show user-friendly error message based on error type
+      let errorMessage = 'Failed to send zap. ';
+      if (error.message) {
+        if (error.message.includes('timeout')) {
+          errorMessage += 'Request timed out. Please try again.';
+        } else if (error.message.includes('connection')) {
+          errorMessage += 'Connection lost. Please check your wallet connection.';
+        } else if (error.message.includes('Lightning address')) {
+          errorMessage += error.message;
+        } else if (error.message.includes('422') || error.message.includes('permission')) {
+          errorMessage += 'Your wallet may not support zaps. Try reconnecting with different permissions.';
+        } else {
+          errorMessage += error.message;
+        }
+      }
+      
+      alert(errorMessage);
+    } finally {
+      // Clean up zapping state
+      setZappingPostId(null);
+      setZapProgress('');
     }
   }, [defaultZapAmount, loadSupplementaryData]);
 
@@ -391,6 +490,8 @@ export const usePostInteractions = ({
     handleRepost,
     handleZap,
     handleComment,
-    activeCommentPost
+    activeCommentPost,
+    zappingPostId,
+    zapProgress
   };
 }; 

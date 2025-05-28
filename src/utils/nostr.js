@@ -611,7 +611,13 @@ export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null
           pubkey = localStorage.getItem('userPublicKey');
           
           if (!pubkey) {
-            throw new Error('No public key available. Please log in first.');
+            // Try to get from Amber connection state
+            const amberState = AmberAuth.getConnectionState();
+            if (amberState.pubkey) {
+              pubkey = amberState.pubkey;
+            } else {
+              throw new Error('No public key available. Please log in first.');
+            }
           }
         }
         
@@ -637,16 +643,42 @@ export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null
           created_at: Math.floor(Date.now() / 1000)
         };
         
-        // Sign using Amber
-        signedEvent = await AmberAuth.signEvent(event);
-        publishResult.signMethod = 'amber';
+        // Sign using Amber with retry logic
+        let signAttempts = 0;
+        const maxAttempts = 2;
+        let lastError = null;
         
-        // If signedEvent is null, the signing is happening asynchronously
-        // and we'll need to handle it via deep linking
+        while (signAttempts < maxAttempts) {
+          try {
+            console.log(`[nostr.js] Attempting to sign with Amber (attempt ${signAttempts + 1}/${maxAttempts})`);
+            signedEvent = await AmberAuth.signEvent(event);
+            
+            if (signedEvent) {
+              publishResult.signMethod = 'amber';
+              break; // Success, exit retry loop
+            } else {
+              throw new Error('Amber signing returned null');
+            }
+          } catch (error) {
+            lastError = error;
+            signAttempts++;
+            console.error(`[nostr.js] Amber signing attempt ${signAttempts} failed:`, error);
+            
+            // If it's a timeout and we have more attempts, wait a bit before retrying
+            if (error.message === 'Signing timeout' && signAttempts < maxAttempts) {
+              console.log('[nostr.js] Waiting 2 seconds before retry...');
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            } else if (error.message === 'Re-authentication failed') {
+              // Don't retry if authentication failed
+              break;
+            }
+          }
+        }
+        
+        // If all attempts failed, throw the last error
         if (!signedEvent) {
-          // In a real implementation, you would return a Promise that
-          // resolves when the deep link callback is received
-          return null;
+          console.error('[nostr.js] All Amber signing attempts failed');
+          throw lastError || new Error('Failed to sign event with Amber');
         }
       }
     }

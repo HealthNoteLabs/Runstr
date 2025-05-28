@@ -46,20 +46,46 @@ export const initWalletService = async () => {
       connectionState = CONNECTION_STATES.CONNECTING;
       notifyObservers();
       
-      await walletInstance.ensureConnected();
-      const isConnected = await walletInstance.checkConnection();
+      // Try auth URL first (more reliable)
+      let connected = false;
+      if (savedAuthUrl) {
+        try {
+          console.log('[WalletPersistenceService] Trying to connect with saved auth URL');
+          connected = await walletInstance.connect(savedAuthUrl);
+        } catch (authUrlError) {
+          console.warn('[WalletPersistenceService] Auth URL connection failed:', authUrlError);
+        }
+      }
       
-      if (isConnected) {
-        console.log('[WalletPersistenceService] Successfully reconnected wallet');
-        connectionState = CONNECTION_STATES.CONNECTED;
-        startConnectionMonitoring();
+      // If auth URL failed or not available, try connection string
+      if (!connected && savedConnectionString) {
+        try {
+          console.log('[WalletPersistenceService] Trying to connect with saved connection string');
+          connected = await walletInstance.connect(savedConnectionString);
+        } catch (connStringError) {
+          console.warn('[WalletPersistenceService] Connection string connection failed:', connStringError);
+        }
+      }
+      
+      if (connected) {
+        // Verify the connection is actually working
+        const isConnected = await walletInstance.checkConnection();
+        
+        if (isConnected) {
+          console.log('[WalletPersistenceService] Successfully reconnected wallet');
+          connectionState = CONNECTION_STATES.CONNECTED;
+          startConnectionMonitoring();
+        } else {
+          console.log('[WalletPersistenceService] Connection established but not working properly');
+          connectionState = CONNECTION_STATES.DISCONNECTED;
+        }
       } else {
         console.log('[WalletPersistenceService] Could not reconnect wallet');
         connectionState = CONNECTION_STATES.DISCONNECTED;
       }
       
       notifyObservers();
-      return walletInstance;
+      return connected ? walletInstance : null;
     } catch (err) {
       console.error('[WalletPersistenceService] Failed to reconnect wallet:', err);
       connectionState = CONNECTION_STATES.ERROR;
@@ -88,9 +114,18 @@ export const connectWallet = async (url) => {
     const success = await walletInstance.connect(url);
     
     if (success) {
-      connectionState = CONNECTION_STATES.CONNECTED;
-      startConnectionMonitoring();
-      console.log('[WalletPersistenceService] Wallet connected successfully');
+      // Verify connection is working
+      const isConnected = await walletInstance.checkConnection();
+      
+      if (isConnected) {
+        connectionState = CONNECTION_STATES.CONNECTED;
+        startConnectionMonitoring();
+        console.log('[WalletPersistenceService] Wallet connected successfully');
+      } else {
+        connectionState = CONNECTION_STATES.ERROR;
+        console.log('[WalletPersistenceService] Wallet connection established but not working');
+        throw new Error('Wallet connection test failed');
+      }
     } else {
       connectionState = CONNECTION_STATES.DISCONNECTED;
       console.log('[WalletPersistenceService] Wallet connection failed');
@@ -202,14 +237,20 @@ const startConnectionMonitoring = () => {
   // Clear any existing interval
   stopConnectionMonitoring();
   
-  // Check connection every 60 seconds
+  // Check connection every 30 seconds for better responsiveness
   connectionCheckInterval = setInterval(async () => {
-    await checkWalletConnection();
-  }, 60000);
+    try {
+      await checkWalletConnection();
+    } catch (error) {
+      console.error('[WalletPersistenceService] Error in connection monitoring:', error);
+    }
+  }, 30000); // 30 seconds
   
   // Also add window focus and visibility event listeners
   window.addEventListener('focus', handleWindowFocus);
   document.addEventListener('visibilitychange', handleVisibilityChange);
+  window.addEventListener('online', handleOnlineStatus);
+  window.addEventListener('offline', handleOfflineStatus);
 };
 
 /**
@@ -223,6 +264,8 @@ const stopConnectionMonitoring = () => {
   
   window.removeEventListener('focus', handleWindowFocus);
   document.removeEventListener('visibilitychange', handleVisibilityChange);
+  window.removeEventListener('online', handleOnlineStatus);
+  window.removeEventListener('offline', handleOfflineStatus);
 };
 
 /**
@@ -230,7 +273,8 @@ const stopConnectionMonitoring = () => {
  */
 const handleWindowFocus = () => {
   console.log('[WalletPersistenceService] Window focused, checking connection');
-  checkWalletConnection();
+  // Delay check slightly to allow network to stabilize
+  setTimeout(() => checkWalletConnection(), 1000);
 };
 
 /**
@@ -239,7 +283,31 @@ const handleWindowFocus = () => {
 const handleVisibilityChange = () => {
   if (document.visibilityState === 'visible') {
     console.log('[WalletPersistenceService] Page visible, checking connection');
-    checkWalletConnection();
+    // Delay check slightly to allow network to stabilize
+    setTimeout(() => checkWalletConnection(), 1000);
+  }
+};
+
+/**
+ * Handle online status event
+ */
+const handleOnlineStatus = () => {
+  console.log('[WalletPersistenceService] Network online, checking wallet connection');
+  // Reset reconnect attempts when network comes back
+  if (walletInstance) {
+    walletInstance.reconnectAttempts = 0;
+  }
+  setTimeout(() => checkWalletConnection(), 2000);
+};
+
+/**
+ * Handle offline status event
+ */
+const handleOfflineStatus = () => {
+  console.log('[WalletPersistenceService] Network offline, marking wallet as disconnected');
+  if (connectionState === CONNECTION_STATES.CONNECTED) {
+    connectionState = CONNECTION_STATES.DISCONNECTED;
+    notifyObservers();
   }
 };
 
@@ -295,25 +363,62 @@ export const getWalletAPI = () => {
   return {
     checkConnection: checkWalletConnection,
     ensureConnected: async () => {
-      if (connectionState === CONNECTION_STATES.CONNECTED) {
+      // First check if we're already connected
+      if (connectionState === CONNECTION_STATES.CONNECTED && walletInstance) {
         const stillConnected = await checkWalletConnection();
         if (stillConnected) return true;
       }
-      return initWalletService().then(instance => !!instance);
+      
+      // If not connected, try to initialize/reconnect
+      const instance = await initWalletService();
+      if (instance && connectionState === CONNECTION_STATES.CONNECTED) {
+        return true;
+      }
+      
+      // If we have a wallet instance but it's not connected, try ensureConnected
+      if (walletInstance && walletInstance.ensureConnected) {
+        try {
+          const reconnected = await walletInstance.ensureConnected();
+          if (reconnected) {
+            connectionState = CONNECTION_STATES.CONNECTED;
+            notifyObservers();
+            return true;
+          }
+        } catch (error) {
+          console.error('[WalletPersistenceService] ensureConnected failed:', error);
+        }
+      }
+      
+      return false;
     },
     getBalance: async () => {
       if (!walletInstance) await initWalletService();
       if (!walletInstance) throw new Error('No wallet instance available');
+      
+      // Ensure connected before attempting operation
+      const connected = await walletInstance.ensureConnected();
+      if (!connected) throw new Error('Wallet not connected');
+      
       return walletInstance.getBalance();
     },
     makePayment: async (invoice) => {
       if (!walletInstance) await initWalletService();
       if (!walletInstance) throw new Error('No wallet instance available');
+      
+      // Ensure connected before attempting operation
+      const connected = await walletInstance.ensureConnected();
+      if (!connected) throw new Error('Wallet not connected');
+      
       return walletInstance.makePayment(invoice);
     },
     generateZapInvoice: async (pubkey, amount, content) => {
       if (!walletInstance) await initWalletService();
       if (!walletInstance) throw new Error('No wallet instance available');
+      
+      // Ensure connected before attempting operation
+      const connected = await walletInstance.ensureConnected();
+      if (!connected) throw new Error('Wallet not connected');
+      
       return walletInstance.generateZapInvoice(pubkey, amount, content);
     },
     connect: connectWallet,

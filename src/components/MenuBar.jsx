@@ -1,12 +1,25 @@
-import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useState, useContext, useEffect } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { FloatingMusicPlayer } from './FloatingMusicPlayer';
 import { useActivityMode, ACTIVITY_TYPES } from '../contexts/ActivityModeContext';
 import { useSettings } from '../contexts/SettingsContext';
 import rewardsPayoutService from '../services/rewardsPayoutService';
+import { NostrContext } from '../contexts/NostrContext';
+import { storeData, getData } from '../utils/storage';
+import { 
+  connectWallet, 
+  softDisconnectWallet, 
+  checkWalletConnection as checkWalletConnectionService,
+  getWalletAPI,
+  subscribeToConnectionChanges,
+  CONNECTION_STATES,
+  getConnectionState
+} from '../services/wallet/WalletPersistenceService';
 
 export const MenuBar = () => {
+  const navigate = useNavigate();
   const location = useLocation();
+  const { updateDefaultZapAmount, defaultZapAmount } = useContext(NostrContext);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { mode, setMode, getActivityText } = useActivityMode();
   const { 
@@ -15,6 +28,70 @@ export const MenuBar = () => {
     publishMode, setPublishMode,
     privateRelayUrl, setPrivateRelayUrl
   } = useSettings();
+  const [userHeight, setUserHeight] = useState('');
+  const [customStrideLength, setCustomStrideLength] = useState('');
+  const [nwcUrl, setNwcUrl] = useState('');
+  const [nwcConnecting, setNwcConnecting] = useState(false);
+  const [nwcError, setNwcError] = useState('');
+  const [isWalletConnected, setIsWalletConnected] = useState(false);
+  const [lastConnectionCheck, setLastConnectionCheck] = useState(null);
+
+  useEffect(() => {
+    // Check initial wallet connection state
+    const checkInitialState = async () => {
+      const connectionState = getConnectionState();
+      setIsWalletConnected(connectionState === CONNECTION_STATES.CONNECTED);
+      setLastConnectionCheck(new Date());
+    };
+    checkInitialState();
+
+    // Subscribe to wallet connection changes
+    const unsubscribe = subscribeToConnectionChanges((state) => {
+      setIsWalletConnected(state === CONNECTION_STATES.CONNECTED);
+      setLastConnectionCheck(new Date());
+    });
+
+    // Load saved height and stride settings
+    const savedHeight = localStorage.getItem('userHeight') || '';
+    const savedStride = localStorage.getItem('customStrideLength') || '';
+    setUserHeight(savedHeight);
+    setCustomStrideLength(savedStride);
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleNWCConnect = async () => {
+    if (!nwcUrl.trim()) return;
+    
+    setNwcConnecting(true);
+    setNwcError('');
+    
+    try {
+      const connected = await connectWallet(nwcUrl.trim());
+      if (connected) {
+        console.log('[MenuBar] NWC wallet connected successfully');
+        setNwcUrl(''); // Clear the input
+        alert('Wallet connected successfully! ⚡️');
+      } else {
+        setNwcError('Failed to connect wallet');
+      }
+    } catch (err) {
+      console.error('[MenuBar] NWC connection error:', err);
+      setNwcError(err.message || 'Failed to connect wallet');
+    } finally {
+      setNwcConnecting(false);
+    }
+  };
+
+  const handleNWCDisconnect = async () => {
+    try {
+      await softDisconnectWallet();
+      setIsWalletConnected(false);
+      alert('Wallet disconnected');
+    } catch (err) {
+      console.error('[MenuBar] Error disconnecting wallet:', err);
+    }
+  };
 
   const menuItems = [
     { 
@@ -266,6 +343,117 @@ export const MenuBar = () => {
                 You no longer need to configure a separate Lightning Address here. Ensure your Nostr profile has a Lightning Address set up to receive rewards.
               </p>
               {/* End of debug section – TEST PAYOUT button removed for production */}
+            </div>
+            
+            {/* NWC Wallet Connection Section */}
+            <div className="mb-6">
+              <h4 className="text-lg font-semibold mb-3">Lightning Wallet (NWC)</h4>
+              {!isWalletConnected ? (
+                <div className="space-y-2">
+                  <label htmlFor="nwcInput" className="text-sm text-gray-400">
+                    Connect your Lightning wallet for zaps
+                  </label>
+                  <div className="flex">
+                    <input
+                      id="nwcInput"
+                      type="text"
+                      value={nwcUrl}
+                      onChange={(e) => setNwcUrl(e.target.value)}
+                      placeholder="nostr+walletconnect://..."
+                      className="flex-1 bg-[#111827] p-2 rounded-l-lg text-white text-sm"
+                      disabled={nwcConnecting}
+                    />
+                    <button
+                      onClick={handleNWCConnect}
+                      disabled={nwcConnecting || !nwcUrl.trim()}
+                      className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-r-lg text-sm disabled:opacity-50"
+                    >
+                      {nwcConnecting ? 'Connecting...' : 'Connect'}
+                    </button>
+                  </div>
+                  {nwcError && (
+                    <p className="text-red-500 text-xs">{nwcError}</p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    Get your NWC connection string from your Lightning wallet app
+                  </p>
+                  <div className="mt-2">
+                    <button
+                      onClick={async () => {
+                        const authUrl = prompt("Enter wallet authorization URL (starts with https://)", "https://");
+                        if (authUrl && authUrl.startsWith('https://')) {
+                          setNwcConnecting(true);
+                          setNwcError('');
+                          try {
+                            const connected = await connectWallet(authUrl);
+                            if (connected) {
+                              console.log('[MenuBar] Wallet connected via auth URL');
+                              alert('Wallet connected successfully! ⚡️');
+                            } else {
+                              setNwcError('Failed to connect with authorization URL');
+                            }
+                          } catch (err) {
+                            console.error('[MenuBar] Auth URL connection error:', err);
+                            setNwcError(err.message || 'Failed to connect with authorization URL');
+                          } finally {
+                            setNwcConnecting(false);
+                          }
+                        } else if (authUrl) {
+                          setNwcError('Invalid authorization URL. Must start with https://');
+                        }
+                      }}
+                      className="text-xs text-blue-400 hover:text-blue-300 underline"
+                    >
+                      Or use authorization URL
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-green-500 text-sm">✅ Wallet connected</p>
+                  {lastConnectionCheck && (
+                    <p className="text-xs text-gray-500">
+                      Last checked: {lastConnectionCheck.toLocaleTimeString()}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const isConnected = await checkWalletConnectionService();
+                          setIsWalletConnected(isConnected);
+                          setLastConnectionCheck(new Date());
+                          if (isConnected) {
+                            alert('Wallet connection is active ✅');
+                          } else {
+                            alert('Wallet connection lost. Attempting to reconnect...');
+                            const walletAPI = getWalletAPI();
+                            const reconnected = await walletAPI.ensureConnected();
+                            if (reconnected) {
+                              setIsWalletConnected(true);
+                              alert('Wallet reconnected successfully! ⚡️');
+                            } else {
+                              alert('Failed to reconnect. Please reconnect manually.');
+                            }
+                          }
+                        } catch (err) {
+                          console.error('[MenuBar] Error checking connection:', err);
+                          alert('Error checking connection: ' + err.message);
+                        }
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm"
+                    >
+                      Check Connection
+                    </button>
+                    <button
+                      onClick={handleNWCDisconnect}
+                      className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-sm"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             
             {/* Step Counting Settings Section */}
