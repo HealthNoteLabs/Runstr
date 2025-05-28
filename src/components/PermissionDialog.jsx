@@ -39,21 +39,24 @@ export const PermissionDialog = ({ onSuccess }) => {
       // Step 1: Request Nostr permissions
       setCurrentStep('Requesting Nostr permissions...');
       
-      // This will show the Amber Signer dialog or browser extension
-      if (window.nostr || isAmberAvailable) {
+      // On mobile, only try Amber if available
+      if (Platform.OS === 'android') {
+        if (isAmberAvailable) {
+          const nostrSuccess = await requestNostrPermissions();
+          if (!nostrSuccess) {
+            console.warn('Failed to get Nostr permissions');
+            setError(connectionError || 'Failed to connect to Amber. Please make sure Amber is open and try again.');
+            setIsProcessing(false);
+            return;
+          }
+        }
+        // If no Amber on Android, skip Nostr permissions and go straight to location
+      } else if (window.nostr) {
+        // On web/desktop, use browser extension
         const nostrSuccess = await requestNostrPermissions();
         if (!nostrSuccess) {
           console.warn('Failed to get Nostr permissions');
-          
-          // Show specific error message
-          if (connectionError) {
-            setError(connectionError);
-          } else if (Platform.OS === 'android' && isAmberAvailable) {
-            setError('Failed to connect to Amber. Please make sure Amber is open and try again.');
-          } else {
-            setError('Failed to get Nostr permissions. Please try again.');
-          }
-          
+          setError(connectionError || 'Failed to get Nostr permissions. Please try again.');
           setIsProcessing(false);
           return;
         }
@@ -117,13 +120,23 @@ export const PermissionDialog = ({ onSuccess }) => {
       return currentStep || 'Processing...';
     }
     
-    if (Platform.OS === 'android' && isAmberAvailable) {
-      return 'Connect with Amber';
-    } else if (window.nostr) {
-      return 'Connect with Nostr Extension';
-    } else {
-      return 'Continue';
+    // On mobile, only show Amber option if available
+    if (Platform.OS === 'android') {
+      if (isAmberAvailable) {
+        return 'Connect with Amber';
+      } else {
+        // On Android without Amber, just show continue
+        return 'Continue';
+      }
     }
+    
+    // On web/desktop, check for browser extension
+    if (window.nostr) {
+      return 'Connect with Nostr Extension';
+    }
+    
+    // Default fallback
+    return 'Continue';
   };
   
   // Check if we should show connection status

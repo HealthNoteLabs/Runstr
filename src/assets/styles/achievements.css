@@ -119,9 +119,8 @@
 }
 
 .achievement-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  display: flex;
+  justify-content: center;
 }
 
 .achievement-item {
@@ -188,55 +187,6 @@
   border-radius: 2px;
   overflow: hidden;
   margin: 6px 0;
-}
-
-.achievement-item.full-width .reward-text {
-  font-size: 13px;
-  color: #ffa26b;
-  align-self: flex-start;
-}
-
-/* New Reward Display Styles */
-.reward-info-container {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 100%;
-}
-
-.today-reward {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.reward-label {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.7);
-  font-weight: 500;
-}
-
-.reward-amount {
-  font-size: 20px;
-  font-weight: 700;
-  color: #ffa26b;
-}
-
-.tomorrow-reward, .reward-capped {
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.tomorrow-reward .reward-text,
-.reward-capped .reward-text {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.9);
-  line-height: 1.4;
-}
-
-.reward-capped .reward-text {
-  color: #8e9aff;
-  font-weight: 500;
 }
 
 /* Achievement Modal Styles */

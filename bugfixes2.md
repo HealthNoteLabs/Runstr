@@ -8,30 +8,30 @@ This document tracks the progress of fixing a series of identified bugs. We will
 *   **Suggestion:** Clean up the language. Maybe in the second box, show 7 boxes and a highlighted box for each streak day accomplished, with the amount of rewards on top of each box representing the reward for that streak. Accurately show how much they received and how much they will receive. For example, "Earn 300 sats for day 3" and "Earn 400 sats for day 4".
 *   **Status:** Completed
 *   **Solution Decided:** 
-    *   Keep the top box as is (showing "Current Streak" with flame icon and number of days)
-    *   Replace the bottom box content with:
-        *   Line 1: `Today's Reward (Day X)`
-        *   Line 2: `[amount] sats`
-        *   Line 3: `Run tomorrow (Day Y) to earn [amount] sats`
+    *   Keep only the top box showing "Current Streak" with flame icon and number of days
+    *   Remove the reward information box entirely
+    *   Show a notification popup when the streak increments displaying the reward amount (100 sats for day 1, 200 for day 2, etc.)
+    *   The notification appears regardless of whether sats are actually sent
 *   **Progress:**
     *   [x] Analyze current UI and reward logic.
     *   [x] Propose new UI mockups/text.
     *   [x] Implement UI changes.
     *   [x] Implement logic changes for displaying reward progression.
-    *   [ ] Test thoroughly.
+    *   [x] Test thoroughly.
 *   **Details/Notes:**
     *   Focus on clarity and accurate representation of the reward system.
-    *   Example: If user has 2-day streak and just earned 200 sats for Day 2, show:
-        *   "Today's Reward (Day 2)"
-        *   "200 sats"  
-        *   "Run tomorrow (Day 3) to earn 300 sats"
+    *   Notification shows: "🎉 Streak reward: [amount] sats for day [X]!"
 *   **Implementation Details:**
-    *   Modified `src/components/AchievementCard.jsx` to calculate and display today's reward and tomorrow's potential reward
-    *   Added new CSS styles in `src/assets/styles/achievements.css` for the reward display
-    *   The system now clearly shows:
-        *   Today's reward (if any was earned)
-        *   Tomorrow's potential reward
-        *   Special message when the 7-day cap is reached
+    *   Modified `src/components/AchievementCard.jsx` to remove the reward display box, keeping only the streak counter
+    *   Updated `src/utils/streakUtils.ts` to always show notification when streak increments:
+        *   Shows notification immediately when reward is earned
+        *   Updates lastRewardedDay even without payment destination to prevent duplicate notifications
+        *   Still attempts actual payment if destination exists
+    *   Cleaned up unused CSS styles in `src/assets/styles/achievements.css`
+    *   The system now:
+        *   Shows only the current streak count
+        *   Displays a popup notification when the streak changes
+        *   Shows the correct reward amount based on the day (100 sats × day number)
 
 ## 2. Calyx - Display issue
 
@@ -100,6 +100,7 @@ This document tracks the progress of fixing a series of identified bugs. We will
     *   [x] Implement improved permission handling for GrapheneOS
     *   [ ] Test the permission flow specifically on a GrapheneOS device/emulator.
     *   [x] Ensure foreground service requirements for background location (if used) are met.
+    *   [x] Fix duplicate permission modals and mobile-specific issues
 *   **Details/Notes:**
     *   GrapheneOS has enhanced privacy and security features that might affect how permissions are granted or reported.
     *   Check for any logs or system messages on the GrapheneOS device that might indicate the cause.
@@ -110,6 +111,10 @@ This document tracks the progress of fixing a series of identified bugs. We will
         *   Better error handling with user-friendly messages
         *   Automatic settings navigation on permission failure
         *   Delayed cleanup to ensure permission request completes
+        *   **Fixed mobile-specific display issues:**
+            *   Button text now shows "Connect with Amber" on Android when Amber is available
+            *   Removed browser extension option from mobile devices
+            *   Properly handles Android devices without Amber installed
     *   Improved `RunTracker.js` with:
         *   Unique session IDs for each tracking session
         *   Enhanced error handling and permission checking
@@ -119,6 +124,10 @@ This document tracks the progress of fixing a series of identified bugs. We will
         *   Foreground service declaration with location type
         *   Additional permissions: FOREGROUND_SERVICE, FOREGROUND_SERVICE_LOCATION, POST_NOTIFICATIONS
         *   Hardware feature declarations for location and GPS
+    *   **Fixed duplicate permission modal issue:**
+        *   Disabled auto-authentication in NostrProvider when connection is invalid
+        *   PermissionDialog now handles all permission flows in one place
+        *   Prevents multiple permission requests from firing simultaneously
     *   These changes should help GrapheneOS properly recognize and grant location permissions
 
 ## 5. NWC (Nostr Wallet Connect) - Intermittent functionality

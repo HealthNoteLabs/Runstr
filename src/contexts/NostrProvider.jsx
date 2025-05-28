@@ -195,7 +195,8 @@ export function NostrProvider({ children }) {
           } else {
             // Try to re-authenticate
             console.log('[NostrProvider] Stored permissions found but connection invalid, attempting re-authentication...');
-            requestNostrPermissions();
+            // Don't auto-request permissions here - let the PermissionDialog handle it
+            // requestNostrPermissions();
           }
         } 
         // For web or if Amber is not available, use window.nostr
