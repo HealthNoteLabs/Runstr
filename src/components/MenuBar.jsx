@@ -5,7 +5,6 @@ import { useActivityMode, ACTIVITY_TYPES } from '../contexts/ActivityModeContext
 import { useSettings } from '../contexts/SettingsContext';
 import rewardsPayoutService from '../services/rewardsPayoutService';
 import { NostrContext } from '../contexts/NostrContext';
-import { storeData, getData } from '../utils/storage';
 import { 
   connectWallet, 
   softDisconnectWallet, 
