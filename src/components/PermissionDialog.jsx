@@ -1,9 +1,11 @@
 import { useState, useContext, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { NostrContext } from '../contexts/NostrContext';
-import { BackgroundGeolocation } from '@capacitor-community/background-geolocation';
+import { registerPlugin } from '@capacitor/core';
 import { Platform } from '../utils/react-native-shim';
 import AmberAuth from '../services/AmberAuth';
+
+const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
 
 // Optional battery-optimisation plugin is loaded at runtime so tests / web build won't fail if it's absent
 const ensureBatteryWhitelist = async () => {
