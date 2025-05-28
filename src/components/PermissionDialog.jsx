@@ -7,6 +7,18 @@ import AmberAuth from '../services/AmberAuth';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
 
+// Helper to detect if we're on a mobile platform
+const isMobilePlatform = () => {
+  // Check Platform.OS first
+  if (Platform.OS === 'android' || Platform.OS === 'ios') {
+    return true;
+  }
+  
+  // Fallback to user agent check
+  const userAgent = navigator.userAgent.toLowerCase();
+  return /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
+};
+
 // Optional battery-optimisation plugin is loaded at runtime so tests / web build won't fail if it's absent
 const ensureBatteryWhitelist = async () => {
   try {
@@ -31,6 +43,14 @@ export const PermissionDialog = ({ onSuccess }) => {
   const [error, setError] = useState('');
   const { requestNostrPermissions, isAmberAvailable, connectionError } = useContext(NostrContext);
   
+  // Debug logging
+  useEffect(() => {
+    console.log('[PermissionDialog] Platform.OS:', Platform.OS);
+    console.log('[PermissionDialog] isMobilePlatform:', isMobilePlatform());
+    console.log('[PermissionDialog] window.nostr:', !!window.nostr);
+    console.log('[PermissionDialog] isAmberAvailable:', isAmberAvailable);
+  }, [isAmberAvailable]);
+
   const handleContinue = async () => {
     setIsProcessing(true);
     setError('');
@@ -40,7 +60,7 @@ export const PermissionDialog = ({ onSuccess }) => {
       setCurrentStep('Requesting Nostr permissions...');
       
       // On mobile, only try Amber if available
-      if (Platform.OS === 'android') {
+      if (isMobilePlatform()) {
         if (isAmberAvailable) {
           const nostrSuccess = await requestNostrPermissions();
           if (!nostrSuccess) {
@@ -50,7 +70,7 @@ export const PermissionDialog = ({ onSuccess }) => {
             return;
           }
         }
-        // If no Amber on Android, skip Nostr permissions and go straight to location
+        // If no Amber on mobile, skip Nostr permissions and go straight to location
       } else if (window.nostr) {
         // On web/desktop, use browser extension
         const nostrSuccess = await requestNostrPermissions();
@@ -121,16 +141,16 @@ export const PermissionDialog = ({ onSuccess }) => {
     }
     
     // On mobile, only show Amber option if available
-    if (Platform.OS === 'android') {
+    if (isMobilePlatform()) {
       if (isAmberAvailable) {
         return 'Connect with Amber';
       } else {
-        // On Android without Amber, just show continue
+        // On mobile without Amber, just show continue
         return 'Continue';
       }
     }
     
-    // On web/desktop, check for browser extension
+    // Only check for browser extension on non-mobile platforms
     if (window.nostr) {
       return 'Connect with Nostr Extension';
     }

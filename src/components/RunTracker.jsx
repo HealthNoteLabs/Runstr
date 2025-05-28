@@ -616,8 +616,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       {/* Display permission dialog if needed */}
       {showPermissionDialog && (
         <PermissionDialog
-          onContinue={handlePermissionContinue}
-          onCancel={handlePermissionCancel}
+          onSuccess={handlePermissionContinue}
         />
       )}
       
