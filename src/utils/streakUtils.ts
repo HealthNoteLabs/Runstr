@@ -7,6 +7,109 @@ import rewardsPayoutService from '../services/rewardsPayoutService';
 
 const STREAK_DATA_KEY = 'runstrStreakData';
 
+// --- Utility Functions (Placeholders - Implement based on your app structure) ---
+/**
+ * Placeholder: Get the logged-in user's Nostr public key.
+ * Implement this to retrieve the pubkey from your app's state or storage.
+ */
+const getLoggedInUserPubkey = (): string | null => {
+  // Example: return localStorage.getItem('userPubkey');
+  // For now, matching the old getStoredPubkey logic found commented out
+  const pk = localStorage.getItem('userPubkey') || localStorage.getItem('nostrPublicKey');
+  if (pk) {
+    try {
+      // Normalize key for modules that expect 'userPubkey'
+      localStorage.setItem('userPubkey', pk);
+    } catch (_) {
+      // ignore quota errors 
+    }
+  }
+  return pk;
+};
+
+/**
+ * Placeholder: Get the user's Lightning Address stored in app settings.
+ * Implement this to retrieve the LN address from where it's saved in your app.
+ */
+const getInAppLightningAddress = (): string | null => {
+  return localStorage.getItem('lightningAddress'); // As used in existing code
+};
+
+export type RewardNotificationType = 'earned' | 'pending_payout' | 'success' | 'failed_retry' | 'error_final';
+
+/**
+ * Conceptual Notification System.
+ * Replace with your app's actual UI notification/toast mechanism.
+ * @param type Type of notification.
+ * @param amount Reward amount in sats.
+ * @param streakDays Current streak days.
+ * @param details Optional details like TXID or error message.
+ */
+export const showRewardNotification = (
+  type: RewardNotificationType,
+  amount: number,
+  streakDays: number,
+  details?: string
+) => {
+  let message = '';
+  const streakMsg = `${streakDays}-day streak`;
+
+  switch (type) {
+    case 'earned':
+      message = `🎁 You've earned ${amount} sats for your ${streakMsg}! Processing payment...`;
+      break;
+    case 'pending_payout':
+      message = `💸 Sending ${amount} sats for your ${streakMsg}...`;
+      break;
+    case 'success':
+      message = `✅ Success! ${amount} sats sent for your ${streakMsg}.`;
+      if (details) message += ` Tx: ${details.substring(0, 10)}...`; // Shortened TXID
+      break;
+    case 'failed_retry':
+      message = `⚠️ Payment of ${amount} sats for ${streakMsg} failed. We'll try again later.`;
+      if (details) message += ` Error: ${details}`; 
+      break;
+    case 'error_final':
+      message = `❌ Critical error paying ${amount} sats for ${streakMsg}. Please check settings or contact support.`;
+      if (details) message += ` Details: ${details}`;
+      break;
+  }
+
+  console.log(`[Notification] ${message}`); // Basic console log
+
+  // Android Toast (conceptual, like existing code)
+  if ((window as any).Android?.showToast) {
+    try {
+      (window as any).Android.showToast(message);
+    } catch (e) {
+      console.error('[showRewardNotification] Error calling Android toast:', e);
+    }
+  }
+  // Web Notification API (conceptual, like existing code)
+  else if (typeof window !== 'undefined' && 'Notification' in window) {
+    if (Notification.permission === 'granted') {
+      try {
+        new Notification('Runstr Reward', { body: message, tag: 'runstr-reward' });
+      } catch (e) {
+         console.error('[showRewardNotification] Error showing Browser Notification:', e);
+      }
+    } else if (Notification.permission === 'default' && (type === 'earned' || type === 'success')) {
+      // Only request permission for positive notifications initially
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          try {
+            new Notification('Runstr Reward', { body: message, tag: 'runstr-reward' });
+          } catch (e) {
+             console.error('[showRewardNotification] Error showing Browser Notification post-request:', e);
+          }
+        }
+      });
+    }
+  }
+};
+
+// --- End Utility Functions ---
+
 export interface StreakData {
   currentStreakDays: number;
   lastRewardedDay: number; // The streak day number for which a reward was last given
@@ -52,165 +155,85 @@ export const saveStreakData = (data: StreakData): boolean => {
  * @param {Date} newRunDateObject - The Date object of the new run (in user's local time).
  * @returns {StreakData} The updated streak data.
  */
-export const updateUserStreak = (newRunDateObject: Date, publicKey: string | null): StreakData => {
+export const updateUserStreak = (newRunDateObject: Date): StreakData => {
   const data = getStreakData();
-  const { capDays } = REWARDS.STREAK;
 
-  // Get YYYY-MM-DD from the Date object, using UTC methods
-  // newRunDateObject is created from a UTC timestamp (Date.now() or runData.timestamp)
-  // so .toISOString().split('T')[0] will give the YYYY-MM-DD in UTC.
   const newRunUTCDateString = newRunDateObject.toISOString().split('T')[0];
 
   if (data.lastRunDate === newRunUTCDateString) {
-    // Multiple runs on the same UTC day, no change to streak days
     return data;
   }
 
   let updatedStreakDays = data.currentStreakDays;
 
   if (data.lastRunDate) {
-    // data.lastRunDate is, or will become, a UTC YYYY-MM-DD string.
-    // Construct Date objects as UTC midnight for fair day difference calculation.
     const lastRunEpoch = new Date(data.lastRunDate + 'T00:00:00Z').getTime();
     const currentRunEpoch = new Date(newRunUTCDateString + 'T00:00:00Z').getTime();
-
     const diffDays = Math.round((currentRunEpoch - lastRunEpoch) / (1000 * 60 * 60 * 24));
 
     if (diffDays === 1) {
-      // Consecutive UTC day
       updatedStreakDays++;
     } else if (diffDays > 1) {
-      // Missed UTC day(s), streak resets
       updatedStreakDays = 1;
-    } else if (diffDays <= 0) { 
-      // This case means: 
-      // 1. diffDays === 0: Same UTC day, already handled by the initial check.
-      //    (This exact condition should not be met here due to the first check if lastRunDate was already UTC YYYY-MM-DD)
-      //    If lastRunDate was a local date string that parsed to the same UTC day as newRunUTCDateString, 
-      //    it would be caught by the first `if`. 
-      //    If it parsed to an *earlier part of the same UTC day*, diffDays could be < 1 but > 0 (e.g. 0.x for hours within same day)
-      //    Rounding to 0 would mean it's treated as the same day.
-      // 2. diffDays < 0: New run's UTC date is before the last run's UTC date. This implies an out-of-order entry or data issue.
-      //    Streak should reset.
+    } else if (diffDays <= 0) {
       updatedStreakDays = 1;
     }
   } else {
-    // First run ever
     updatedStreakDays = 1;
   }
 
-  // If streak exceeds cap, it effectively rolls over for reward calculation logic.
-  // The actual currentStreakDays can continue to grow past capDays,
-  // but effectiveDaysForReward will be capped.
-
   const newData: StreakData = {
-    ...data, // Preserve lastRewardedDay
+    ...data,
     currentStreakDays: updatedStreakDays,
-    lastRunDate: newRunUTCDateString, // Store the UTC YYYY-MM-DD string
+    lastRunDate: newRunUTCDateString,
   };
 
   saveStreakData(newData);
 
-  // Determine if a payout is needed (also enforces capDays)
-  const { amountToReward, effectiveDaysForReward } = calculateStreakReward(newData);
-  console.log('[StreakUtils] updateUserStreak: Calculated reward. Amount:', amountToReward, 'Effective Days:', effectiveDaysForReward, 'Pubkey:', publicKey);
+  // --- Immediate Reward Processing and Notification ---
+  const rewardInfo = calculateStreakReward(newData);
 
-  if (amountToReward > 0) {
-    const lightningAddress = localStorage.getItem('lightningAddress');
-    // if (!lightningAddress) { // This warning is fine, primary is pubkey
-    //   console.warn('[StreakRewards] Lightning address not set – cannot pay reward. Ask user to add it in Settings > Wallet.');
-    // }
-    const dest = lightningAddress || publicKey;
-    console.log('[StreakUtils] updateUserStreak: Destination for reward:', dest);
+  if (rewardInfo.amountToReward > 0) {
+    showRewardNotification('earned', rewardInfo.amountToReward, newData.currentStreakDays);
 
-    if (dest) {
-      console.log('[StreakUtils] updateUserStreak: `dest` is valid, attempting optimistic notification.');
-      const pendingMsg = `🚀 Sending ${amountToReward} sats reward…`;
-      
-      let optimisticToastShown = false;
-      if ((window as any).Android?.showToast) {
-        try {
-          console.log('[StreakUtils] updateUserStreak: Attempting Android optimistic toast...');
-          (window as any).Android.showToast(pendingMsg);
-          optimisticToastShown = true;
-          console.log('[StreakUtils] updateUserStreak: Android optimistic toast attempted.');
-        } catch (e) {
-          console.error('[StreakUtils] updateUserStreak: Error calling Android optimistic toast:', e);
-        }
-      }
-      
-      if (!optimisticToastShown && typeof window !== 'undefined') { // Fallback for web/dev
-        console.log('[StreakUtils] updateUserStreak: Attempting console.log optimistic notification:', pendingMsg);
-      } else if (!optimisticToastShown) {
-        console.log('[StreakUtils] updateUserStreak: No optimistic notification method available (not Android, not browser window).');
-      }
+    const userPubkey = getLoggedInUserPubkey();
+    const inAppLnAddress = getInAppLightningAddress();
 
-      rewardsPayoutService
-        .sendStreakReward(dest, amountToReward, effectiveDaysForReward, (localStorage.getItem('nwcConnectionString') || null))
-        .then((result) => {
-          console.log('[StreakUtils] updateUserStreak: sendStreakReward promise resolved. Result success:', result.success);
-          if (result.success) {
-            updateLastRewardedDay(effectiveDaysForReward);
-            const successMsg = `🎉 Streak reward sent: ${amountToReward} sats for day ${effectiveDaysForReward}!`;
-            console.log('[StreakUtils] updateUserStreak: Attempting success notification.');
-
-            let successToastShown = false;
-            if ((window as any).Android?.showToast) {
-              try {
-                console.log('[StreakUtils] updateUserStreak: Attempting Android success toast...');
-                (window as any).Android.showToast(successMsg);
-                successToastShown = true;
-                console.log('[StreakUtils] updateUserStreak: Android success toast attempted.');
-              } catch (e) {
-                console.error('[StreakUtils] updateUserStreak: Error calling Android success toast:', e);
-              }
-            }
-            
-            if (!successToastShown && typeof window !== 'undefined' && 'Notification' in window) {
-              console.log('[StreakUtils] updateUserStreak: Attempting Browser Notification. Permission:', Notification.permission);
-              if (Notification.permission === 'granted') {
-                try {
-                  new Notification('Runstr Reward', { body: successMsg });
-                  successToastShown = true;
-                  console.log('[StreakUtils] updateUserStreak: Browser Notification shown.');
-                } catch (e) {
-                   console.error('[StreakUtils] updateUserStreak: Error showing Browser Notification:', e);
-                }
-              } else if (Notification.permission === 'default') {
-                console.log('[StreakUtils] updateUserStreak: Browser Notification permission is default. Requesting...');
-                Notification.requestPermission().then(permission => {
-                  console.log('[StreakUtils] updateUserStreak: Browser Notification permission result:', permission);
-                  if (permission === 'granted') {
-                    try {
-                      new Notification('Runstr Reward', { body: successMsg });
-                      console.log('[StreakUtils] updateUserStreak: Browser Notification shown after request.');
-                    } catch (e) {
-                       console.error('[StreakUtils] updateUserStreak: Error showing Browser Notification after request:', e);
-                    }
-                  }
-                });
-              }
-            }
-            
-            if (!successToastShown) {
-                 console.log('[StreakUtils] updateUserStreak: Fallback console.log success notification:', successMsg);
-            }
-
-          } else {
-            console.warn('[StreakUtils] updateUserStreak: Payout service reported failure. Error:', result.error);
-            // Opted to not show an error toast here as the payment might have gone through if NWC response was unparseable
-            // console.warn('[StreakRewards] Payout may have succeeded but response decode failed:', result.error);
-          }
-        })
-        .catch((err) => {
-          console.warn('[StreakUtils] updateUserStreak: sendStreakReward promise was rejected. This is unusual as sendRewardZap should catch errors. Error:', err);
-          // console.warn('[StreakRewards] Payout flow threw, but payment likely already sent:', err);
-        });
-    } else {
-      console.warn('[StreakUtils] updateUserStreak: Reward payable, but `dest` is null/undefined. Pubkey:', publicKey, 'LN Address in LS:', lightningAddress);
+    if (!userPubkey) {
+      console.warn('[StreakUtils] updateUserStreak: User pubkey not found. Cannot attempt reward payout.');
+      // Potentially show a specific notification if userPubkey is absolutely required for any fallback
+      showRewardNotification('error_final', rewardInfo.amountToReward, newData.currentStreakDays, 'User public key not available.');
+      return newData; // Or handle as appropriate
     }
+    
+    // Notify user that payout is being attempted
+    showRewardNotification('pending_payout', rewardInfo.amountToReward, newData.currentStreakDays);
+
+    rewardsPayoutService.sendStreakReward(
+      userPubkey, 
+      rewardInfo.amountToReward, 
+      rewardInfo.effectiveDaysForReward, 
+      inAppLnAddress // Pass the in-app LN address
+    ).then((payoutResult) => {
+      if (payoutResult.success) {
+        updateLastRewardedDay(rewardInfo.effectiveDaysForReward);
+        showRewardNotification('success', rewardInfo.amountToReward, newData.currentStreakDays, payoutResult.txid);
+      } else {
+        // Notify about failure, scheduler will retry
+        showRewardNotification('failed_retry', rewardInfo.amountToReward, newData.currentStreakDays, payoutResult.error);
+        console.warn('[StreakUtils] updateUserStreak: Immediate payout failed. Error:', payoutResult.error, 'Scheduler will attempt retry.');
+      }
+    }).catch((error) => {
+      // This catch is for unexpected errors in the sendStreakReward promise chain itself
+      showRewardNotification('error_final', rewardInfo.amountToReward, newData.currentStreakDays, error.message || 'Unknown error during payout attempt.');
+      console.error('[StreakUtils] updateUserStreak: Critical error during sendStreakReward call:', error);
+    });
   } else {
-    console.log('[StreakUtils] updateUserStreak: No reward amount due.');
+    // console.log('[StreakUtils] updateUserStreak: No reward amount due.');
+    // Optionally, notify if streak continues but no reward (e.g., cap reached and already paid)
+    // if (newData.currentStreakDays > 0 && rewardInfo.message) {
+    //   showNonRewardStreakNotification(newData.currentStreakDays, rewardInfo.message);
+    // }
   }
   return newData;
 };
