@@ -4,7 +4,7 @@
  */
 
 import nwcService from './nwcService.js';
-import { fetchLnAddressFromProfile } from '../utils/lnAddressResolver';
+import { fetchLnAddressesFromProfile } from '../utils/lnAddressResolver';
 
 // Transaction types
 export const TRANSACTION_TYPES = {
@@ -51,46 +51,54 @@ const saveTransactions = (transactions) => {
 };
 
 // Make resolveDestination an async, module-scoped helper
+// Now returns Promise<string[]>
 const resolveDestination = async (key) => {
-  if (!key) return key;
+  if (!key) return [];
 
-  // Check if key is already a Lightning Address or LNURL
+  // Check if key is already a Lightning Address or LNURL - return as single-item array
   if (key.includes('@') || key.startsWith('lnurl') || key.startsWith('lightning:') || key.startsWith('lnbc')) {
-    return key.replace(/^lightning:/, '');
+    return [key.replace(/^lightning:/, '')];
   }
 
-  // Use a pubkey-specific cache key
-  const cacheKey = `resolved_ln_addr_${key}`;
+  // Use a pubkey-specific cache key for an array of addresses
+  const cacheKey = `resolved_ln_addrs_array_${key}`;
 
   // Check local cache
   try {
-    const cached = localStorage.getItem(cacheKey);
-    if (cached) {
-      // console.log(`[TransactionService] Using cached LN address for ${key}:`, cached);
-      return cached;
+    const cachedRaw = localStorage.getItem(cacheKey);
+    if (cachedRaw) {
+      const cachedArray = JSON.parse(cachedRaw);
+      if (Array.isArray(cachedArray) && cachedArray.length > 0) {
+        // console.log(`[TransactionService] Using cached LN addresses for ${key}:`, cachedArray);
+        return cachedArray;
+      }
     }
   } catch (_) {
-    // Ignore localStorage errors
+    // Ignore localStorage errors or parsing errors
   }
 
   // If it looks like a pubkey (hex or npub) and not an LN address, try to fetch from Nostr profile
-  // (fetchLnAddressFromProfile handles npub decoding and hex validation)
-  // console.log(`[TransactionService] Attempting to fetch LN address for potential pubkey: ${key}`);
-  const lnAddressFromProfile = await fetchLnAddressFromProfile(key);
+  // console.log(`[TransactionService] Attempting to fetch LN addresses for potential pubkey: ${key}`);
+  
+  // This function now needs to return an array of strings Promise<string[]>
+  const lnAddressesFromProfile = await fetchLnAddressesFromProfile(key); 
 
-  if (lnAddressFromProfile) {
-    // console.log(`[TransactionService] Found LN address for ${key} from profile: ${lnAddressFromProfile}.`);
+  if (lnAddressesFromProfile && lnAddressesFromProfile.length > 0) {
+    // console.log(`[TransactionService] Found LN addresses for ${key} from profile: ${lnAddressesFromProfile}.`);
     try {
-      localStorage.setItem(cacheKey, lnAddressFromProfile);
-      // console.log(`[TransactionService] Cached resolved LN address for ${key}.`);
+      localStorage.setItem(cacheKey, JSON.stringify(lnAddressesFromProfile));
+      // console.log(`[TransactionService] Cached resolved LN addresses for ${key}.`);
     } catch (cacheErr) {
-      console.error(`[TransactionService] Error caching fetched LN address for ${key}:`, cacheErr);
+      console.error(`[TransactionService] Error caching fetched LN addresses for ${key}:`, cacheErr);
     }
-    return lnAddressFromProfile;
+    return lnAddressesFromProfile;
   }
 
-  // console.warn(`[TransactionService] Could not resolve LN address for ${key} from profile. Returning original key.`);
-  return key; // Return original key if still not resolved (will likely fail NWC payment)
+  // console.warn(`[TransactionService] Could not resolve LN addresses for ${key} from profile.`);
+  // If no addresses found from profile, and key itself is not an LN address, return empty array.
+  // Or, decide if 'key' itself should be attempted if it's a pubkey (might be a direct NWC target in some setups)
+  // For now, returning empty if no explicit LN addresses are found for a pubkey.
+  return []; 
 };
 
 /**
@@ -208,56 +216,112 @@ const transactionService = {
    * @returns {Promise<Object>} Transaction result
    */
   processStreakReward: async (pubkey, amount, reason, metadata = {}) => {
-    const destination = await resolveDestination(pubkey); // Now async
+    const destinations = await resolveDestination(pubkey);
 
-    // Determine if the destination was resolved from a pubkey or was originally an LN Address/etc.
-    // This is a bit heuristic: if resolveDestination returns something different than the input pubkey,
-    // and the input pubkey didn't look like an LN Address itself, it was likely resolved.
-    const wasResolved = destination !== pubkey && !(pubkey.includes('@') || pubkey.startsWith('lnurl') || pubkey.startsWith('lightning:') || pubkey.startsWith('lnbc'));
+    if (!destinations || destinations.length === 0) {
+      console.warn(`[TransactionService] No destinations found for pubkey ${pubkey}. Cannot process streak reward.`);
+      // Record a failed transaction attempt immediately if no destinations
+      const errorMsg = 'No valid Lightning Address or NWC target found for user.';
+      try {
+          transactionService.recordTransaction({
+            type: TRANSACTION_TYPES.STREAK_REWARD,
+            amount,
+            recipient: pubkey, // original pubkey
+            reason,
+            pubkey,
+            metadata,
+            status: TRANSACTION_STATUS.FAILED,
+            error: errorMsg,
+            attemptedDestinations: []
+          });
+      } catch(e){ console.error("Error recording initial failure transaction", e)}
+      return { success: false, error: errorMsg, transaction: null };
+    }
 
-    try {
-      const transaction = transactionService.recordTransaction({
+    let lastError = 'All payment attempts failed.';
+    let finalTransactionState = null;
+    let paymentSuccess = false;
+    
+    // Record one main transaction, update its status and attempts.
+    // The first destination can be used for initial recording.
+    const initialTransaction = transactionService.recordTransaction({
         type: TRANSACTION_TYPES.STREAK_REWARD,
         amount,
-        recipient: destination,
+        recipient: destinations[0], // Initial recipient for record
         reason,
-        pubkey: destination, // Using resolved destination here too
-        metadata
-      });
+        pubkey, // original pubkey
+        metadata,
+        status: TRANSACTION_STATUS.PENDING, // Starts as pending
+        attemptedDestinations: []
+    });
+    if (!initialTransaction) {
+        return { success: false, error: "Failed to record initial transaction", transaction: null };
+    }
+
+    const attemptedDestinationsLog = [];
+
+    for (let i = 0; i < destinations.length; i++) {
+      const destination = destinations[i];
+      // console.log(`[TransactionService] Attempting streak reward to ${destination} (${i+1}/${destinations.length}) for ${pubkey}`);
       
+      // Update the main transaction's recipient if trying a new one & it differs from current record
+      if (initialTransaction.recipient !== destination) {
+          transactionService.updateTransaction(initialTransaction.id, { recipient: destination });
+      }
+
       const result = await nwcService.payLightningAddress(
         destination,
         amount,
         reason
       );
       
+      attemptedDestinationsLog.push({ destination, success: result.success, error: result.error, result: result.result });
+
       if (result.success) {
-        transactionService.updateTransaction(transaction.id, {
+        finalTransactionState = transactionService.updateTransaction(initialTransaction.id, {
           status: TRANSACTION_STATUS.COMPLETED,
           rail: 'nwc',
-          preimage: result.result?.preimage || null
+          preimage: result.result?.preimage || null,
+          recipient: destination, // Ensure final recipient is the successful one
+          error: null, // Clear any previous error
+          attemptedDestinations: attemptedDestinationsLog
         });
-        return { success: true, transaction: { ...transaction, rail: 'nwc', status: TRANSACTION_STATUS.COMPLETED } };
+        paymentSuccess = true;
+        // console.log(`[TransactionService] Streak reward success to ${destination} for ${pubkey}.`);
+        break; // Exit loop on success
       } else {
-        transactionService.updateTransaction(transaction.id, {
-          status: TRANSACTION_STATUS.FAILED,
-          error: result.error
+        lastError = result.error || 'Unknown NWC payment error.';
+        // console.warn(`[TransactionService] Failed attempt to ${destination} for ${pubkey}: ${lastError}`);
+        transactionService.updateTransaction(initialTransaction.id, {
+          status: TRANSACTION_STATUS.PENDING, // Still pending if not last attempt
+          error: `Attempt ${i+1} to ${destination} failed: ${lastError}`, // Log current attempt error
+          attemptedDestinations: attemptedDestinationsLog
         });
-        // If payment failed and the destination was a resolved LN address, clear its cache
-        if (wasResolved) {
-          const cacheKey = `resolved_ln_addr_${pubkey}`; // Use the original pubkey for cache clearing
-          try {
-            localStorage.removeItem(cacheKey);
-            console.log(`[TransactionService] Cleared cached LN address for ${pubkey} due to payment failure.`);
-          } catch (e) {
-            console.error(`[TransactionService] Error clearing cached LN address for ${pubkey}:`, e);
-          }
-        }
-        return { success: false, error: result.error, transaction };
       }
-    } catch (error) {
-      console.error('Error processing streak reward:', error);
-      return { success: false, error: error.message || 'Unknown error', transaction: null };
+    }
+
+    if (paymentSuccess) {
+      return { success: true, transaction: finalTransactionState };
+    } else {
+      // All attempts failed
+      finalTransactionState = transactionService.updateTransaction(initialTransaction.id, {
+        status: TRANSACTION_STATUS.FAILED,
+        error: `All ${destinations.length} payment attempts failed. Last error: ${lastError}`,
+        attemptedDestinations: attemptedDestinationsLog
+      });
+
+      // Clear cache if destinations were resolved from a pubkey (i.e., original pubkey was not an LN address itself)
+      const wasResolvedFromPubkey = !(pubkey.includes('@') || pubkey.startsWith('lnurl') || pubkey.startsWith('lightning:') || pubkey.startsWith('lnbc'));
+      if (wasResolvedFromPubkey && destinations.length > 0) { // Check destinations.length to ensure it was a profile lookup
+        const cacheKey = `resolved_ln_addrs_array_${pubkey}`;
+        try {
+          localStorage.removeItem(cacheKey);
+          // console.log(`[TransactionService] Cleared cached LN addresses array for ${pubkey} due to all payment attempts failing.`);
+        } catch (e) {
+          console.error(`[TransactionService] Error clearing cached LN addresses array for ${pubkey}:`, e);
+        }
+      }
+      return { success: false, error: `All attempts failed. Last error: ${lastError}`, transaction: finalTransactionState };
     }
   },
   
@@ -289,94 +353,105 @@ const transactionService = {
    * @param {Object} metadata - Extra fields recorded with the tx
    */
   processReward: async (pubkey, amount, type, reason, metadata = {}) => {
-    // Resolve destination ONCE here, before specific reward processing
-    const destination = await resolveDestination(pubkey);
-    const wasResolved = destination !== pubkey && !(pubkey.includes('@') || pubkey.startsWith('lnurl') || pubkey.startsWith('lightning:') || pubkey.startsWith('lnbc'));
+    const destinations = await resolveDestination(pubkey);
 
+    if (!destinations || destinations.length === 0) {
+      console.warn(`[TransactionService] No destinations found for pubkey ${pubkey} for reward type ${type}.`);
+      const errorMsg = 'No valid Lightning Address or NWC target found.';
+       try {
+          transactionService.recordTransaction({
+            type: type,
+            amount,
+            recipient: pubkey,
+            reason,
+            pubkey,
+            metadata,
+            status: TRANSACTION_STATUS.FAILED,
+            error: errorMsg,
+            attemptedDestinations: []
+          });
+      } catch(e){ console.error("Error recording initial failure transaction", e)}
+      return { success: false, error: errorMsg, transaction: null };
+    }
+
+    // If it's a streak reward, delegate to the specialized function
     if (type === TRANSACTION_TYPES.STREAK_REWARD) {
-      // For processStreakReward, we need to pass the original pubkey for potential cache clearing,
-      // and the (potentially resolved) destination.
-      // processStreakReward itself will call resolveDestination again, which is slightly redundant
-      // but ensures its internal logic for cache clearing (if we add it there too or keep it there) uses the correct original pubkey.
-      // A cleaner way would be to have processStreakReward accept both originalKey and resolvedDestination.
-
-      // Let's modify processStreakReward to accept originalKey and resolvedDestination to avoid re-resolving.
-      // For now, to keep the edit focused, we'll stick to the original plan of modifying processStreakReward directly.
-      // The change in processStreakReward to clear cache on failure is the primary goal here.
-
-      // Current call:
-      // return transactionService.processStreakReward(destination, amount, reason, metadata);
-      // This is problematic if 'destination' is already resolved and processStreakReward calls resolveDestination(destination_which_is_already_an_LN_address)
-      // The cache clearing logic inside processStreakReward needs the *original pubkey*.
-
-      // Let's assume processStreakReward is correctly modified as per the diff above this section.
-      // So, we should pass the original `pubkey` to `processStreakReward` so it can use it for cache clearing.
-      // And `processStreakReward` will internally call `resolveDestination(pubkey)`.
-
       return transactionService.processStreakReward(pubkey, amount, reason, metadata);
     }
+
+    // Generic handling for other types (can be expanded)
+    console.warn(`[TransactionService] Processing generic reward type '${type}'. This path uses a simplified loop.`);
     
-    // Handle other reward types if they become supported
-    // For other reward types, if they also go through a similar payment mechanism that might benefit from cache clearing:
-    if (type !== TRANSACTION_TYPES.STREAK_REWARD) { // Placeholder for other types
-        // This is a generic path, may need more specific handling if other reward types are added
-        // For now, this path doesn't have the explicit cache-clearing logic on failure.
-        // If we want to add it, we'd need a similar structure to processStreakReward
-        // or make processReward more generic in handling cache for failures.
-        console.warn(`[TransactionService] Processing generic reward type '${type}'. Cache clearing on failure is not explicitly implemented for this path.`);
-        // Fallback to a generic NWC payment attempt if not STREAK_REWARD
-        try {
-            const transaction = transactionService.recordTransaction({
-                type: type,
-                amount,
-                recipient: destination, // Use the resolved destination
-                reason,
-                pubkey: pubkey, // Store original pubkey
-                metadata,
-                status: TRANSACTION_STATUS.PENDING
-            });
+    let lastError = 'All payment attempts failed.';
+    let finalTransactionState = null;
+    let paymentSuccess = false;
 
-            const result = await nwcService.payLightningAddress(
-                destination,
-                amount,
-                reason
-            );
+    const initialTransaction = transactionService.recordTransaction({
+        type: type,
+        amount,
+        recipient: destinations[0],
+        reason,
+        pubkey,
+        metadata,
+        status: TRANSACTION_STATUS.PENDING,
+        attemptedDestinations: []
+    });
 
-            if (result.success) {
-                transactionService.updateTransaction(transaction.id, {
-                    status: TRANSACTION_STATUS.COMPLETED,
-                    rail: 'nwc',
-                    preimage: result.result?.preimage || null
-                });
-                return { success: true, transaction: { ...transaction, rail: 'nwc', status: TRANSACTION_STATUS.COMPLETED } };
-            } else {
-                transactionService.updateTransaction(transaction.id, {
-                    status: TRANSACTION_STATUS.FAILED,
-                    error: result.error
-                });
-                 // If payment failed and the destination was a resolved LN address, clear its cache
-                if (wasResolved) { // `wasResolved` is correctly defined based on the initial pubkey and final destination
-                    const cacheKey = `resolved_ln_addr_${pubkey}`; // Use the original pubkey
-                    try {
-                        localStorage.removeItem(cacheKey);
-                        console.log(`[TransactionService] Cleared cached LN address for ${pubkey} (in generic processReward) due to payment failure.`);
-                    } catch (e) {
-                        console.error(`[TransactionService] Error clearing cached LN address for ${pubkey} (in generic processReward):`, e);
-                    }
-                }
-                return { success: false, error: result.error, transaction };
-            }
-        } catch (error) {
-            console.error(`Error processing generic reward type '${type}':`, error);
-            return { success: false, error: error.message || 'Unknown error during generic reward processing', transaction: null };
-        }
+    if (!initialTransaction) {
+        return { success: false, error: "Failed to record initial transaction for generic reward", transaction: null };
+    }
+    
+    const attemptedDestinationsLog = [];
+
+    for (let i = 0; i < destinations.length; i++) {
+      const destination = destinations[i];
+      if (initialTransaction.recipient !== destination) {
+          transactionService.updateTransaction(initialTransaction.id, { recipient: destination });
+      }
+
+      const result = await nwcService.payLightningAddress(destination, amount, reason);
+      attemptedDestinationsLog.push({ destination, success: result.success, error: result.error, result: result.result });
+
+      if (result.success) {
+        finalTransactionState = transactionService.updateTransaction(initialTransaction.id, {
+          status: TRANSACTION_STATUS.COMPLETED,
+          rail: 'nwc',
+          preimage: result.result?.preimage || null,
+          recipient: destination,
+          error: null,
+          attemptedDestinations: attemptedDestinationsLog
+        });
+        paymentSuccess = true;
+        break;
+      } else {
+        lastError = result.error || 'Unknown NWC error.';
+        transactionService.updateTransaction(initialTransaction.id, {
+          status: TRANSACTION_STATUS.PENDING,
+          error: `Attempt ${i+1} to ${destination} failed: ${lastError}`,
+          attemptedDestinations: attemptedDestinationsLog
+        });
+      }
     }
 
-    console.warn(`[TransactionService] Reward type '${type}' not fully supported for advanced processing beyond STREAK_REWARD.`);
-    return {
-      success: false,
-      error: `Reward type '${type}' not fully supported in this build for advanced processing.`
-    };
+    if (paymentSuccess) {
+      return { success: true, transaction: finalTransactionState };
+    } else {
+      finalTransactionState = transactionService.updateTransaction(initialTransaction.id, {
+        status: TRANSACTION_STATUS.FAILED,
+        error: `All ${destinations.length} attempts failed for type ${type}. Last error: ${lastError}`,
+        attemptedDestinations: attemptedDestinationsLog
+      });
+      const wasResolvedFromPubkey = !(pubkey.includes('@') || pubkey.startsWith('lnurl') || pubkey.startsWith('lightning:') || pubkey.startsWith('lnbc'));
+      if (wasResolvedFromPubkey && destinations.length > 0) {
+        const cacheKey = `resolved_ln_addrs_array_${pubkey}`;
+        try {
+          localStorage.removeItem(cacheKey);
+        } catch (e) {
+          console.error(`[TransactionService] Error clearing cache for ${pubkey} (generic type ${type}):`, e);
+        }
+      }
+      return { success: false, error: `All attempts failed for ${type}. Last error: ${lastError}`, transaction: finalTransactionState };
+    }
   }
 };
 
