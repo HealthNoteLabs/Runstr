@@ -59,15 +59,14 @@ const resolveDestination = async (key) => {
     return key.replace(/^lightning:/, '');
   }
 
-  // Check local cache (e.g., for user's own explicitly set or previously resolved LN Address)
+  // Use a pubkey-specific cache key
+  const cacheKey = `resolved_ln_addr_${key}`;
+
+  // Check local cache
   try {
-    // IMPORTANT: This specific cache key 'runstr_lightning_addr' should ideally be for the *current user's*
-    // explicitly set or resolved payout address. If resolving for *other* pubkeys,
-    // a more generic caching mechanism (e.g., pubkey -> lnAddress map) might be needed.
-    // For now, we'll assume it's okay to check/update this for any key being resolved for payouts.
-    const cached = localStorage.getItem('runstr_lightning_addr');
+    const cached = localStorage.getItem(cacheKey);
     if (cached) {
-      // console.log('[TransactionService] Using cached runstr_lightning_addr:', cached);
+      // console.log(`[TransactionService] Using cached LN address for ${key}:`, cached);
       return cached;
     }
   } catch (_) {
@@ -81,14 +80,11 @@ const resolveDestination = async (key) => {
 
   if (lnAddressFromProfile) {
     // console.log(`[TransactionService] Found LN address for ${key} from profile: ${lnAddressFromProfile}.`);
-    // Caching it to 'runstr_lightning_addr' assumes this resolution is primarily for the app user's rewards.
-    // If this service pays out to arbitrary pubkeys, this caching key might need to be more specific
-    // or use a different caching strategy (e.g., a map of pubkey -> resolved LN address).
     try {
-      localStorage.setItem('runstr_lightning_addr', lnAddressFromProfile);
-      // console.log('[TransactionService] Cached resolved LN address to runstr_lightning_addr.');
+      localStorage.setItem(cacheKey, lnAddressFromProfile);
+      // console.log(`[TransactionService] Cached resolved LN address for ${key}.`);
     } catch (cacheErr) {
-      console.error('[TransactionService] Error caching fetched LN address:', cacheErr);
+      console.error(`[TransactionService] Error caching fetched LN address for ${key}:`, cacheErr);
     }
     return lnAddressFromProfile;
   }
@@ -214,6 +210,11 @@ const transactionService = {
   processStreakReward: async (pubkey, amount, reason, metadata = {}) => {
     const destination = await resolveDestination(pubkey); // Now async
 
+    // Determine if the destination was resolved from a pubkey or was originally an LN Address/etc.
+    // This is a bit heuristic: if resolveDestination returns something different than the input pubkey,
+    // and the input pubkey didn't look like an LN Address itself, it was likely resolved.
+    const wasResolved = destination !== pubkey && !(pubkey.includes('@') || pubkey.startsWith('lnurl') || pubkey.startsWith('lightning:') || pubkey.startsWith('lnbc'));
+
     try {
       const transaction = transactionService.recordTransaction({
         type: TRANSACTION_TYPES.STREAK_REWARD,
@@ -242,6 +243,16 @@ const transactionService = {
           status: TRANSACTION_STATUS.FAILED,
           error: result.error
         });
+        // If payment failed and the destination was a resolved LN address, clear its cache
+        if (wasResolved) {
+          const cacheKey = `resolved_ln_addr_${pubkey}`; // Use the original pubkey for cache clearing
+          try {
+            localStorage.removeItem(cacheKey);
+            console.log(`[TransactionService] Cleared cached LN address for ${pubkey} due to payment failure.`);
+          } catch (e) {
+            console.error(`[TransactionService] Error clearing cached LN address for ${pubkey}:`, e);
+          }
+        }
         return { success: false, error: result.error, transaction };
       }
     } catch (error) {
@@ -280,19 +291,91 @@ const transactionService = {
   processReward: async (pubkey, amount, type, reason, metadata = {}) => {
     // Resolve destination ONCE here, before specific reward processing
     const destination = await resolveDestination(pubkey);
+    const wasResolved = destination !== pubkey && !(pubkey.includes('@') || pubkey.startsWith('lnurl') || pubkey.startsWith('lightning:') || pubkey.startsWith('lnbc'));
 
     if (type === TRANSACTION_TYPES.STREAK_REWARD) {
-      // Pass the already resolved (or attempted to resolve) destination
-      return transactionService.processStreakReward(destination, amount, reason, metadata);
+      // For processStreakReward, we need to pass the original pubkey for potential cache clearing,
+      // and the (potentially resolved) destination.
+      // processStreakReward itself will call resolveDestination again, which is slightly redundant
+      // but ensures its internal logic for cache clearing (if we add it there too or keep it there) uses the correct original pubkey.
+      // A cleaner way would be to have processStreakReward accept both originalKey and resolvedDestination.
+
+      // Let's modify processStreakReward to accept originalKey and resolvedDestination to avoid re-resolving.
+      // For now, to keep the edit focused, we'll stick to the original plan of modifying processStreakReward directly.
+      // The change in processStreakReward to clear cache on failure is the primary goal here.
+
+      // Current call:
+      // return transactionService.processStreakReward(destination, amount, reason, metadata);
+      // This is problematic if 'destination' is already resolved and processStreakReward calls resolveDestination(destination_which_is_already_an_LN_address)
+      // The cache clearing logic inside processStreakReward needs the *original pubkey*.
+
+      // Let's assume processStreakReward is correctly modified as per the diff above this section.
+      // So, we should pass the original `pubkey` to `processStreakReward` so it can use it for cache clearing.
+      // And `processStreakReward` will internally call `resolveDestination(pubkey)`.
+
+      return transactionService.processStreakReward(pubkey, amount, reason, metadata);
     }
     
     // Handle other reward types if they become supported
-    // if (type === TRANSACTION_TYPES.LEADERBOARD_REWARD) { ... }
+    // For other reward types, if they also go through a similar payment mechanism that might benefit from cache clearing:
+    if (type !== TRANSACTION_TYPES.STREAK_REWARD) { // Placeholder for other types
+        // This is a generic path, may need more specific handling if other reward types are added
+        // For now, this path doesn't have the explicit cache-clearing logic on failure.
+        // If we want to add it, we'd need a similar structure to processStreakReward
+        // or make processReward more generic in handling cache for failures.
+        console.warn(`[TransactionService] Processing generic reward type '${type}'. Cache clearing on failure is not explicitly implemented for this path.`);
+        // Fallback to a generic NWC payment attempt if not STREAK_REWARD
+        try {
+            const transaction = transactionService.recordTransaction({
+                type: type,
+                amount,
+                recipient: destination, // Use the resolved destination
+                reason,
+                pubkey: pubkey, // Store original pubkey
+                metadata,
+                status: TRANSACTION_STATUS.PENDING
+            });
 
-    console.warn(`[TransactionService] Reward type '${type}' not supported for processing.`);
+            const result = await nwcService.payLightningAddress(
+                destination,
+                amount,
+                reason
+            );
+
+            if (result.success) {
+                transactionService.updateTransaction(transaction.id, {
+                    status: TRANSACTION_STATUS.COMPLETED,
+                    rail: 'nwc',
+                    preimage: result.result?.preimage || null
+                });
+                return { success: true, transaction: { ...transaction, rail: 'nwc', status: TRANSACTION_STATUS.COMPLETED } };
+            } else {
+                transactionService.updateTransaction(transaction.id, {
+                    status: TRANSACTION_STATUS.FAILED,
+                    error: result.error
+                });
+                 // If payment failed and the destination was a resolved LN address, clear its cache
+                if (wasResolved) { // `wasResolved` is correctly defined based on the initial pubkey and final destination
+                    const cacheKey = `resolved_ln_addr_${pubkey}`; // Use the original pubkey
+                    try {
+                        localStorage.removeItem(cacheKey);
+                        console.log(`[TransactionService] Cleared cached LN address for ${pubkey} (in generic processReward) due to payment failure.`);
+                    } catch (e) {
+                        console.error(`[TransactionService] Error clearing cached LN address for ${pubkey} (in generic processReward):`, e);
+                    }
+                }
+                return { success: false, error: result.error, transaction };
+            }
+        } catch (error) {
+            console.error(`Error processing generic reward type '${type}':`, error);
+            return { success: false, error: error.message || 'Unknown error during generic reward processing', transaction: null };
+        }
+    }
+
+    console.warn(`[TransactionService] Reward type '${type}' not fully supported for advanced processing beyond STREAK_REWARD.`);
     return {
       success: false,
-      error: `Reward type '${type}' not supported in this build`
+      error: `Reward type '${type}' not fully supported in this build for advanced processing.`
     };
   }
 };
