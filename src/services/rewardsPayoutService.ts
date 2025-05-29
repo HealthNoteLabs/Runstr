@@ -37,90 +37,42 @@ interface PayoutResult {
  * Try paying the runner by requesting an invoice from their own NWC wallet
  * and then paying it with the app funding wallet (nwcService.payInvoiceWithNwc).
  */
-const payoutViaUserNwc = async (userNwcUri: string | null, sats: number, memo: string) => {
-  if (!userNwcUri) return { success: false, error: 'User NWC URI missing' } as PayoutResult;
-  const invRes = await nwcService.makeInvoiceWithNwc(userNwcUri, sats, memo);
-  if (!invRes.success || !invRes.invoice) return { success: false, error: invRes.error || 'Failed to get invoice' } as PayoutResult;
-  // Pay the invoice with the funding wallet (configured in nwcService)
-  const payRes = await nwcService.payInvoiceWithNwc(invRes.invoice, memo);
-  return payRes;
-};
+// const payoutViaUserNwc = async (userNwcUri: string | null, sats: number, memo: string) => { ... }; // Remove or comment out
 
 const rewardsPayoutService = {
   /**
-   * Send a streak reward.
-   * @param pubkey User's public key.
+   * Send a streak reward. This now primarily delegates to transactionService.
+   * @param userPubkey User's public key (for profile lookup if in-app LN address is not provided/fails).
    * @param amount Amount in satoshis.
    * @param streakDay The day number of the streak.
-   * @param userNwcUri Optional user's NWC URI.
+   * @param inAppLnAddress Optional user's Lightning Address set within the app settings.
    * @returns Transaction result.
    */
   sendStreakReward: async (
-    pubkey: string,
+    userPubkey: string,
     amount: number,
     streakDay: number,
-    userNwcUri?: string | null
+    inAppLnAddress?: string | null // Changed from userNwcUri
   ): Promise<PayoutResult> => {
     const memo = `${streakDay}-day streak reward`;
 
-    /*
-     * --------------------------------------------
-     * 1. Attempt payout via RUNSTR reward wallet zap
-     * --------------------------------------------
-     * If the destination `pubkey` looks like a Nostr hex pubkey (64 hex chars),
-     * we can attempt a direct NIP-57 zap using the Runstr reward wallet
-     * defined in rewardService.js. This aligns with the new lightweight
-     * reward mechanism requested by the user.
-     */
-    const isHexPubkey = /^[0-9a-fA-F]{64}$/.test(pubkey);
-    if (isHexPubkey) {
-      try {
-        const zapRes = await sendRewardZap(pubkey, amount, `RUNSTR: ${memo}`, 'streak_completion');
-        if (zapRes.success) {
-          return {
-            success: true,
-            // paymentResponse structure varies by wallet – fall back to undefined if not present
-            txid: (zapRes.paymentResponse?.payment_hash ?? zapRes.paymentResponse?.preimage) ?? undefined,
-            amount,
-            pubkey,
-            timestamp: new Date().toISOString(),
-          };
-        } else {
-          console.warn('[rewardsPayoutService] Zap payout failed, falling back:', zapRes.error);
-        }
-      } catch (zapErr: any) {
-        console.error('[rewardsPayoutService] Error during zap payout, falling back:', zapErr.message);
-      }
-    }
+    // All payout logic is now consolidated in transactionService.
+    // transactionService will handle resolving the destination (prioritizing inAppLnAddress)
+    // and attempting payment via the app's NWC funding source.
 
-    // 2. Try paying via user's own NWC wallet first
-    if (userNwcUri) {
-      try {
-        const nwcRes = await payoutViaUserNwc(userNwcUri, amount, memo);
-        if (nwcRes.success) {
-          return {
-            success: true,
-            txid: nwcRes.result?.preimage || nwcRes.txid,
-            amount,
-            pubkey,
-            timestamp: new Date().toISOString(),
-          };
-        } else {
-          console.warn('[rewardsPayoutService] user-NWC payout failed, falling back:', nwcRes.error);
-        }
-      } catch (err: any) {
-        console.error('[rewardsPayoutService] Error in user-NWC payout, falling back:', err.message);
-      }
-    }
+    // console.log(`[rewardsPayoutService] Sending streak reward for pubkey: ${userPubkey}, amount: ${amount}, day: ${streakDay}, inAppLN: ${inAppLnAddress}`);
 
-    // 2. Fallback to existing LNURL/Lightning Address payout path (transactionService)
-    const reason = memo;
     return await transactionService.processReward(
-      pubkey,
+      userPubkey, // Still pass userPubkey for profile fallback and logging
       amount,
       TRANSACTION_TYPES.STREAK_REWARD as TransactionType,
-      reason,
-      { source: 'streak_rewards', streakDay, via: 'LNURL' }
+      memo,
+      {
+        source: 'streak_rewards',
+        streakDay,
+        inAppLnOverride: inAppLnAddress, // Pass the in-app address to transactionService
+        // via: 'APP_NWC' // Optionally clarify payment rail if metadata is used for that
+      }
     );
   },
 

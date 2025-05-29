@@ -52,24 +52,37 @@ const saveTransactions = (transactions) => {
 
 // Make resolveDestination an async, module-scoped helper
 // Now returns Promise<string[]>
-const resolveDestination = async (key) => {
-  if (!key) return [];
+const resolveDestination = async (key, inAppLnOverride = null) => {
+  if (!key && !inAppLnOverride) return [];
+
+  // Prioritize in-app override if provided and valid
+  if (inAppLnOverride && typeof inAppLnOverride === 'string' && inAppLnOverride.trim() !== '') {
+    const trimmedInAppAddress = inAppLnOverride.trim();
+    if (trimmedInAppAddress.includes('@') || trimmedInAppAddress.startsWith('lnurl') || trimmedInAppAddress.startsWith('lightning:') || trimmedInAppAddress.startsWith('lnbc')) {
+      // console.log(`[TransactionService] Using in-app LN address override: ${trimmedInAppAddress}`);
+      return [trimmedInAppAddress.replace(/^lightning:/, '')];
+    }
+    // console.warn(`[TransactionService] In-app LN address override '${inAppLnOverride}' is invalid, falling back to profile lookup for key: ${key}`);
+  }
+  
+  // If no valid in-app override, or if it was invalid, proceed with key-based resolution (profile lookup)
+  if (!key) return []; // Need a key if no valid override.
 
   // Check if key is already a Lightning Address or LNURL - return as single-item array
   if (key.includes('@') || key.startsWith('lnurl') || key.startsWith('lightning:') || key.startsWith('lnbc')) {
     return [key.replace(/^lightning:/, '')];
   }
 
-  // Use a pubkey-specific cache key for an array of addresses
+  // Use a pubkey-specific cache key for an array of addresses from profile
   const cacheKey = `resolved_ln_addrs_array_${key}`;
 
-  // Check local cache
+  // Check local cache for profile addresses
   try {
     const cachedRaw = localStorage.getItem(cacheKey);
     if (cachedRaw) {
       const cachedArray = JSON.parse(cachedRaw);
       if (Array.isArray(cachedArray) && cachedArray.length > 0) {
-        // console.log(`[TransactionService] Using cached LN addresses for ${key}:`, cachedArray);
+        // console.log(`[TransactionService] Using cached profile LN addresses for ${key}:`, cachedArray);
         return cachedArray;
       }
     }
@@ -77,28 +90,20 @@ const resolveDestination = async (key) => {
     // Ignore localStorage errors or parsing errors
   }
 
-  // If it looks like a pubkey (hex or npub) and not an LN address, try to fetch from Nostr profile
-  // console.log(`[TransactionService] Attempting to fetch LN addresses for potential pubkey: ${key}`);
-  
-  // This function now needs to return an array of strings Promise<string[]>
-  const lnAddressesFromProfile = await fetchLnAddressesFromProfile(key); 
+  // If it looks like a pubkey, try to fetch from Nostr profile
+  // console.log(`[TransactionService] Attempting to fetch LN addresses from profile for pubkey: ${key}`);
+  const lnAddressesFromProfile = await fetchLnAddressesFromProfile(key);
 
   if (lnAddressesFromProfile && lnAddressesFromProfile.length > 0) {
-    // console.log(`[TransactionService] Found LN addresses for ${key} from profile: ${lnAddressesFromProfile}.`);
+    // console.log(`[TransactionService] Found profile LN addresses for ${key}: ${lnAddressesFromProfile}.`);
     try {
       localStorage.setItem(cacheKey, JSON.stringify(lnAddressesFromProfile));
-      // console.log(`[TransactionService] Cached resolved LN addresses for ${key}.`);
     } catch (cacheErr) {
-      console.error(`[TransactionService] Error caching fetched LN addresses for ${key}:`, cacheErr);
+      console.error(`[TransactionService] Error caching fetched profile LN addresses for ${key}:`, cacheErr);
     }
     return lnAddressesFromProfile;
   }
-
-  // console.warn(`[TransactionService] Could not resolve LN addresses for ${key} from profile.`);
-  // If no addresses found from profile, and key itself is not an LN address, return empty array.
-  // Or, decide if 'key' itself should be attempted if it's a pubkey (might be a direct NWC target in some setups)
-  // For now, returning empty if no explicit LN addresses are found for a pubkey.
-  return []; 
+  return [];
 };
 
 /**
@@ -216,12 +221,16 @@ const transactionService = {
    * @returns {Promise<Object>} Transaction result
    */
   processStreakReward: async (pubkey, amount, reason, metadata = {}) => {
-    const destinations = await resolveDestination(pubkey);
+    const inAppLnOverride = metadata?.inAppLnOverride || null;
+    const destinations = await resolveDestination(pubkey, inAppLnOverride);
+    const sourceOfDestinations = inAppLnOverride ? 'in-app' : 'profile';
 
     if (!destinations || destinations.length === 0) {
-      console.warn(`[TransactionService] No destinations found for pubkey ${pubkey}. Cannot process streak reward.`);
+      const errorMsg = sourceOfDestinations === 'in-app' 
+        ? `In-app Lightning Address '${inAppLnOverride}' is invalid or could not be used.`
+        : `No Lightning Addresses found for user ${pubkey} (profile lookup).`;
+      console.warn(`[TransactionService] ${errorMsg} Cannot process streak reward.`);
       // Record a failed transaction attempt immediately if no destinations
-      const errorMsg = 'No valid Lightning Address or NWC target found for user.';
       try {
           transactionService.recordTransaction({
             type: TRANSACTION_TYPES.STREAK_REWARD,
@@ -310,15 +319,14 @@ const transactionService = {
         attemptedDestinations: attemptedDestinationsLog
       });
 
-      // Clear cache if destinations were resolved from a pubkey (i.e., original pubkey was not an LN address itself)
-      const wasResolvedFromPubkey = !(pubkey.includes('@') || pubkey.startsWith('lnurl') || pubkey.startsWith('lightning:') || pubkey.startsWith('lnbc'));
-      if (wasResolvedFromPubkey && destinations.length > 0) { // Check destinations.length to ensure it was a profile lookup
+      // Clear profile cache ONLY if in-app override was NOT used and profile lookup was the source of failed addresses
+      if (sourceOfDestinations === 'profile' && !(pubkey.includes('@') || pubkey.startsWith('lnurl') || pubkey.startsWith('lightning:') || pubkey.startsWith('lnbc'))) {
         const cacheKey = `resolved_ln_addrs_array_${pubkey}`;
         try {
           localStorage.removeItem(cacheKey);
-          // console.log(`[TransactionService] Cleared cached LN addresses array for ${pubkey} due to all payment attempts failing.`);
+          // console.log(`[TransactionService] Cleared cached profile LN addresses array for ${pubkey} due to all payment attempts failing.`);
         } catch (e) {
-          console.error(`[TransactionService] Error clearing cached LN addresses array for ${pubkey}:`, e);
+          console.error(`[TransactionService] Error clearing cached profile LN addresses array for ${pubkey}:`, e);
         }
       }
       return { success: false, error: `All attempts failed. Last error: ${lastError}`, transaction: finalTransactionState };
@@ -353,11 +361,20 @@ const transactionService = {
    * @param {Object} metadata - Extra fields recorded with the tx
    */
   processReward: async (pubkey, amount, type, reason, metadata = {}) => {
-    const destinations = await resolveDestination(pubkey);
+    const inAppLnOverride = metadata?.inAppLnOverride || null;
+    const destinations = await resolveDestination(pubkey, inAppLnOverride);
+    const sourceOfDestinations = inAppLnOverride && destinations.length === 1 && destinations[0] === inAppLnOverride.trim().replace(/^lightning:/, '') 
+                                ? 'in-app' 
+                                : 'profile';
 
     if (!destinations || destinations.length === 0) {
-      console.warn(`[TransactionService] No destinations found for pubkey ${pubkey} for reward type ${type}.`);
-      const errorMsg = 'No valid Lightning Address or NWC target found.';
+      let errorMsg = `No valid Lightning Address found for ${pubkey}.`;
+      if (inAppLnOverride) {
+        errorMsg = `Provided in-app Lightning Address '${inAppLnOverride}' is invalid or unusable.`;
+      } else {
+        errorMsg = `No Lightning Addresses found for user ${pubkey} via profile lookup.`;
+      }
+      console.warn(`[TransactionService] ${errorMsg} Cannot process reward type ${type}.`);
        try {
           transactionService.recordTransaction({
             type: type,
@@ -365,17 +382,17 @@ const transactionService = {
             recipient: pubkey,
             reason,
             pubkey,
-            metadata,
+            metadata: { ...metadata, sourceOfDestinations },
             status: TRANSACTION_STATUS.FAILED,
             error: errorMsg,
             attemptedDestinations: []
           });
-      } catch(e){ console.error("Error recording initial failure transaction", e)}
+      } catch(e){ console.error("Error recording initial failure transaction for generic reward", e)}
       return { success: false, error: errorMsg, transaction: null };
     }
 
-    // If it's a streak reward, delegate to the specialized function
     if (type === TRANSACTION_TYPES.STREAK_REWARD) {
+      // Pass the original pubkey, and importantly, the metadata containing inAppLnOverride
       return transactionService.processStreakReward(pubkey, amount, reason, metadata);
     }
 
@@ -439,13 +456,16 @@ const transactionService = {
       finalTransactionState = transactionService.updateTransaction(initialTransaction.id, {
         status: TRANSACTION_STATUS.FAILED,
         error: `All ${destinations.length} attempts failed for type ${type}. Last error: ${lastError}`,
-        attemptedDestinations: attemptedDestinationsLog
+        attemptedDestinations: attemptedDestinationsLog,
+        metadata: { ...initialTransaction.metadata, sourceOfDestinations }
       });
-      const wasResolvedFromPubkey = !(pubkey.includes('@') || pubkey.startsWith('lnurl') || pubkey.startsWith('lightning:') || pubkey.startsWith('lnbc'));
-      if (wasResolvedFromPubkey && destinations.length > 0) {
-        const cacheKey = `resolved_ln_addrs_array_${pubkey}`;
+
+      // Clear profile cache ONLY if in-app override was NOT used and profile lookup was the source
+      if (sourceOfDestinations === 'profile' && !(pubkey.includes('@') || pubkey.startsWith('lnurl') || pubkey.startsWith('lightning:') || pubkey.startsWith('lnbc'))) {
+          const cacheKey = `resolved_ln_addrs_array_${pubkey}`;
         try {
           localStorage.removeItem(cacheKey);
+          // console.log(`[TransactionService] Cleared cached profile LN addresses array for ${pubkey} (generic type ${type}) due to all payment attempts failing.`);
         } catch (e) {
           console.error(`[TransactionService] Error clearing cache for ${pubkey} (generic type ${type}):`, e);
         }
