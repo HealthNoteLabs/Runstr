@@ -244,19 +244,31 @@ SettingsProvider.propTypes = {
 
 export const getActiveRelayList = () => {
   try {
-    const mode = localStorage.getItem('publishMode') || 'public';
-    const privateRelay = localStorage.getItem('privateRelayUrl') || '';
-    let list = [];
-    if (mode === 'public') {
-      list = [...defaultRelays];
-    } else if (mode === 'private') {
-      if (privateRelay) list = [privateRelay];
-    } else if (mode === 'mixed') {
-      list = [...defaultRelays];
-      if (privateRelay) list.push(privateRelay);
+    // Check if localStorage is available before using it
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const mode = window.localStorage.getItem('publishMode') || 'public';
+      const privateRelay = window.localStorage.getItem('privateRelayUrl') || '';
+      let list = [];
+      if (mode === 'public') {
+        list = [...defaultRelays];
+      } else if (mode === 'private') {
+        if (privateRelay) list = [privateRelay];
+      } else if (mode === 'mixed') {
+        list = [...defaultRelays];
+        if (privateRelay) list.push(privateRelay);
+      }
+      // Ensure list is never empty if it shouldn't be based on logic, though defaultRelays provides a fallback
+      if (list.length === 0 && (mode === 'public' || mode === 'mixed') && defaultRelays.length > 0) {
+        console.warn('getActiveRelayList: List was unexpectedly empty for public/mixed mode, falling back to defaultRelays.');
+        return [...defaultRelays];
+      }
+      return list.length > 0 ? list : [...defaultRelays]; // Ensure we always return some relays if logic expects it
+    } else {
+      console.warn('getActiveRelayList: localStorage is not available. Returning default relays.');
+      return [...defaultRelays];
     }
-    return list;
-  } catch {
+  } catch (error) {
+    console.error('getActiveRelayList: Error accessing localStorage or processing relays. Returning default relays.', error);
     return [...defaultRelays];
   }
 }; 
