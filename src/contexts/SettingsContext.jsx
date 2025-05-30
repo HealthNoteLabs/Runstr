@@ -129,13 +129,23 @@ export const SettingsProvider = ({ children }) => {
     return (...args) => {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
-        func(...args);
+        if (typeof func === 'function') { // Safety check
+          func(...args);
+        }
       }, delay);
     };
   };
 
   // Debounced localStorage saving functions
-  const debouncedSetItem = useMemo(() => debounce(localStorage.setItem, 500), []);
+  const debouncedSetItem = useMemo(() => {
+    // Check if localStorage and localStorage.setItem are available
+    if (typeof window !== 'undefined' && window.localStorage && typeof window.localStorage.setItem === 'function') {
+      return debounce(window.localStorage.setItem, 500);
+    }
+    // Fallback to a no-op function if localStorage is not available
+    console.warn('localStorage.setItem is not available. Settings will not be persisted.');
+    return () => {}; // No-op function that does nothing
+  }, []); // Empty dependency array is correct here
 
   useEffect(() => debouncedSetItem('distanceUnit', distanceUnit), [distanceUnit, debouncedSetItem]);
   useEffect(() => debouncedSetItem('calorieIntensityPref', calorieIntensityPref), [calorieIntensityPref, debouncedSetItem]);
