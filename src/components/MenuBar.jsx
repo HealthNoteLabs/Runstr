@@ -15,7 +15,8 @@ export const MenuBar = () => {
     publishMode, setPublishMode,
     privateRelayUrl, setPrivateRelayUrl,
     skipStartCountdown, setSkipStartCountdown,
-    skipEndCountdown, setSkipEndCountdown
+    skipEndCountdown, setSkipEndCountdown,
+    usePedometer, setUsePedometer
   } = useSettings();
 
   const menuItems = [
@@ -164,6 +165,21 @@ export const MenuBar = () => {
                 <p className="text-xs text-gray-500">
                   Start the run immediately when you tap "Start Run".
                 </p>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-400 mr-3">Skip End Countdown</span>
+                  <div className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      id="skipEndCountdownToggleModal"
+                      checked={skipEndCountdown}
+                      onChange={(e) => setSkipEndCountdown(e.target.checked)}
+                    />
+                    <span className="toggle-slider"></span>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500">
+                  End the run immediately when you tap "End Run" (no confirmation).
+                </p>
               </div>
             </div>
             
@@ -303,11 +319,9 @@ export const MenuBar = () => {
                     <input
                       type="checkbox"
                       id="pedometerToggle"
-                      defaultChecked={localStorage.getItem('usePedometer') === 'true'}
+                      checked={usePedometer}
                       onChange={(e) => {
-                        const enabled = e.target.checked;
-                        localStorage.setItem('usePedometer', enabled ? 'true' : 'false');
-                        alert(`Device step counter ${enabled ? 'enabled' : 'disabled'}. This will take effect on your next walk.`);
+                        setUsePedometer(e.target.checked);
                       }}
                     />
                     <span className="toggle-slider"></span>

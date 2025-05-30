@@ -73,6 +73,8 @@ export const SettingsProvider = ({ children }) => {
   const [privateRelayUrl, setPrivateRelayUrl] = useState(() => localStorage.getItem('privateRelayUrl') || '');
   const [blossomEndpoint, setBlossomEndpoint] = useState(() => localStorage.getItem('blossomEndpoint') || '');
   const [skipStartCountdown, setSkipStartCountdown] = useState(() => initBooleanState('skipStartCountdown', false));
+  const [skipEndCountdown, setSkipEndCountdown] = useState(() => initBooleanState('skipEndCountdown', false));
+  const [usePedometer, setUsePedometer] = useState(() => initBooleanState('usePedometer', true));
 
   const initialMetricPrefs = useMemo(() => PUBLISHABLE_METRICS.reduce((acc, metric) => {
     const key = `publish${metric.key.charAt(0).toUpperCase() + metric.key.slice(1)}`;
@@ -88,23 +90,39 @@ export const SettingsProvider = ({ children }) => {
     }));
   }, []);
 
-  useEffect(() => localStorage.setItem('distanceUnit', distanceUnit), [distanceUnit]);
-  useEffect(() => localStorage.setItem('calorieIntensityPref', calorieIntensityPref), [calorieIntensityPref]);
-  useEffect(() => localStorage.setItem('healthEncryptionPrefIsPlaintext', (healthEncryptionPref === 'plaintext').toString()), [healthEncryptionPref]);
-  useEffect(() => localStorage.setItem('publishMode', publishMode), [publishMode]);
-  useEffect(() => localStorage.setItem('privateRelayUrl', privateRelayUrl), [privateRelayUrl]);
-  useEffect(() => localStorage.setItem('blossomEndpoint', blossomEndpoint), [blossomEndpoint]);
-  useEffect(() => localStorage.setItem('skipStartCountdown', skipStartCountdown.toString()), [skipStartCountdown]);
+  // Debounce utility
+  const debounce = (func, delay) => {
+    let timeoutId;
+    return (...args) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        func(...args);
+      }, delay);
+    };
+  };
+
+  // Debounced localStorage saving functions
+  const debouncedSetItem = useMemo(() => debounce(localStorage.setItem, 500), []);
+
+  useEffect(() => debouncedSetItem('distanceUnit', distanceUnit), [distanceUnit, debouncedSetItem]);
+  useEffect(() => debouncedSetItem('calorieIntensityPref', calorieIntensityPref), [calorieIntensityPref, debouncedSetItem]);
+  useEffect(() => debouncedSetItem('healthEncryptionPrefIsPlaintext', (healthEncryptionPref === 'plaintext').toString()), [healthEncryptionPref, debouncedSetItem]);
+  useEffect(() => debouncedSetItem('publishMode', publishMode), [publishMode, debouncedSetItem]);
+  useEffect(() => debouncedSetItem('privateRelayUrl', privateRelayUrl), [privateRelayUrl, debouncedSetItem]);
+  useEffect(() => debouncedSetItem('blossomEndpoint', blossomEndpoint), [blossomEndpoint, debouncedSetItem]);
+  useEffect(() => debouncedSetItem('skipStartCountdown', skipStartCountdown.toString()), [skipStartCountdown, debouncedSetItem]);
+  useEffect(() => debouncedSetItem('skipEndCountdown', skipEndCountdown.toString()), [skipEndCountdown, debouncedSetItem]);
+  useEffect(() => debouncedSetItem('usePedometer', usePedometer.toString()), [usePedometer, debouncedSetItem]);
 
   useEffect(() => {
     try {
       Object.entries(metricPublishPrefs).forEach(([key, value]) => {
-        localStorage.setItem(key, value.toString());
+        debouncedSetItem(key, value.toString());
       });
     } catch (error) {
       console.error('Error saving metric publish prefs:', error);
     }
-  }, [metricPublishPrefs]);
+  }, [metricPublishPrefs, debouncedSetItem]);
 
   const toggleDistanceUnit = useCallback(() => setDistanceUnit(prev => prev === 'km' ? 'mi' : 'km'), []);
   const isHealthEncryptionEnabled = useCallback(() => healthEncryptionPref === 'encrypted', [healthEncryptionPref]);
@@ -150,6 +168,10 @@ export const SettingsProvider = ({ children }) => {
     setBlossomEndpoint,
     skipStartCountdown,
     setSkipStartCountdown,
+    skipEndCountdown,
+    setSkipEndCountdown,
+    usePedometer,
+    setUsePedometer,
     ...metricPublishPrefs,
     ...dynamicMetricSetters
   }), [
@@ -160,6 +182,8 @@ export const SettingsProvider = ({ children }) => {
     privateRelayUrl, setPrivateRelayUrl,
     blossomEndpoint, setBlossomEndpoint,
     skipStartCountdown, setSkipStartCountdown,
+    skipEndCountdown, setSkipEndCountdown,
+    usePedometer, setUsePedometer,
     metricPublishPrefs,
     dynamicMetricSetters
   ]);
