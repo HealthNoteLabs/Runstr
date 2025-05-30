@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { createAndPublishEvent, createWorkoutEvent } from '../utils/nostr';
 import { useRunStats } from '../hooks/useRunStats';
 import { useRunProfile } from '../hooks/useRunProfile';
-import { formatTime, displayDistance, formatElevation, formatDate } from '../utils/formatters';
+import { formatTime, displayDistance, formatElevation, formatDate, formatDateTime } from '../utils/formatters';
 import runDataService, { ACTIVITY_TYPES } from '../services/RunDataService';
 import SplitsTable from '../components/SplitsTable';
 import { useActivityMode } from '../contexts/ActivityModeContext';
@@ -632,6 +632,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
                   activityType={currentActivityType}
                   distanceUnit={distanceUnit}
                   formatDate={formatDate}
+                  formatDateTime={formatDateTime}
                   formatTime={formatTime}
                   displayDistance={displayDistance}
                   formatElevation={formatElevation}
@@ -686,7 +687,7 @@ ${additionalContent ? `\n${additionalContent}` : ''}
             <p>Are you sure you want to delete this run?</p>
             {runToDelete && (
               <div className="run-summary">
-                <p>Date: {formatDate(runToDelete.timestamp)}</p>
+                <p>Date: {formatDateTime(runToDelete.timestamp)}</p>
                 <p>Distance: {displayDistance(runToDelete.distance, distanceUnit)}</p>
                 <p>Duration: {formatTime(runToDelete.duration)}</p>
               </div>

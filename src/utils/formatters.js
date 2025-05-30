@@ -89,6 +89,33 @@ export const formatDate = (dateInput) => {
 };
 
 /**
+ * Format date and time to a consistent readable format (e.g., MM/DD/YYYY, HH:MM AM/PM from UTC timestamp)
+ * @param {number | string} timestamp - UTC timestamp (number) or a date string parsable by new Date()
+ * @returns {string} Formatted date and time string, or 'Invalid Date' if input is unusable
+ */
+export const formatDateTime = (timestamp) => {
+  try {
+    const date = new Date(timestamp);
+
+    if (isNaN(date.getTime())) {
+      return 'Invalid Date';
+    }
+
+    return date.toLocaleString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch (error) {
+    console.error('Error formatting date and time:', timestamp, error);
+    return 'Invalid Date';
+  }
+};
+
+/**
  * Format pace to MM:SS format
  * @param {number} pace - Pace in minutes per unit
  * @param {string} unit - Distance unit ('km' or 'mi')

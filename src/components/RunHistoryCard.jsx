@@ -111,6 +111,7 @@ export const RunHistoryCard = ({
   run,
   distanceUnit,
   formatDate,
+  formatDateTime,
   formatTime,
   displayDistance,
   formatElevation,
@@ -154,7 +155,7 @@ export const RunHistoryCard = ({
     <div style={styles.card}>
       {/* Header with date and delete icon */}
       <div style={styles.header}>
-        <span style={styles.date}>{formatDate(run.date)}</span>
+        <span style={styles.date}>{formatDateTime(run.timestamp)}</span>
         <button 
           style={styles.deleteButton}
           onClick={() => onDeleteClick(run)}
@@ -279,6 +280,7 @@ RunHistoryCard.propTypes = {
   run: PropTypes.object.isRequired,
   distanceUnit: PropTypes.string.isRequired,
   formatDate: PropTypes.func.isRequired,
+  formatDateTime: PropTypes.func.isRequired,
   formatTime: PropTypes.func.isRequired,
   displayDistance: PropTypes.func.isRequired,
   formatElevation: PropTypes.func.isRequired,
