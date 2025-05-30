@@ -171,18 +171,30 @@ export const SettingsProvider = ({ children }) => {
   const isHealthEncryptionEnabled = useCallback(() => healthEncryptionPref === 'encrypted', [healthEncryptionPref]);
 
   useEffect(() => {
-    const event = new CustomEvent('distanceUnitChanged', { detail: distanceUnit });
-    document.dispatchEvent(event);
+    if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+      const event = new CustomEvent('distanceUnitChanged', { detail: distanceUnit });
+      document.dispatchEvent(event);
+    } else {
+      console.warn('DOM event dispatching is not available for distanceUnitChanged.');
+    }
   }, [distanceUnit]);
 
   useEffect(() => {
-    const event = new CustomEvent('calorieIntensityPrefChanged', { detail: calorieIntensityPref });
-    document.dispatchEvent(event);
+    if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+      const event = new CustomEvent('calorieIntensityPrefChanged', { detail: calorieIntensityPref });
+      document.dispatchEvent(event);
+    } else {
+      console.warn('DOM event dispatching is not available for calorieIntensityPrefChanged.');
+    }
   }, [calorieIntensityPref]);
 
   useEffect(() => {
-    const event = new CustomEvent('healthEncryptionPrefChanged', { detail: healthEncryptionPref });
-    document.dispatchEvent(event);
+    if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+      const event = new CustomEvent('healthEncryptionPrefChanged', { detail: healthEncryptionPref });
+      document.dispatchEvent(event);
+    } else {
+      console.warn('DOM event dispatching is not available for healthEncryptionPrefChanged.');
+    }
   }, [healthEncryptionPref]);
 
   const dynamicMetricSetters = useMemo(() => {
