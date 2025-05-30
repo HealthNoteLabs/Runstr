@@ -63,15 +63,48 @@ const initBooleanState = (key, defaultValue) => {
 
 // Provider component
 export const SettingsProvider = ({ children }) => {
-  const [distanceUnit, setDistanceUnit] = useState(() => localStorage.getItem('distanceUnit') || 'km');
+  const [distanceUnit, setDistanceUnit] = useState(() => {
+    try {
+      return localStorage.getItem('distanceUnit') || 'km';
+    } catch (error) {
+      console.error("Error reading 'distanceUnit' from localStorage:", error);
+      return 'km'; // Fallback to default
+    }
+  });
   const [calorieIntensityPref, setCalorieIntensityPref] = useState(() => {
-    const storedPref = localStorage.getItem('calorieIntensityPref');
-    return storedPref && ['autoAccept', 'autoIgnore', 'manual'].includes(storedPref) ? storedPref : 'manual';
+    try {
+      const storedPref = localStorage.getItem('calorieIntensityPref');
+      return storedPref && ['autoAccept', 'autoIgnore', 'manual'].includes(storedPref) ? storedPref : 'manual';
+    } catch (error) {
+      console.error("Error reading 'calorieIntensityPref' from localStorage:", error);
+      return 'manual'; // Fallback to default
+    }
   });
   const [healthEncryptionPref, setHealthEncryptionPref] = useState(() => initBooleanState('healthEncryptionPrefIsPlaintext', false) ? 'plaintext' : 'encrypted');
-  const [publishMode, setPublishMode] = useState(() => localStorage.getItem('publishMode') || 'public');
-  const [privateRelayUrl, setPrivateRelayUrl] = useState(() => localStorage.getItem('privateRelayUrl') || '');
-  const [blossomEndpoint, setBlossomEndpoint] = useState(() => localStorage.getItem('blossomEndpoint') || '');
+  const [publishMode, setPublishMode] = useState(() => {
+    try {
+      return localStorage.getItem('publishMode') || 'public';
+    } catch (error) {
+      console.error("Error reading 'publishMode' from localStorage:", error);
+      return 'public'; // Fallback to default
+    }
+  });
+  const [privateRelayUrl, setPrivateRelayUrl] = useState(() => {
+    try {
+      return localStorage.getItem('privateRelayUrl') || '';
+    } catch (error) {
+      console.error("Error reading 'privateRelayUrl' from localStorage:", error);
+      return ''; // Fallback to default
+    }
+  });
+  const [blossomEndpoint, setBlossomEndpoint] = useState(() => {
+    try {
+      return localStorage.getItem('blossomEndpoint') || '';
+    } catch (error) {
+      console.error("Error reading 'blossomEndpoint' from localStorage:", error);
+      return ''; // Fallback to default
+    }
+  });
   const [skipStartCountdown, setSkipStartCountdown] = useState(() => initBooleanState('skipStartCountdown', false));
   const [skipEndCountdown, setSkipEndCountdown] = useState(() => initBooleanState('skipEndCountdown', false));
   const [usePedometer, setUsePedometer] = useState(() => initBooleanState('usePedometer', true));
