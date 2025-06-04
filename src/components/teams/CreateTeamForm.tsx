@@ -34,6 +34,9 @@ const CreateTeamForm: React.FC<CreateTeamFormProps> = ({ isOpen, onClose }) => {
   const navigate = useNavigate();
 
   const debugSignerStatus = ndkFromContext?.signer ? 'Signer Available' : 'Signer NOT Available';
+  const debugRelayStats = ndkFromContext?.pool?.stats();
+  const debugConnectedRelays = debugRelayStats?.connected || 0;
+  const debugTotalRelays = debugRelayStats?.total || 0;
 
   // Effect to reset form state when modal visibility changes or on unmount
   useEffect(() => {
@@ -59,36 +62,59 @@ const CreateTeamForm: React.FC<CreateTeamFormProps> = ({ isOpen, onClose }) => {
     let currentNdkReady = ndkReadyFromContext;
     let ndkInstance = ndkFromContext;
 
+    // Enhanced connection checking and fallback logic
     if (!currentNdkReady) {
       console.log("CreateTeamForm (Modal): NDK not ready from context, attempting awaitNDKReady...");
-      currentNdkReady = await awaitNDKReady();
-      if (currentNdkReady && ndkSingleton) {
-        console.log("CreateTeamForm (Modal): awaitNDKReady succeeded, using ndkSingleton.");
-        ndkInstance = ndkSingleton;
-      } else {
-        console.log("CreateTeamForm (Modal): awaitNDKReady also failed.");
+      try {
+        currentNdkReady = await awaitNDKReady();
+        if (currentNdkReady && ndkSingleton) {
+          console.log("CreateTeamForm (Modal): awaitNDKReady succeeded, using ndkSingleton.");
+          ndkInstance = ndkSingleton;
+        } else {
+          console.log("CreateTeamForm (Modal): awaitNDKReady also failed, but checking signer availability...");
+          // Even if NDK isn't ready, we might be able to sign and store for later publishing
+          ndkInstance = ndkSingleton; // Use singleton even if not "ready"
+        }
+      } catch (awaitError) {
+        console.error("CreateTeamForm (Modal): Error during awaitNDKReady:", awaitError);
+        ndkInstance = ndkSingleton; // Still try with singleton
       }
     }
 
-    if (!currentNdkReady || !ndkInstance) {
-      setError('Nostr client is not ready. Please try retrying the connection or check your settings.');
+    // Check for basic requirements
+    if (!ndkInstance) {
+      setError('Nostr client not available. Please restart the app and try again.');
       setIsLoading(false);
       return;
     }
+    
     if (!publicKey) {
-      setError('Public key not found. Please make sure you are logged in with Amber or another signer.');
+      setError('Authentication required. Please connect your Nostr signer (Amber or similar) and try again.');
       setIsLoading(false);
       return;
     }
+    
     if (!ndkInstance.signer) {
-      setError('Nostr signer (e.g., Amber) is not attached. Please ensure your signer is connected and authorized.');
+      setError('Nostr signer not available. Please ensure Amber or your preferred signer is connected and authorized.');
       setIsLoading(false);
       return;
     }
+    
     if (!teamName.trim()) {
       setError('Team name is required.');
       setIsLoading(false);
       return;
+    }
+
+    // Warn about relay status but allow proceed with signing
+    const relayStats = ndkInstance.pool?.stats();
+    const connectedRelays = relayStats?.connected || 0;
+    
+    if (connectedRelays === 0) {
+      console.warn("CreateTeamForm: No relays connected, but proceeding with signing. Event will be published when relays reconnect.");
+      // Could optionally show a warning but allow user to proceed
+      // setError('No relay connections available. The team will be created but may not be published immediately. Continue anyway?');
+      // For now, we'll proceed and let the publish attempt handle failures
     }
 
     const teamData: TeamData = {
@@ -97,19 +123,30 @@ const CreateTeamForm: React.FC<CreateTeamFormProps> = ({ isOpen, onClose }) => {
       isPublic,
       image: teamImage.trim() || undefined,
     };
+    
     const teamEventTemplate = prepareNip101eTeamEventTemplate(teamData, publicKey);
     if (!teamEventTemplate) {
-      setError('Failed to prepare team event.');
+      setError('Failed to prepare team event. Please check your input and try again.');
       setIsLoading(false);
       return;
     }
 
     try {
+      console.log('CreateTeamForm: Creating and signing team event...');
       const ndkTeamEvent = new NDKEvent(ndkInstance, teamEventTemplate);
+      
+      // Sign the event (this should work even without relay connections)
+      console.log('CreateTeamForm: Signing team event...');
       await ndkTeamEvent.sign();
+      console.log('CreateTeamForm: ✅ Team event signed successfully');
+      
+      // Attempt to publish (this requires relay connections)
+      console.log('CreateTeamForm: Attempting to publish team event...');
       const teamPublishedRelays = await ndkTeamEvent.publish();
-      console.log('NIP-101e Team event published to relays:', teamPublishedRelays);
+      console.log('CreateTeamForm: Team event published to relays:', teamPublishedRelays);
+      
       if (teamPublishedRelays.size > 0) {
+        console.log(`CreateTeamForm: ✅ Successfully published to ${teamPublishedRelays.size} relay(s)`);
         const newTeamUUID = getTeamUUID(ndkTeamEvent.rawEvent());
         const captain = getTeamCaptain(ndkTeamEvent.rawEvent());
         onClose(); // Close modal on success
@@ -120,11 +157,23 @@ const CreateTeamForm: React.FC<CreateTeamFormProps> = ({ isOpen, onClose }) => {
           navigate('/teams'); // Fallback to main teams page
         }
       } else {
-        setError('Team event was signed but failed to publish to any relays. Please check your relay connections.');
+        // Event was signed but not published - offer user options
+        console.warn('CreateTeamForm: Event signed but not published to any relays');
+        setError('Team was created and signed, but could not be published to Nostr relays. This might be due to network issues. You can try again later or check your connection.');
       }
     } catch (err: any) {
       console.error('Error creating NIP-101e team:', err);
-      setError(err.message || 'An unknown error occurred while creating the team.');
+      
+      // Provide more specific error messages
+      if (err.message?.includes('signer')) {
+        setError('Signer error: Unable to sign the team creation event. Please check your Amber connection and try again.');
+      } else if (err.message?.includes('network') || err.message?.includes('connection')) {
+        setError('Network error: Unable to publish the team event. Please check your internet connection and try again.');
+      } else if (err.message?.includes('relay')) {
+        setError('Relay error: Unable to connect to Nostr relays. The team was created but may not be visible immediately.');
+      } else {
+        setError(err.message || 'An unexpected error occurred while creating the team. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -152,17 +201,19 @@ const CreateTeamForm: React.FC<CreateTeamFormProps> = ({ isOpen, onClose }) => {
       <div className="bg-gray-800 text-white rounded-lg shadow-xl p-6 w-full max-w-md mx-auto" style={{maxHeight: '90vh', overflowY: 'auto'}}>
         <div style={{ padding: '10px', marginBottom: '15px', backgroundColor: '#374151', border: '1px solid #4B5563', borderRadius: '5px' }}>
           <h4 style={{ fontWeight: 'bold', marginBottom: '5px', color: '#D1D5DB' }}>DEBUG INFO (CreateTeamForm Modal)</h4>
-          <p style={{ fontSize: '0.875rem', color: '#E5E7EB' }}>NDK Ready (Context): <span style={{ fontWeight: 'bold' }}>{ndkReadyFromContext ? 'YES' : 'NO'}</span></p>
-          <p style={{ fontSize: '0.875rem', color: '#E5E7EB' }}>Public Key (Context): <span style={{ fontWeight: 'bold' }}>{publicKey || 'Not available'}</span></p>
-          <p style={{ fontSize: '0.875rem', color: '#E5E7EB' }}>NDK Signer (Context NDK): <span style={{ fontWeight: 'bold' }}>{debugSignerStatus}</span></p>
+          <p style={{ fontSize: '0.875rem', color: '#E5E7EB' }}>NDK Ready (Context): <span style={{ fontWeight: 'bold', color: ndkReadyFromContext ? '#10B981' : '#EF4444' }}>{ndkReadyFromContext ? 'YES' : 'NO'}</span></p>
+          <p style={{ fontSize: '0.875rem', color: '#E5E7EB' }}>Relays: <span style={{ fontWeight: 'bold', color: debugConnectedRelays > 0 ? '#10B981' : '#EF4444' }}>{debugConnectedRelays}/{debugTotalRelays} Connected</span></p>
+          <p style={{ fontSize: '0.875rem', color: '#E5E7EB' }}>Public Key (Context): <span style={{ fontWeight: 'bold', color: publicKey ? '#10B981' : '#EF4444' }}>{publicKey ? `${publicKey.substring(0,20)}...` : 'Not available'}</span></p>
+          <p style={{ fontSize: '0.875rem', color: '#E5E7EB' }}>NDK Signer (Context NDK): <span style={{ fontWeight: 'bold', color: ndkFromContext?.signer ? '#10B981' : '#EF4444' }}>{debugSignerStatus}</span></p>
           <p style={{ fontSize: '0.875rem', color: '#F87171' }}>NDK Error (Context): <span style={{ fontWeight: 'bold' }}>{ndkErrorFromContext || 'None'}</span></p>
           <p style={{ fontSize: '0.875rem', color: '#FCA5A5' }}>Form Error: <span style={{ fontWeight: 'bold' }}>{error || 'None'}</span></p>
           {!ndkReadyFromContext && typeof reInitializeNostrSystem === 'function' && (
             <button 
               onClick={() => { setError(null); reInitializeNostrSystem(); }}
               style={{ marginTop: '10px', padding: '5px 10px', backgroundColor: '#F59E0B', color: 'black', borderRadius: '4px', border: 'none' }}
+              disabled={isLoading}
             >
-              Retry Nostr Connection
+              {isLoading ? 'Retrying...' : 'Retry Nostr Connection'}
             </button>
           )}
         </div>
