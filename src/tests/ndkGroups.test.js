@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { parseNaddr, isMember } from '../utils/ndkGroups.js';
+import { parseNaddr, fetchGroupMetadataByNaddr, fetchGroupMessages, subscribeToGroupMessages, sendGroupMessage, joinGroup, isMember, removeMember } from '../utils/ndkGroups.js';
+import { nip19 } from 'nostr-tools';
 
 // Mock the necessary parts of the NDK context
 const mockFetchEvent = vi.fn();
-vi.mock('../contexts/NostrContext.jsx', () => {
-  return {
+vi.mock('../contexts/NostrContext.tsx', () => {
+  const mockNdkInstance = {
     // We only need to mock the 'ndk' export for these tests
     ndk: {
       // And within ndk, only the fetchEvent method is used by isMember
@@ -15,6 +16,7 @@ vi.mock('../contexts/NostrContext.jsx', () => {
     // Include other exports from the original module if they exist and are needed
     // initNdk: vi.fn(), 
   };
+  return mockNdkInstance;
 });
 
 describe('ndkGroups Utilities', () => {

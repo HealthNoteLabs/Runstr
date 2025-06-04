@@ -1,6 +1,6 @@
 import { useContext } from 'react';
 import PropTypes from 'prop-types';
-import { NostrContext } from '../contexts/NostrContext.jsx';
+import { NostrContext } from '../contexts/NostrContext.tsx';
 
 /**
  * Simple banner or inline button that asks the user to connect their Nostr key.

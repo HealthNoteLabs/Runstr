@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useContext, useCallback } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
-import { NostrContext } from '../contexts/NostrContext.jsx';
+import { NostrContext } from '../contexts/NostrContext.tsx';
 import { ndkReadyPromise } from '../lib/ndkSingleton';
 import { 
   parseNaddr, 

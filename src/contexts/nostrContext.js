@@ -1,1 +1,1 @@
-export * from './NostrContext.jsx';
+export * from './NostrContext.tsx';

@@ -1,6 +1,6 @@
 import { useState, useContext } from 'react';
 import { Link } from 'react-router-dom';
-import { NostrContext } from '../contexts/NostrContext.jsx';
+import { NostrContext } from '../contexts/NostrContext.tsx';
 import { nip19 } from 'nostr-tools';
 
 export const GroupDiscovery = () => {

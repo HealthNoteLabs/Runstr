@@ -15,7 +15,7 @@ import ErrorFallback from './components/ErrorFallback';
 import { directFetchRunningPosts } from './utils/feedFetcher';
 import { lightweightProcessPosts } from './utils/feedProcessor';
 import { storeFeedCache, isCacheFresh } from './utils/feedCache';
-import { NostrContext } from './contexts/NostrContext.jsx';
+import { NostrContext } from './contexts/NostrContext.tsx';
 import './utils/errorSilencer';
 
 console.log("App.jsx is loading");

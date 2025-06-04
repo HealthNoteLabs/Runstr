@@ -1,7 +1,10 @@
 const path = require('path');
+const WebSocket = require('ws');
+const { nip19 } = require('nostr-tools');
+const NDK = require('@nostr-dev-kit/ndk').default;
+const { NostrContext } = require('../src/contexts/NostrContext.tsx'); // Assuming NostrContext is the main export now
 
 // Require modules directly at the top, relying on esbuild-register
-const { initNdk, ndk } = require('../src/contexts/NostrContext.jsx');
 const { fetchGroupMetadataByNaddr, fetchGroupMessages } = require('../src/utils/ndkGroups.js');
 
 // --- Configuration ---

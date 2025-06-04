@@ -9,7 +9,7 @@ import {
 import { ensureRelays } from '../utils/relays.js';
 import { NDKEvent } from '@nostr-dev-kit/ndk';
 import { useProfileCache } from '../hooks/useProfileCache.js';
-import { NostrContext } from '../contexts/NostrContext.jsx';
+import { NostrContext } from '../contexts/NostrContext.tsx';
 
 /**
  * ChatRoom – standalone component responsible for displaying and sending
@@ -223,7 +223,7 @@ export const ChatRoom = ({ groupId, naddrString, publicKey, relayHints: passedRe
     // Ensure we have a signer attached on-demand if the user hasn't connected yet.
     if (!publicKey || !ndk.signer) {
       try {
-        const { ensureSignerAttached } = await import('../contexts/NostrContext.jsx');
+        const { ensureSignerAttached } = await import('../contexts/NostrContext.tsx');
         const { pubkey, error: signerError } = await ensureSignerAttached();
         if (signerError || !pubkey) {
           setError(signerError || 'Unable to attach Nostr signer.');
