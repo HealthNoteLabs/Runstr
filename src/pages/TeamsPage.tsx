@@ -1,10 +1,11 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState } from 'react';
 import { useNip101TeamsFeed } from '../hooks/useNip101TeamsFeed';
 import { getTeamName, getTeamDescription, getTeamCaptain, getTeamUUID } from '../services/nostr/NostrTeamsService';
+import CreateTeamForm from '../components/teams/CreateTeamForm';
 
 const TeamsPage: React.FC = () => {
   const { teams, isLoading, error: fetchError, refetchTeams } = useNip101TeamsFeed();
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   return (
     <div className="p-4 max-w-3xl mx-auto text-white">
@@ -19,14 +20,19 @@ const TeamsPage: React.FC = () => {
           >
             {isLoading ? 'Refreshing...' : 'Refresh'}
           </button>
-          <Link
-            to="/teams/new"
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
             className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-150 ease-in-out"
           >
             Create New Team
-          </Link>
+          </button>
         </div>
       </div>
+
+      <CreateTeamForm 
+        isOpen={isCreateModalOpen} 
+        onClose={() => setIsCreateModalOpen(false)} 
+      />
 
       <div className="mt-4">
         {isLoading && (
@@ -48,13 +54,14 @@ const TeamsPage: React.FC = () => {
         {!isLoading && !fetchError && teams.length > 0 && (
           <ul className="space-y-4">
             {teams.map((team) => {
+              const uniqueKey = team.id || `${team.captainPubkey}-${team.teamUUID}`;
               return (
-                <li key={team.id || `${team.captainPubkey}-${team.teamUUID}`} className="bg-gray-800 shadow-lg rounded-lg p-5 hover:bg-gray-700 transition-colors duration-150">
-                  <Link to={`/teams/${team.captainPubkey}/${team.teamUUID}`} className="block">
+                <li key={uniqueKey} className="bg-gray-800 shadow-lg rounded-lg p-5 hover:bg-gray-700 transition-colors duration-150">
+                  <a href={`/teams/${team.captainPubkey}/${team.teamUUID}`} className="block">
                     <h2 className="text-xl font-semibold text-blue-400 hover:text-blue-300 mb-2">
                       {team.name}
                     </h2>
-                  </Link>
+                  </a>
                   <p className="text-gray-300 mb-3 text-sm">
                     {team.description.substring(0, 150)}{team.description.length > 150 ? '...' : ''}
                   </p>
