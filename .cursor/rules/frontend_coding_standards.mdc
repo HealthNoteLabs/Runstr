@@ -1,0 +1,171 @@
+- **General Principles**
+  - Focus on code readability and maintainability.
+  - Adhere to the DRY (Don't Repeat Yourself) principle.
+  - Ensure code is bug-free, fully functional, and complete.
+  - Implement all requested functionality, leaving no TODOs or placeholders.
+
+- **Code Structure & Readability**
+  - **Use Early Returns**
+    - Prefer early returns to reduce nesting and improve clarity.
+    ```typescript jsx
+    // ✅ DO: Use early returns
+    const getUserProfile = (userId: string | null): UserProfile | null => {
+      if (!userId) {
+        return null; // Early return for invalid input
+      }
+      // ... logic to fetch user profile
+      const user = findUserById(userId);
+      if (!user) {
+        return null; // Early return if user not found
+      }
+      return user.profile;
+    };
+
+    // ❌ DON'T: Use deeply nested if statements
+    const getUserProfileNested = (userId: string | null): UserProfile | null => {
+      if (userId) {
+        const user = findUserById(userId);
+        if (user) {
+          return user.profile;
+        } else {
+          return null;
+        }
+      } else {
+        return null;
+      }
+    };
+    ```
+
+- **Styling with TailwindCSS**
+  - **Exclusive Use of TailwindCSS**
+    - Always use TailwindCSS classes for styling HTML elements.
+    - Avoid writing custom CSS in separate `.css` files, using inline `<style>` tags, or the `style` attribute.
+    ```typescript jsx
+    // ✅ DO: Style with TailwindCSS classes
+    const MyComponent = () => (
+      <div className="p-4 bg-blue-500 text-white rounded-lg shadow-md">
+        Hello, Tailwind!
+      </div>
+    );
+
+    // ❌ DON'T: Use inline styles or separate CSS if Tailwind can achieve it
+    // const MyComponentWithInlineStyle = () => (
+    //   <div style={{ padding: '1rem', backgroundColor: 'blue', color: 'white' }}>
+    //     Hello, Inline Styles!
+    //   </div>
+    // );
+    ```
+  - **Conditional Classes**
+    - For applying classes conditionally in React/Next.js, use a utility library like `clsx` or `classnames` for better readability than complex ternary operators. The `class:` directive is not standard in JSX.
+    ```typescript jsx
+    import clsx from 'clsx';
+
+    // ✅ DO: Use clsx for conditional classes
+    const AlertMessage = ({ message, type }: { message: string; type: 'info' | 'error' }) => {
+      const isError = type === 'error';
+      return (
+        <div
+          className={clsx(
+            'p-4 rounded-md',
+            {
+              'bg-blue-100 text-blue-700': !isError,
+              'bg-red-100 text-red-700': isError,
+            }
+          )}
+        >
+          {message}
+        </div>
+      );
+    };
+
+    // ❌ DON'T: Use complex ternaries directly in className if it hurts readability
+    // const AlertMessageTernary = ({ message, type }: { message: string; type: 'info' | 'error' }) => (
+    //   <div
+    //     className={`p-4 rounded-md ${
+    //       type === 'error'
+    //         ? 'bg-red-100 text-red-700'
+    //         : 'bg-blue-100 text-blue-700'
+    //     }`}
+    //   >
+    //     {message}
+    //   </div>
+    // );
+    ```
+
+- **Naming Conventions**
+  - **Descriptive Names**
+    - Use descriptive and clear names for variables, functions, constants, and components.
+  - **Event Handlers**
+    - Prefix event handler functions with `handle`. For example, `handleClick` for `onClick`, `handleChange` for `onChange`, `handleSubmit` for `onSubmit`.
+    ```typescript jsx
+    // ✅ DO:
+    const UserProfileCard = ({ user }) => {
+      const handleSubmitForm = (event: React.FormEvent) => {
+        event.preventDefault();
+        // ...
+      };
+      return <form onSubmit={handleSubmitForm}>{/* ... */}</form>;
+    };
+    ```
+
+- **Accessibility (a11y)**
+  - **Implement Accessibility Features**
+    - Ensure all interactive elements are accessible via keyboard and screen readers.
+    - Use semantic HTML elements where appropriate.
+    - Provide `aria-*` attributes to convey state and properties.
+    - Ensure sufficient color contrast.
+    ```typescript jsx
+    // ✅ DO: Implement accessibility features
+    const AccessibleButton = ({ label, onClick }) => (
+      <button
+        type="button"
+        onClick={onClick}
+        className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50"
+        aria-label={label} // Provides an accessible name
+      >
+        {label}
+      </button>
+    );
+
+    const AccessibleLinkDiv = ({ children, onClick, label }) => (
+      <div
+        role="button" // Indicates the div acts as a button
+        tabIndex={0} // Makes it focusable
+        onClick={onClick}
+        onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => { // Added type for e and HTMLDivElement
+          if (e.key === 'Enter' || e.key === ' ') {
+            onClick(e); // Pass event if handler expects it
+          }
+        }}
+        aria-label={label}
+        className="cursor-pointer text-blue-500 hover:underline"
+      >
+        {children}
+      </div>
+    );
+    ```
+    - For custom interactive elements (like a `div` acting as a button), ensure they have `role`, `tabIndex`, and appropriate keyboard event handlers (`onClick`, `onKeyDown` for Enter/Space).
+
+- **Functions and Components**
+  - **Use Const Arrow Functions with Types**
+    - Define React components and helper functions as `const` arrow functions.
+    - Provide TypeScript types for props, state, and function signatures.
+    ```typescript jsx
+    // ✅ DO:
+    type GreeterProps = {
+      name: string;
+    };
+
+    const Greeter: React.FC<GreeterProps> = ({ name }) => {
+      return <p>Hello, {name}!</p>;
+    };
+
+    const addNumbers = (a: number, b: number): number => {
+      return a + b;
+    };
+    ```
+
+- **Project Specific Considerations for Cardio Tracking Nostr App**
+  - *(This section can be expanded with rules specific to your application's architecture, state management, Nostr interactions, or UI patterns for Android/Graphene/Calyx considerations as they emerge.)*
+  - Example: "When displaying timestamps for activities, always use a consistent, user-friendly format that considers the user's locale."
+  - Example: "Ensure that any data sent to Nostr relays is properly sanitized and adheres to relevant NIPs."
