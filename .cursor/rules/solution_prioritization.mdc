@@ -1,0 +1,25 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+- **Prioritize Accuracy Over Speculation**
+    - Always provide solutions based on confirmed information or clearly stated assumptions.
+    - If information is lacking, ask clarifying questions rather than making assumptions.
+
+- **Minimize Complexity**
+    - Favor simple and maintainable approaches.
+    - If multiple approaches exist, recommend the simplest one that meets all requirements.
+
+- **Preserve Existing Functionality**
+    - Ensure solutions do not introduce regressions.
+    - Avoid modifying or removing existing features unless explicitly requested.
+
+- **Avoid Duplication**
+    - Do not duplicate features or capabilities already present in the application.
+    - Before proposing new functionality, check if similar capabilities exist.
+
+- **Clarity and Focus**
+    - Clearly indicate when making assumptions due to incomplete information.
+    - Focus on practical implementation rather than theoretical possibilities.
+    - If additional context is needed for an accurate solution, ask clarifying questions.
