@@ -213,111 +213,25 @@ This document tracks the progress and solutions for the identified issues. Solut
 
 **Reported:** User experiences "Signer required" error and UI shows "Nostr connection not ready..." when trying to create a team on Android with Amber Signer.
 
-**CURRENT STATUS: ACTIVE DEBUGGING - Team Creation Blocked**
+**Initial Analysis:**
+- The issue might stem from the application not recognizing Amber signer's availability or attempting actions before the asynchronous connection with Amber is complete.
+- There appear to be two Nostr context systems: `NostrProvider.jsx` (older, handles Amber directly) and `NostrContext.jsx` (newer, NDK-centric singleton).
+- The UI indicating "NDK not ready" points to a problem with the NDK singleton's initialization, specifically its connection to relays, managed in `NostrContext.jsx` and `ndkSingleton.js`.
 
-**Debug Information from CreateTeamForm Modal:**
-- NDK Ready (Context): NO
-- Public Key (Context): Available (30ceb64e73197a05958c8bd92ab079c815bb44fbfbb3eb5d3...)
-- NDK Signer (Context NDK): Signer NOT Available  
-- NDK Error (Context): None
-- Form Error: None
-- Status: "Nostr connection not ready... (Retry or check connection)"
+**Troubleshooting Steps Taken:**
 
-**Root Cause Analysis:**
-1. **NDK Connection Failure**: The `ndkSingleton.js` is failing to connect to relays via `ndk.connect()`, causing `ndkReadyPromise` to resolve to `false`
-2. **Signer Attachment Dependency**: The signer attachment process in `NostrContext.jsx` depends on NDK being ready first, so when NDK fails, no signer gets attached
-3. **Public Key Available But Unused**: There's a public key in context (authentication worked), but it's not being used because the signer isn't properly attached to the NDK instance
-4. **CreateTeamForm Blocking**: The form correctly blocks submission when `!ndkReadyFromContext || !publicKey || !ndkFromContext?.signer`, which prevents team creation
+1.  **Proposed Solutions (Conceptual):**
+    *   **Option 1 (Easiest):** UI/UX enhancements (disable submit, prominent connection prompt, clear loading state).
+    *   **Option 2 (Medium):** Review/refine Amber integration in `NostrContext` & deep link handling.
+    *   **Option 3 (Hardest):** Re-evaluate/refactor signer abstraction for Amber with NDK.
 
-**Technical Flow Analysis:**
-```
-ndkSingleton.js: ndk.connect() → FAILS
-↓
-NostrContext.jsx: ndkReadyPromise → false  
-↓
-NostrContext.jsx: ensureSignerAttached() → Never runs signer logic properly
-↓
-CreateTeamForm.tsx: ndkReadyFromContext = false, signer = undefined
-↓
-Team creation button disabled, "Nostr connection not ready" message shown
-```
+2.  **Investigation into NDK Readiness:**
+    *   **Focus:** Why the NDK instance (from `ndkSingleton.js`, managed by `NostrContext.jsx`) never reports as ready.
+    *   **Hypothesis:** `ndk.connect()` within `ndkSingleton.js` is failing, likely due to issues with configured relays or network connectivity.
+    *   **Read `src/lib/ndkSingleton.js`:** Confirmed NDK is initialized with `explicitRelayUrls` from `src/config/relays.js`. `ndkReadyPromise` directly reflects the success/failure of `ndk.connect()`.
+    *   **Read `src/config/relays.js`:** Identified the currently configured relays: `wss://relay.damus.io`, `wss://nos.lol`, `wss://relay.nostr.band`.
+    *   **Added Detailed Logging:**
+        *   In `src/lib/ndkSingleton.js`: Logged relay list, messages before/after `ndk.connect()`, and detailed error if `connect()` fails.
+        *   In `src/contexts/NostrContext.jsx`: Logged steps around awaiting `ndkReadyPromise` and subsequent state updates for `ndkReady` and `ndkError`.
 
-**Solution Options (Ordered by Complexity):**
-
-### Option 1: Immediate Connection Diagnostics & Relay Fix (RECOMMENDED FIRST)
-**Complexity: Easy | Impact: High**
-
-**Approach:** Diagnose why relay connections are failing and fix the immediate connection issue.
-
-**Implementation Steps:**
-1. **Enhanced Relay Diagnostics**: Add detailed logging to identify which specific relays are failing
-2. **Relay Configuration Review**: Test current relay list and potentially add backup relays
-3. **Connection Timeout Handling**: Implement proper timeout and retry logic for relay connections
-4. **User Feedback Improvements**: Show specific connection status and retry options
-
-**Code Changes:**
-- Update `src/lib/ndkSingleton.js` with detailed relay connection logging
-- Add fallback/backup relays to `src/config/relays.js`
-- Enhance error reporting in `NostrContext.jsx`
-
-### Option 2: Signer-First Initialization (PARALLEL APPROACH)
-**Complexity: Medium | Impact: Medium**
-
-**Approach:** Allow signer attachment to proceed even when relay connections are pending, since signing doesn't require relays.
-
-**Implementation Steps:**
-1. **Decouple Signer from Relay Status**: Modify `ensureSignerAttached()` to run regardless of relay connection status
-2. **Independent Status Tracking**: Track `signerReady` and `relaysReady` separately
-3. **Progressive Enhancement**: Allow local operations (signing) while relay connections are still establishing
-4. **UI State Updates**: Update UI to show signer vs relay status separately
-
-**Code Changes:**
-- Refactor `NostrContext.jsx` to run signer attachment in parallel with relay connection
-- Update `CreateTeamForm.tsx` to check signer availability separately from relay readiness
-- Modify UI messaging to distinguish between signer and relay issues
-
-### Option 3: Connection Recovery & Resilience (COMPREHENSIVE)
-**Complexity: Hard | Impact: High**
-
-**Approach:** Implement robust connection recovery, multiple initialization strategies, and comprehensive error handling.
-
-**Implementation Steps:**
-1. **Multiple Initialization Strategies**: Try different connection approaches (background, foreground, staged)
-2. **Connection Health Monitoring**: Continuously monitor and auto-recover lost connections
-3. **Graceful Degradation**: Allow app functions that don't require relays to work offline
-4. **User Control**: Provide manual connection controls and detailed diagnostics
-
-**Code Changes:**
-- Complete refactor of `ndkSingleton.js` with retry logic and health monitoring
-- Enhanced `NostrContext.jsx` with connection state machine
-- Advanced UI with connection diagnostics and manual recovery options
-
-### Option 4: Fallback to Direct Nostr Operations (ALTERNATIVE APPROACH)
-**Complexity: Hard | Impact: Medium**
-
-**Approach:** Implement fallback mechanisms that bypass NDK when it fails, using direct nostr-tools operations.
-
-**Implementation Steps:**
-1. **Direct Signing Fallback**: Use nostr-tools directly for signing when NDK signer fails
-2. **Manual Relay Management**: Implement custom relay publishing when NDK pool fails
-3. **Hybrid System**: Use NDK when available, fall back to direct operations when needed
-
-**Code Changes:**
-- Add fallback signing logic in `CreateTeamForm.tsx`
-- Implement direct relay publishing in `NostrTeamsService.ts`
-- Create hybrid publishing utilities
-
-**IMMEDIATE NEXT STEPS (Recommended):**
-
-1. **Start with Option 1**: Focus on relay connection diagnostics
-2. **Add Enhanced Logging**: Get detailed logs about which relays are failing and why
-3. **Test Relay Connectivity**: Verify if the configured relays are accessible
-4. **Quick UI Fix**: Improve the retry mechanism and user feedback
-
-**Expected Debugging Output Needed:**
-- Specific relay connection errors from `ndkSingleton.js`
-- Network connectivity status
-- Amber signer availability confirmation
-- NDK connection timing information
-
-Would you like me to implement Option 1 (relay diagnostics) first, as this is most likely to provide a quick resolution? 
+**Next Step:** User to run the application and provide the new console logs to analyze the NDK connection flow and pinpoint failures. 

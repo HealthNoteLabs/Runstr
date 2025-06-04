@@ -76,27 +76,10 @@ export const ensureSignerAttached = async () => {
     signerAttachmentPromise = (async () => {
       console.log('NostrContext: ensureSignerAttached() called.');
       try {
-        // NOTE: Signer attachment no longer depends on relay connection status
-        // Signers (like Amber or private keys) work locally and don't require relays
-        console.log('NostrContext: Attaching signer to singleton NDK (independent of relay status)...');
+        // NDK connection readiness is awaited separately by the provider
+        console.log('NostrContext: Attaching signer to singleton NDK...');
         const pubkey = await attachSigner(); // attachSigner now operates on the singleton ndk
         console.log(`NostrContext: attachSigner finished. Pubkey: ${pubkey}`);
-        
-        // Verify signer is actually attached to NDK
-        if (pubkey && ndk.signer) {
-          console.log('NostrContext: ✅ Signer successfully attached to NDK instance');
-          try {
-            // Test the signer by getting user info
-            const user = await ndk.signer.user();
-            console.log('NostrContext: ✅ Signer test successful, user pubkey:', user.pubkey);
-          } catch (signerTestError) {
-            console.warn('NostrContext: ⚠️ Signer attached but test failed:', signerTestError);
-            // Don't fail completely - signer might still work for actual operations
-          }
-        } else if (pubkey && !ndk.signer) {
-          console.error('NostrContext: ❌ Pubkey returned but signer not attached to NDK');
-          return { pubkey: null, error: 'Signer attachment failed - signer not found on NDK instance' };
-        }
         
         // Return only pubkey and potential error related to signer attachment
         return { pubkey, error: null };
@@ -163,28 +146,11 @@ export const NostrProvider = ({ children }) => {
       console.log('[NostrProvider] About to await ndkReadyPromise from ndkSingleton.');
       initialNdkConnectionSuccess = await ndkReadyPromise;
       console.log(`[NostrProvider] ndkReadyPromise resolved. Success: ${initialNdkConnectionSuccess}`);
-      
-      // Enhanced logging for connection status
-      if (initialNdkConnectionSuccess) {
-        const stats = ndk.pool?.stats();
-        console.log('[NostrProvider] ✅ NDK connection successful. Pool stats:', stats);
-      } else {
-        console.warn('[NostrProvider] ❌ NDK connection failed. Checking pool status...');
-        const stats = ndk.pool?.stats();
-        console.log('[NostrProvider] Pool stats after failure:', stats);
-      }
-      
     } catch (err) {
       console.error("NostrProvider: Error awaiting ndkReadyPromise:", err);
-      console.error("NostrProvider: Error details:", {
-        message: err.message,
-        stack: err.stack,
-        name: err.name
-      });
       if (isMountedRef.current) {
-        const errorMessage = `NDK connection failed: ${err.message || 'Unknown error'}`;
-        console.log(`[NostrProvider] Setting ndkError due to ndkReadyPromise rejection: ${errorMessage}`);
-        setNdkErrorInternal(errorMessage);
+        console.log(`[NostrProvider] Setting ndkError due to ndkReadyPromise rejection: ${err.message || 'Error awaiting NDK singleton readiness.'}`);
+        setNdkErrorInternal(err.message || 'Error awaiting NDK singleton readiness.');
       }
       // updateNdkStatus will set ndkReadyInternal based on current pool count (likely 0)
     }
@@ -199,36 +165,22 @@ export const NostrProvider = ({ children }) => {
         setNdkErrorInternal(null); // Clear any previous generic NDK errors if initial connect was ok
       } else if (!ndkErrorInternalState) { // Only set error if a more specific one isn't already there
         console.log('[NostrProvider] initialNdkConnectionSuccess is false and ndkErrorInternal is not set. Setting NDK error.');
-        const stats = ndk.pool?.stats();
-        const connectedCount = stats?.connected || 0;
-        const errorMessage = connectedCount > 0 
-          ? `NDK connected to ${connectedCount} relays but initialization reported failure`
-          : 'NDK failed to connect to any relays. Check network connection and relay availability.';
-        setNdkErrorInternal(errorMessage);
+        setNdkErrorInternal('NDK Singleton failed to initialize or connect to relays initially.');
       }
       
       // Attempt to attach signer regardless of initial connection, as signer might be local
-      console.log('>>> NostrProvider: Attempting to attach signer regardless of relay status <<<');
       ensureSignerAttached().then(signerResult => {
         if (!isMountedRef.current) return;
         const finalPubkey = signerResult?.pubkey || null;
         const signerError = signerResult?.error || null;
-        
-        console.log('[NostrProvider] Signer attachment result:', { finalPubkey: finalPubkey ? 'Available' : 'None', signerError });
-        
         if (finalPubkey) {
           setPublicKeyInternal(finalPubkey);
-          console.log('[NostrProvider] ✅ Signer attached successfully, pubkey set');
-          
-          // Update NDK error status based on signer success
           if (!initialNdkConnectionSuccess && !signerError) {
-            console.log('[NostrProvider] NDK connection failed but signer is available - updating error message');
-            setNdkErrorInternal('Relays disconnected but signer is ready. Some functions may be limited.');
+            // If NDK wasn't ready but signer IS, clear NDK error if it was generic
+            // setNdkErrorInternal(null); // This might be too optimistic if relays are still down
           } else if (signerError) {
-              const combinedError = prevError => prevError ? `${prevError} | Signer: ${signerError}` : `Signer error: ${signerError}`;
-              setNdkErrorInternal(combinedError);
+              setNdkErrorInternal(prevError => prevError ? `${prevError} Signer: ${signerError}` : `Signer: ${signerError}`);
           }
-          
           // Fetch lightning address
           try {
             const user = ndk.getUser({ pubkey: finalPubkey });
@@ -245,20 +197,10 @@ export const NostrProvider = ({ children }) => {
             console.warn('NostrProvider: Error constructing user for LUD fetch:', laErr);
           }
         } else if (signerError) {
-          console.error('[NostrProvider] ❌ Signer attachment failed:', signerError);
-          const combinedError = prevError => prevError ? `${prevError} | Signer: ${signerError}` : `Signer error: ${signerError}`;
-          setNdkErrorInternal(combinedError);
-        } else {
-          console.warn('[NostrProvider] ⚠️ No signer attached and no specific error reported');
-          const combinedError = prevError => prevError ? `${prevError} | No signer available` : `No signer available - authentication required`;
-          setNdkErrorInternal(combinedError);
+          setNdkErrorInternal(prevError => prevError ? `${prevError} Signer: ${signerError}` : `Signer: ${signerError}`);
         }
       }).catch(err => {
-          console.error('[NostrProvider] Exception during signer attachment:', err);
-          if(isMountedRef.current) {
-            const combinedError = prevError => prevError ? `${prevError} | Signer Exception: ${err.message}` : `Signer attachment failed: ${err.message}`;
-            setNdkErrorInternal(combinedError);
-          }
+          if(isMountedRef.current) setNdkErrorInternal(prevError => prevError ? `${prevError} Signer Attach Exception: ${err.message}` : `Signer Attach Exception: ${err.message}`);
       });
     }
   }, [updateNdkStatus, ndkErrorInternalState]); // Added ndkErrorInternalState dependency
