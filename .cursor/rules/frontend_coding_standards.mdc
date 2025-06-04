@@ -169,3 +169,143 @@
   - *(This section can be expanded with rules specific to your application's architecture, state management, Nostr interactions, or UI patterns for Android/Graphene/Calyx considerations as they emerge.)*
   - Example: "When displaying timestamps for activities, always use a consistent, user-friendly format that considers the user's locale."
   - Example: "Ensure that any data sent to Nostr relays is properly sanitized and adheres to relevant NIPs."
+
+- **Mobile-First Development Practices**
+  - **Design for Smallest Screens First**
+    - Start by designing and developing for mobile viewports (e.g., 360px width) and then progressively enhance for larger screens (tablets, desktops) using responsive design techniques (e.g., TailwindCSS responsive prefixes like `sm:`, `md:`, `lg:`).
+    ```typescript jsx
+    // ✅ DO: Use TailwindCSS responsive prefixes for mobile-first design
+    const ResponsiveCard = () => (
+      <div className="w-full p-2 bg-gray-100 sm:w-3/4 md:w-1/2 lg:w-1/3 sm:p-4 md:bg-gray-200">
+        <h2 className="text-lg font-semibold sm:text-xl">Responsive Title</h2>
+        <p className="text-sm sm:text-base">This content adapts to screen size.</p>
+      </div>
+    );
+    ```
+  - **Adequate Touch Target Sizes**
+    - Ensure all interactive elements (buttons, links, form inputs) have a minimum touch target size of 44x44 CSS pixels to be easily tappable on mobile devices. Check WCAG guidelines for specifics.
+    - Use padding within or around elements to increase tappable area without necessarily increasing the visual size.
+    ```typescript jsx
+    // ✅ DO: Ensure sufficient touch target size
+    const MobileButton = ({ label, onClick }) => (
+      <button
+        onClick={onClick}
+        className="px-4 py-3 bg-blue-500 text-white rounded min-h-[44px] min-w-[44px] flex items-center justify-center"
+      >
+        {label}
+      </button>
+    );
+    ```
+  - **Viewport Configuration**
+    - Ensure the HTML `head` includes the proper viewport meta tag to control layout on mobile browsers.
+    ```html
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    ```
+  - **Adapt to Device Orientation**
+    - Consider how layouts behave in both portrait and landscape orientations. Use CSS or JavaScript to adapt if necessary, though often a fluid responsive design handles this well.
+
+- **Nostr Protocol Integration Guidelines**
+  - **Adhere to NIPs (Nostr Implementation Possibilities)**
+    - Strictly follow relevant NIPs for features like event kinds, tags, filters, and relay communication. Document any deviations or custom extensions.
+    - Example NIPs: NIP-01 (Basic protocol), NIP-02 (Contact List), NIP-09 (Event Deletion), NIP-29 (Relay-based Groups - if applicable).
+  - **Secure Key Management**
+    - Private keys must be handled with extreme care. Prefer to use established libraries for key generation, storage, and signing.
+    - Never embed private keys directly in the codebase or expose them insecurely.
+    - For client-side applications, explore secure storage options provided by the OS (e.g., Android Keystore) or use Web Crypto API with user-provided keys where appropriate.
+  - **Relay Connection Management**
+    - Implement robust logic for connecting to multiple relays, handling disconnections, and managing subscriptions efficiently.
+    - Avoid overwhelming relays with excessive connections or subscriptions.
+    - Consider using a relay pool manager if available for your stack.
+  - **Event Creation and Validation**
+    - Ensure all created Nostr events are correctly formatted, signed, and have a valid ID before publishing.
+    - Validate incoming events for correct structure and signature if necessary, especially before processing or displaying them.
+  - **Data Sanitization**
+    - Sanitize any user-generated content or data retrieved from Nostr events before rendering it in the UI to prevent XSS attacks (e.g., ensure user names, notes, etc., are treated as text).
+    ```typescript jsx
+    // ✅ DO: Sanitize content before rendering (conceptual example)
+    const NostrNoteDisplay = ({ content }: { content: string }) => {
+      // Assuming `sanitizeHtml` is a function that removes malicious HTML/JS
+      // const sanitizedContent = sanitizeHtml(content);
+      // Or, if simply displaying as text, React handles basic XSS protection by default for string children
+      return <p className="nostr-note-content">{content}</p>;
+    };
+    ```
+
+- **Mobile Performance Optimization**
+  - **Minimize Bundle Size**
+    - Regularly analyze your JavaScript bundle size (e.g., using `webpack-bundle-analyzer` or similar tools for Next.js).
+    - Prefer lightweight libraries and tree-shake unused code.
+    - Implement code splitting (e.g., dynamic imports for routes or components not immediately needed).
+    ```typescript jsx
+    // ✅ DO: Use dynamic imports for code splitting in Next.js/React
+    import dynamic from 'next/dynamic';
+
+    const HeavyComponent = dynamic(() => import('../components/HeavyComponent'), {
+      loading: () => <p>Loading...</p>,
+      ssr: false, // Optional: if component is client-side only
+    });
+
+    const MyPage = () => (
+      <div>
+        <h1>My Page</h1>
+        {/* HeavyComponent will only be loaded when it's about to be rendered */}
+        <HeavyComponent />
+      </div>
+    );
+    ```
+  - **Optimize Assets**
+    - Compress images (use formats like WebP where supported) and use responsive images (`<picture>` element or `srcset` attribute).
+    - Optimize fonts (e.g., WOFF2 format, preload critical fonts).
+  - **Lazy Load UI Components and Images**
+    - Lazy load images that are below the fold.
+    - Lazy load non-critical UI components that are not immediately visible.
+  - **Efficient State Management**
+    - Choose a state management solution appropriate for your app's complexity (React Context, Zustand, Redux, etc.).
+    - Avoid unnecessary re-renders by optimizing components (e.g., `React.memo`, `useCallback`, `useMemo`) and structuring state efficiently.
+  - **Judicious Use of Animations**
+    - Use performant CSS animations (`transform`, `opacity`) over JS-based animations for simple transitions where possible.
+    - Ensure animations are smooth and don't degrade user experience on less powerful devices.
+    - Provide options to reduce or disable animations for users who prefer it.
+
+- **Offline-First and Data Synchronization Patterns**
+  - **Local Data Storage**
+    - For offline capabilities, store essential data locally. (e.g., `AsyncStorage` for React Native, `IndexedDB` or `localStorage` for PWAs/web).
+    - Clearly define what data needs to be available offline.
+    ```typescript
+    // Conceptual example for AsyncStorage in React Native
+    // import AsyncStorage from '@react-native-async-storage/async-storage';
+
+    // const storeUserDataLocally = async (userData) => {
+    //   try {
+    //     const jsonValue = JSON.stringify(userData);
+    //     await AsyncStorage.setItem('@userData', jsonValue);
+    //   } catch (e) {
+    //     // saving error
+    //     console.error('Failed to save user data locally', e);
+    //   }
+    // };
+
+    // const getUserDataLocally = async () => {
+    //   try {
+    //     const jsonValue = await AsyncStorage.getItem('@userData');
+    //     return jsonValue != null ? JSON.parse(jsonValue) : null;
+    //   } catch(e) {
+    //     // error reading value
+    //     console.error('Failed to read user data locally', e);
+    //     return null;
+    //   }
+    // };
+    ```
+  - **Background Synchronization**
+    - Implement strategies to sync local data with the network (Nostr relays) when connectivity is available.
+    - Consider background tasks or service workers for synchronization (platform-dependent).
+  - **Network State Awareness**
+    - Detect network connectivity changes and adapt app behavior (e.g., disable features requiring network, notify user).
+    - Provide visual feedback to the user about the current network status and sync state.
+  - **Conflict Resolution (Basic Considerations)**
+    - If data can be modified both locally and on the network, plan for potential conflicts.
+    - Simple strategies: "last write wins," or prioritizing server/network data.
+    - For complex scenarios, more sophisticated conflict resolution mechanisms might be needed (out of scope for a general rule, but good to be aware of).
+  - **Optimistic Updates**
+    - Improve perceived performance by updating the UI immediately upon user action, and then synchronizing with the network in the background.
+    - Be prepared to handle cases where the background sync fails and the UI needs to be reverted or corrected.
