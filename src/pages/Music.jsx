@@ -34,7 +34,7 @@ export function Music() {
   
   // Debug logging state - TEMPORARY FOR DEBUGGING
   const [debugLogs, setDebugLogs] = useState([]);
-  const [showDebugLogs, setShowDebugLogs] = useState(true);
+  const [showDebugLogs, setShowDebugLogs] = useState(false);
   
   const addDebugLog = (message, type = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
@@ -232,17 +232,41 @@ export function Music() {
     return playlists;
   }, [libraryPlaylists]);
 
-  // Create a virtual playlist object for Blossom library
+  // Create a virtual playlist object for Blossom library with server-specific naming
   const blossomPlaylistDisplay = useMemo(() => {
     if (blossomTracks.length === 0) return [];
     
-    const description = blossomEndpoint && blossomEndpoint !== '' 
-      ? `${blossomTracks.length} tracks from ${blossomEndpoint}`
-      : `${blossomTracks.length} tracks from Blossom servers`;
+    // Extract server name from endpoint for dynamic naming
+    const getServerDisplayName = (endpoint) => {
+      if (!endpoint || endpoint === '') return 'Blossom';
+      
+      const url = endpoint.toLowerCase();
+      if (url.includes('blossom.band')) return 'Blossom.Band';
+      if (url.includes('satellite.earth')) return 'Satellite.Earth';
+      if (url.includes('primal.net')) return 'Primal Blossom';
+      if (url.includes('nostrcheck.me')) return 'NostrCheck';
+      if (url.includes('nostpic.com')) return 'Nostpic';
+      if (url.includes('void.cat')) return 'Void.Cat';
+      
+      // Extract domain name as fallback
+      try {
+        const domain = new URL(endpoint).hostname;
+        return domain.charAt(0).toUpperCase() + domain.slice(1);
+      } catch {
+        return 'Blossom';
+      }
+    };
+    
+    const serverName = getServerDisplayName(blossomEndpoint);
+    const playlistTitle = blossomEndpoint && blossomEndpoint !== '' 
+      ? `${serverName} Playlist`
+      : 'Blossom Music Library';
+    
+    const description = `${blossomTracks.length} tracks`;
     
     return [{
       id: 'blossom',
-      title: 'Blossom Music Library',
+      title: playlistTitle,
       description: description,
       tracks: blossomTracks
     }];

@@ -459,6 +459,7 @@ function convertNip96FileToTrack(file, serverUrl) {
       url: url, // Keep for compatibility
       mediaUrl: url, // Required by AudioPlayerProvider
       source: 'blossom', // Required by AudioPlayerProvider to identify as Blossom track
+      artwork: '🌸', // Flower emoji as default artwork for Blossom tracks
       duration: null, // Will be determined when audio loads
       size: size ? parseInt(size) : null,
       mimeType: mimeType,
@@ -652,6 +653,7 @@ function convertBlossomFileToTrack(file, serverUrl) {
       url: url, // Keep for compatibility
       mediaUrl: url, // Required by AudioPlayerProvider
       source: 'blossom', // Required by AudioPlayerProvider to identify as Blossom track
+      artwork: '🌸', // Flower emoji as default artwork for Blossom tracks
       duration: null, // Will be determined when audio loads
       size: size ? parseInt(size) : null,
       mimeType: mimeType,
@@ -743,6 +745,7 @@ async function getTracksFromNostr(pubkey) {
           url: url, // Keep for compatibility
           mediaUrl: url, // Required by AudioPlayerProvider
           source: 'blossom', // Required by AudioPlayerProvider to identify as Blossom track
+          artwork: '🌸', // Flower emoji as default artwork for Blossom tracks
           duration: null,
           size: tagMap.size ? parseInt(tagMap.size) : null,
           mimeType: mimeType,

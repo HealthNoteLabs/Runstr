@@ -54,6 +54,97 @@ if (ndk && ndk.signer) {
 
 ---
 
+## Bug Fix #3: Blossom Music Integration UI Improvements
+
+**Date:** 2025-01-14  
+**Reporter:** User  
+**Severity:** Low (UI Enhancement)  
+**Status:** ✅ Fixed  
+
+### Problem Description
+
+User requested three UI improvements for the Blossom music integration:
+
+1. **Artwork Issue**: Blossom tracks were trying to show metadata artwork but likely showing broken images or generic icons
+2. **Redundant Naming**: The interface showed "Blossom Music Library" twice, which was redundant
+3. **Debug Panel Visibility**: Debug logs were always visible and cluttering the UI
+
+### Requested Changes
+
+1. **Replace Blossom artwork with flower placeholder**: Show flower emoji (🌸) as default artwork for all Blossom tracks, keep WavLake artwork unchanged
+2. **Dynamic playlist naming**: Show server-specific names like "Blossom.Band Playlist", "Satellite.Earth Playlist", etc.
+3. **Hide debug panel by default**: Make debug logs hidden by default with option to show when needed
+
+### Implementation Details
+
+**✅ Flower Artwork for Blossom Tracks:**
+```javascript
+// Added to all Blossom track conversion functions:
+artwork: '🌸', // Flower emoji as default artwork for Blossom tracks
+```
+- Updated `convertBlossomFileToTrack()` function
+- Updated `convertNip96FileToTrack()` function  
+- Updated Nostr track creation in `getTracksFromNostr()`
+- Only affects Blossom tracks, WavLake tracks keep their original artwork
+
+**✅ Server-Specific Playlist Naming:**
+```javascript
+// Dynamic naming based on server URL:
+const getServerDisplayName = (endpoint) => {
+  if (url.includes('blossom.band')) return 'Blossom.Band';
+  if (url.includes('satellite.earth')) return 'Satellite.Earth';
+  if (url.includes('primal.net')) return 'Primal Blossom';
+  // ... more server mappings
+};
+
+const playlistTitle = blossomEndpoint && blossomEndpoint !== '' 
+  ? `${serverName} Playlist`
+  : 'Blossom Music Library';
+```
+- Extracts server name from endpoint URL
+- Shows "Blossom.Band Playlist" for blossom.band
+- Shows "Satellite.Earth Playlist" for cdn.satellite.earth
+- Falls back to "Blossom Music Library" for multiple servers
+
+**✅ Hidden Debug Panel:**
+```javascript
+// Changed default state:
+const [showDebugLogs, setShowDebugLogs] = useState(false); // Hide by default
+```
+- Debug panel hidden by default
+- "🔧 Show Debug Logs" button available when hidden
+- Clear/Hide controls when panel is visible
+- All debug functionality preserved for future troubleshooting
+
+### User Experience Improvements
+
+**Before:**
+- Blossom tracks showed broken/generic artwork
+- Interface said "Blossom Music Library" redundantly
+- Debug logs always visible and cluttering UI
+
+**After:**
+- Blossom tracks show consistent flower emoji artwork (🌸)
+- Server-specific playlist names: "Blossom.Band Playlist", "Satellite.Earth Playlist"
+- Clean UI with debug panel hidden by default
+- Debug functionality still available when needed
+
+### Technical Notes
+
+- **Zero Breaking Changes**: All existing functionality preserved
+- **Artwork Consistency**: Only Blossom tracks affected, WavLake tracks unchanged
+- **Server Detection**: Robust URL parsing with fallbacks
+- **Debug Preservation**: Full debug capability maintained for future issues
+
+### Files Modified
+
+- `src/lib/blossom.js`: Added flower artwork to all track conversion functions
+- `src/pages/Music.jsx`: Updated playlist naming logic and debug panel visibility
+
+**Result:** Clean, professional UI with server-specific branding and consistent Blossom track artwork.
+
+---
+
 ## Issues (Ordered Easiest to Hardest Estimate)
 
 0.  **[~] General Toggle Unresponsiveness**
@@ -732,5 +823,96 @@ endpoints = [
 - ✅ Build completed successfully
 - ⏳ Awaiting user testing with actual servers
 - 📋 Debug system in place for real-time troubleshooting
+
+---
+
+## Bug Fix #3: Blossom Music Integration UI Improvements
+
+**Date:** 2025-01-14  
+**Reporter:** User  
+**Severity:** Low (UI Enhancement)  
+**Status:** ✅ Fixed  
+
+### Problem Description
+
+User requested three UI improvements for the Blossom music integration:
+
+1. **Artwork Issue**: Blossom tracks were trying to show metadata artwork but likely showing broken images or generic icons
+2. **Redundant Naming**: The interface showed "Blossom Music Library" twice, which was redundant
+3. **Debug Panel Visibility**: Debug logs were always visible and cluttering the UI
+
+### Requested Changes
+
+1. **Replace Blossom artwork with flower placeholder**: Show flower emoji (🌸) as default artwork for all Blossom tracks, keep WavLake artwork unchanged
+2. **Dynamic playlist naming**: Show server-specific names like "Blossom.Band Playlist", "Satellite.Earth Playlist", etc.
+3. **Hide debug panel by default**: Make debug logs hidden by default with option to show when needed
+
+### Implementation Details
+
+**✅ Flower Artwork for Blossom Tracks:**
+```javascript
+// Added to all Blossom track conversion functions:
+artwork: '🌸', // Flower emoji as default artwork for Blossom tracks
+```
+- Updated `convertBlossomFileToTrack()` function
+- Updated `convertNip96FileToTrack()` function  
+- Updated Nostr track creation in `getTracksFromNostr()`
+- Only affects Blossom tracks, WavLake tracks keep their original artwork
+
+**✅ Server-Specific Playlist Naming:**
+```javascript
+// Dynamic naming based on server URL:
+const getServerDisplayName = (endpoint) => {
+  if (url.includes('blossom.band')) return 'Blossom.Band';
+  if (url.includes('satellite.earth')) return 'Satellite.Earth';
+  if (url.includes('primal.net')) return 'Primal Blossom';
+  // ... more server mappings
+};
+
+const playlistTitle = blossomEndpoint && blossomEndpoint !== '' 
+  ? `${serverName} Playlist`
+  : 'Blossom Music Library';
+```
+- Extracts server name from endpoint URL
+- Shows "Blossom.Band Playlist" for blossom.band
+- Shows "Satellite.Earth Playlist" for cdn.satellite.earth
+- Falls back to "Blossom Music Library" for multiple servers
+
+**✅ Hidden Debug Panel:**
+```javascript
+// Changed default state:
+const [showDebugLogs, setShowDebugLogs] = useState(false); // Hide by default
+```
+- Debug panel hidden by default
+- "🔧 Show Debug Logs" button available when hidden
+- Clear/Hide controls when panel is visible
+- All debug functionality preserved for future troubleshooting
+
+### User Experience Improvements
+
+**Before:**
+- Blossom tracks showed broken/generic artwork
+- Interface said "Blossom Music Library" redundantly
+- Debug logs always visible and cluttering UI
+
+**After:**
+- Blossom tracks show consistent flower emoji artwork (🌸)
+- Server-specific playlist names: "Blossom.Band Playlist", "Satellite.Earth Playlist"
+- Clean UI with debug panel hidden by default
+- Debug functionality still available when needed
+
+### Technical Notes
+
+- **Zero Breaking Changes**: All existing functionality preserved
+- **Artwork Consistency**: Only Blossom tracks affected, WavLake tracks unchanged
+- **Server Detection**: Robust URL parsing with fallbacks
+- **Debug Preservation**: Full debug capability maintained for future issues
+
+### Files Modified
+
+- `src/lib/blossom.js`: Added flower artwork to all track conversion functions
+- `src/pages/Music.jsx`: Updated playlist naming logic and debug panel visibility
+
+**Result:** Clean, professional UI with server-specific branding and consistent Blossom track artwork.
 
 --- 
