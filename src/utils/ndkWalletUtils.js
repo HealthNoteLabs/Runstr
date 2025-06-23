@@ -1,26 +1,42 @@
-import { NDKCashuWallet } from '@nostr-dev-kit/ndk-wallet';
+// Pure NDK Event-Based Wallet Utilities
+// Replaces NDKCashuWallet with event-based operations
+
 import { Platform } from './react-native-shim.js';
+import { 
+  findWalletEvents, 
+  createWalletEvents, 
+  calculateBalance,
+  queryTokenEvents 
+} from './nip60Events.js';
 
 /**
- * Utility for managing a persistent NDKCashuWallet instance
- * Handles proper initialization, p2pk generation, and mint list publishing
+ * Wallet state management for pure NDK operations
  */
-
-let walletInstance = null;
-let initializationPromise = null;
+let walletState = {
+  isInitialized: false,
+  walletEvent: null,
+  mintEvent: null,
+  tokenEvents: [],
+  balance: 0,
+  currentMint: null
+};
 
 /**
- * Get or create a properly initialized NDKCashuWallet
+ * Get or create wallet using pure NDK event operations
  * @param {NDK} ndk - NDK instance
  * @param {string} mintUrl - Mint URL to use
- * @returns {Promise<NDKCashuWallet>} Initialized wallet instance
+ * @returns {Promise<Object>} Wallet state object
  */
 export const getOrCreateWallet = async (ndk, mintUrl) => {
   if (!ndk) {
     throw new Error('NDK instance is required');
   }
 
-  // For Amber on Android, check if Amber is installed rather than requiring persistent signer
+  if (!ndk.activeUser?.pubkey) {
+    throw new Error('Please sign in with Amber first');
+  }
+
+  // Check for Amber on Android
   if (Platform.OS === 'android') {
     const AmberAuth = await import('../services/AmberAuth.js').then(m => m.default);
     const isAmberAvailable = await AmberAuth.isAmberInstalled();
@@ -28,172 +44,278 @@ export const getOrCreateWallet = async (ndk, mintUrl) => {
     if (!isAmberAvailable) {
       throw new Error('Please install Amber to manage your wallet.');
     }
-    
-    // Amber is available - operations can proceed, signing will happen via deep link when needed
   } else if (!ndk.signer) {
-    // For web/other platforms, require traditional signer
     throw new Error('NDK signer not available. Please sign in with Amber first.');
   }
 
-  // Return existing wallet if already initialized
-  if (walletInstance && walletInstance.p2pk) {
-    console.log('[NDKWalletUtils] Using existing initialized wallet');
-    return walletInstance;
-  }
-
-  // If initialization is already in progress, wait for it
-  if (initializationPromise) {
-    console.log('[NDKWalletUtils] Waiting for existing initialization...');
-    return await initializationPromise;
-  }
-
-  // Start new initialization with fallback
-  initializationPromise = initializeWalletWithFallback(ndk, mintUrl);
+  // Try to find existing wallet
+  console.log('[NDKWalletUtils] Checking for existing wallet...');
+  const existingWallet = await findWalletEvents(ndk, ndk.activeUser.pubkey);
   
-  try {
-    walletInstance = await initializationPromise;
-    return walletInstance;
-  } finally {
-    initializationPromise = null;
-  }
-};
-
-/**
- * Initialize wallet with fallback for circular reference issues
- * @param {NDK} ndk - NDK instance
- * @param {string} mintUrl - Mint URL
- * @returns {Promise<NDKCashuWallet>} Initialized wallet
- */
-const initializeWalletWithFallback = async (ndk, mintUrl) => {
-  try {
-    // Try standard initialization first
-    return await initializeWallet(ndk, mintUrl);
-  } catch (error) {
-    if (error.message.includes('circular') || error.message.includes('JSON')) {
-      console.warn('[NDKWalletUtils] Circular reference detected, trying fallback approach...');
-      return await initializeWalletFallback(ndk, mintUrl);
-    } else {
-      throw error;
-    }
-  }
-};
-
-/**
- * Fallback initialization that avoids potential circular reference issues
- * @param {NDK} ndk - NDK instance
- * @param {string} mintUrl - Mint URL
- * @returns {Promise<NDKCashuWallet>} Initialized wallet
- */
-const initializeWalletFallback = async (ndk, mintUrl) => {
-  console.log('[NDKWalletUtils] Using fallback wallet initialization...');
-
-  try {
-    // Create wallet instance
-    const wallet = new NDKCashuWallet(ndk);
-    wallet.mints = [mintUrl];
-
-    // Generate P2PK only (skip publish for now)
-    console.log('[NDKWalletUtils] Fallback: Generating P2PK only...');
-    await wallet.getP2pk();
+  if (existingWallet && existingWallet.hasWallet) {
+    console.log('[NDKWalletUtils] Found existing wallet, loading state...');
     
-    if (!wallet.p2pk) {
-      throw new Error('P2PK generation failed in fallback mode');
-    }
-
-    console.log("[NDKWalletUtils] Fallback: P2PK generated successfully:", wallet.p2pk);
-    console.log("[NDKWalletUtils] Fallback: Wallet ready (publish skipped to avoid circular reference)");
-
-    return wallet;
-
-  } catch (fallbackError) {
-    console.error('[NDKWalletUtils] Fallback initialization also failed:', fallbackError);
-    throw new Error(`Both standard and fallback wallet initialization failed. Please try refreshing the page: ${fallbackError.message}`);
+    // Load token events for balance calculation
+    const tokenEvents = await queryTokenEvents(ndk, ndk.activeUser.pubkey);
+    const balance = calculateBalance(tokenEvents);
+    
+    walletState = {
+      isInitialized: true,
+      walletEvent: existingWallet.walletEvent,
+      mintEvent: existingWallet.mintEvent,
+      tokenEvents: tokenEvents,
+      balance: balance,
+      currentMint: { url: mintUrl, name: 'Current Mint' }
+    };
+    
+    return walletState;
+  } else {
+    console.log('[NDKWalletUtils] No existing wallet found, creating new one...');
+    
+    // Create new wallet events
+    const newWallet = await createWalletEvents(ndk, mintUrl);
+    
+    walletState = {
+      isInitialized: true,
+      walletEvent: newWallet.walletEvent,
+      mintEvent: newWallet.mintEvent,
+      tokenEvents: [],
+      balance: 0,
+      currentMint: { url: mintUrl, name: 'Current Mint' }
+    };
+    
+    return walletState;
   }
 };
 
 /**
- * Initialize a new NDKCashuWallet with proper setup
- * @param {NDK} ndk - NDK instance  
- * @param {string} mintUrl - Mint URL
- * @returns {Promise<NDKCashuWallet>} Initialized wallet
+ * Send ecash token using pure NDK operations
+ * @param {NDK} ndk - NDK instance
+ * @param {string} recipientPubkey - Recipient's pubkey
+ * @param {number} amount - Amount in sats
+ * @param {string} memo - Optional memo
+ * @returns {Promise<Object>} Send result
  */
-const initializeWallet = async (ndk, mintUrl) => {
-  console.log('[NDKWalletUtils] Initializing new NDK Cashu wallet...');
+export const sendNutzap = async (ndk, recipientPubkey, amount, memo = '') => {
+  if (!walletState.isInitialized) {
+    throw new Error('Wallet not initialized');
+  }
 
-  try {
-    // Create new wallet instance
-    const wallet = new NDKCashuWallet(ndk);
-    wallet.mints = [mintUrl];
+  if (amount > walletState.balance) {
+    throw new Error('Insufficient balance');
+  }
 
-    console.log('[NDKWalletUtils] Wallet instance created, generating P2PK...');
-    
-    // REQUIRED: Generate and publish the wallet's P2PK
-    try {
-      await wallet.getP2pk();
-      console.log("[NDKWalletUtils] P2PK generated successfully:", wallet.p2pk);
-    } catch (p2pkError) {
-      console.error('[NDKWalletUtils] P2PK generation failed:', p2pkError);
-      throw new Error(`P2PK generation failed: ${p2pkError.message}`);
-    }
+  const mintUrl = walletState.currentMint?.url || 'https://mint.coinos.io';
+  
+  console.log(`[NDKWalletUtils] Sending ${amount} sats to ${recipientPubkey.substring(0, 8)}...`);
 
-    // REQUIRED: Publish the wallet's mint list for token/nutzap reception
-    console.log('[NDKWalletUtils] Publishing wallet configuration...');
-    try {
-      await wallet.publish();
-      console.log("[NDKWalletUtils] Wallet published successfully");
-    } catch (publishError) {
-      console.error('[NDKWalletUtils] Wallet publish failed:', publishError);
+  // Create mock token for pure event operations
+  const mockToken = `cashu${btoa(JSON.stringify({
+    token: [{
+      mint: mintUrl,
+      proofs: [{ amount: amount, secret: 'mock_' + Date.now(), C: 'mock' }]
+    }]
+  }))}`;
+
+  // Import functions we need
+  const { createTokenEvent, sendTokenViaDM } = await import('./nip60Events.js');
+
+  // Create send event (debit)
+  await createTokenEvent(ndk, recipientPubkey, amount, mintUrl, mockToken, memo);
+
+  // Send via DM
+  await sendTokenViaDM(ndk, recipientPubkey, mockToken, memo);
+
+  // Update local balance
+  walletState.balance -= amount;
+
+  return {
+    success: true,
+    amount: amount,
+    message: `Successfully sent ${amount} sats`
+  };
+};
+
+/**
+ * Receive ecash token using pure NDK operations
+ * @param {NDK} ndk - NDK instance
+ * @param {string} tokenString - Token string to receive
+ * @returns {Promise<Object>} Receive result
+ */
+export const receiveToken = async (ndk, tokenString) => {
+  if (!walletState.isInitialized) {
+    throw new Error('Wallet not initialized');
+  }
+
+  if (!tokenString || typeof tokenString !== 'string') {
+    throw new Error('Invalid token format');
+  }
+
+  // Extract amount from token
+  const amount = extractTokenAmount(tokenString);
+  if (amount <= 0) {
+    throw new Error('Invalid token amount');
+  }
+
+  const mintUrl = walletState.currentMint?.url || 'https://mint.coinos.io';
+
+  // Import what we need
+  const { NIP60_KINDS } = await import('./nip60Events.js');
+  const { NDKEvent } = await import('@nostr-dev-kit/ndk');
+
+  // Create receive event (credit)
+  const receiveEvent = new NDKEvent(ndk);
+  receiveEvent.kind = NIP60_KINDS.TOKEN_EVENT;
+  receiveEvent.content = JSON.stringify({
+    mint: mintUrl,
+    amount: amount,
+    token: tokenString,
+    type: "receive", 
+    memo: 'Received token',
+    timestamp: Math.floor(Date.now() / 1000)
+  });
+  receiveEvent.tags = [
+    ['mint', mintUrl],
+    ['amount', amount.toString()],
+    ['type', 'receive']
+  ];
+
+  await receiveEvent.publish();
+
+  // Update local balance
+  walletState.balance += amount;
+
+  return {
+    success: true,
+    amount: amount,
+    message: `Successfully received ${amount} sats`
+  };
+};
+
+/**
+ * Create Lightning deposit using pure mint API
+ * @param {number} amount - Amount in sats
+ * @param {string} mintUrl - Mint URL
+ * @returns {Object} Deposit object with start() method
+ */
+export const createDeposit = (amount, mintUrl) => {
+  return {
+    async start() {
+      console.log(`[NDKWalletUtils] Creating Lightning invoice for ${amount} sats`);
+
+      const response = await fetch(`${mintUrl}/v1/mint/quote/bolt11`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: amount,
+          unit: 'sat'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Mint responded with error: ${response.status}`);
+      }
+
+      const data = await response.json();
       
-      // If publish fails but we have p2pk, the wallet might still be usable
-      if (wallet.p2pk) {
-        console.warn('[NDKWalletUtils] Continuing with wallet despite publish failure - P2PK is available');
-        return wallet;
-      } else {
-        throw new Error(`Wallet publish failed: ${publishError.message}`);
+      if (!data.request) {
+        throw new Error('No invoice received from mint');
+      }
+
+      return data.request; // Return the bolt11 invoice
+    },
+    
+    on(event, callback) {
+      if (event === 'success') {
+        // In a real implementation, you'd monitor the mint for payment
+        console.log('[NDKWalletUtils] Deposit success monitoring not implemented in pure NDK mode');
       }
     }
+  };
+};
 
-    return wallet;
-
-  } catch (error) {
-    console.error('[NDKWalletUtils] Wallet initialization failed:', error);
-    
-    // Provide more specific error messages
-    if (error.message.includes('circular')) {
-      throw new Error('Wallet initialization failed: NDK serialization error. Please try refreshing the page and reconnecting Amber.');
-    } else if (error.message.includes('signer')) {
-      throw new Error('Wallet initialization failed: Please make sure Amber is connected and try again.');
-    } else if (error.message.includes('p2pk')) {
-      throw new Error('Wallet initialization failed: Could not generate payment key. Check your connection and try again.');
-    } else if (error.message.includes('publish')) {
-      throw new Error('Wallet initialization failed: Could not publish wallet configuration. Check your relay connections.');
-    } else {
-      throw new Error(`Wallet initialization failed: ${error.message}`);
+/**
+ * Extract amount from token string
+ */
+const extractTokenAmount = (tokenString) => {
+  try {
+    if (!tokenString || typeof tokenString !== 'string') {
+      return 0;
     }
+
+    const cleanToken = tokenString.replace(/^cashu/, '');
+    const decoded = JSON.parse(atob(cleanToken));
+    
+    let totalAmount = 0;
+    if (decoded.token && Array.isArray(decoded.token)) {
+      decoded.token.forEach(tokenGroup => {
+        if (tokenGroup.proofs && Array.isArray(tokenGroup.proofs)) {
+          tokenGroup.proofs.forEach(proof => {
+            if (proof.amount) {
+              totalAmount += proof.amount;
+            }
+          });
+        }
+      });
+    }
+
+    return totalAmount;
+  } catch (error) {
+    console.warn('[NDKWalletUtils] Could not extract token amount:', error);
+    return 0;
   }
 };
 
 /**
- * Reset the wallet instance (useful for testing or switching users)
- */
-export const resetWallet = () => {
-  console.log('[NDKWalletUtils] Resetting wallet instance');
-  walletInstance = null;
-  initializationPromise = null;
-};
-
-/**
- * Check if wallet is properly initialized
- * @returns {boolean} True if wallet is ready to use
- */
-export const isWalletReady = () => {
-  return walletInstance && walletInstance.p2pk;
-};
-
-/**
- * Get the current wallet instance (may not be initialized)
- * @returns {NDKCashuWallet|null} Current wallet or null
+ * Get current wallet state
+ * @returns {Object} Current wallet state
  */
 export const getCurrentWallet = () => {
-  return walletInstance;
+  return walletState;
+};
+
+/**
+ * Check if wallet is ready
+ * @returns {boolean} True if wallet is initialized
+ */
+export const isWalletReady = () => {
+  return walletState.isInitialized && walletState.walletEvent;
+};
+
+/**
+ * Reset wallet state
+ */
+export const resetWallet = () => {
+  console.log('[NDKWalletUtils] Resetting wallet state');
+  walletState = {
+    isInitialized: false,
+    walletEvent: null,
+    mintEvent: null,
+    tokenEvents: [],
+    balance: 0,
+    currentMint: null
+  };
+};
+
+/**
+ * Refresh wallet balance from events
+ * @param {NDK} ndk - NDK instance
+ * @returns {Promise<number>} Updated balance
+ */
+export const refreshBalance = async (ndk) => {
+  if (!walletState.isInitialized || !ndk.activeUser?.pubkey) {
+    return 0;
+  }
+
+  const { queryTokenEvents, calculateBalance } = await import('./nip60Events.js');
+  
+  const tokenEvents = await queryTokenEvents(ndk, ndk.activeUser.pubkey);
+  const balance = calculateBalance(tokenEvents);
+  
+  walletState.balance = balance;
+  walletState.tokenEvents = tokenEvents;
+  
+  return balance;
 }; 

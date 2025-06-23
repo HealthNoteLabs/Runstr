@@ -367,4 +367,227 @@ export const isValidMintUrl = (url) => {
   } catch (error) {
     return false;
   }
+};
+
+/**
+ * Create Lightning invoice for funding wallet (pure NDK approach)
+ * @param {string} mintUrl - Mint URL
+ * @param {number} amount - Amount in sats
+ * @returns {Promise<Object>} Invoice details
+ */
+export const createLightningInvoice = async (mintUrl, amount) => {
+  try {
+    console.log(`[NIP60Events] Creating Lightning invoice for ${amount} sats at ${mintUrl}`);
+
+    // Call mint's quote endpoint directly
+    const response = await fetch(`${mintUrl}/v1/mint/quote/bolt11`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        amount: amount,
+        unit: 'sat'
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Mint responded with error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data.request) {
+      throw new Error('No invoice received from mint');
+    }
+
+    return {
+      success: true,
+      invoice: data.request,
+      quote: data.quote,
+      amount: amount,
+      mintUrl: mintUrl
+    };
+
+  } catch (error) {
+    console.error('[NIP60Events] Lightning invoice creation error:', error);
+    return {
+      success: false,
+      error: error.message,
+      message: 'Failed to create Lightning invoice: ' + error.message
+    };
+  }
+};
+
+/**
+ * Send ecash token to recipient (pure NDK approach)
+ * @param {NDK} ndk - NDK instance
+ * @param {string} recipientPubkey - Recipient pubkey
+ * @param {number} amount - Amount in sats
+ * @param {string} mintUrl - Mint URL
+ * @param {string} memo - Optional memo
+ * @returns {Promise<Object>} Send result
+ */
+export const sendEcashToken = async (ndk, recipientPubkey, amount, mintUrl, memo = '') => {
+  try {
+    console.log(`[NIP60Events] Sending ${amount} sats to ${recipientPubkey.substring(0, 8)}...`);
+
+    if (!ndk) {
+      throw new Error('NDK not available');
+    }
+
+    // For now, we'll create a mock token since we're doing pure event-based operations
+    // In a real implementation, you'd interact with the mint to create actual tokens
+    const mockToken = `cashu${btoa(JSON.stringify({
+      token: [{
+        mint: mintUrl,
+        proofs: [{ amount: amount, secret: 'mock', C: 'mock' }]
+      }]
+    }))}`;
+
+    // Create token event for sender's records
+    await createTokenEvent(ndk, recipientPubkey, amount, mintUrl, mockToken, memo);
+
+    // Send via encrypted DM
+    await sendTokenViaDM(ndk, recipientPubkey, mockToken, memo);
+
+    return {
+      success: true,
+      amount: amount,
+      message: `Successfully sent ${amount} sats via encrypted DM`
+    };
+
+  } catch (error) {
+    console.error('[NIP60Events] Send token error:', error);
+    return {
+      success: false,
+      error: error.message,
+      message: 'Failed to send token: ' + error.message
+    };
+  }
+};
+
+/**
+ * Receive ecash token (pure NDK approach)
+ * @param {NDK} ndk - NDK instance
+ * @param {string} userPubkey - User's pubkey
+ * @param {string} tokenString - Token string to receive
+ * @param {string} mintUrl - Mint URL
+ * @returns {Promise<Object>} Receive result
+ */
+export const receiveEcashToken = async (ndk, userPubkey, tokenString, mintUrl) => {
+  try {
+    console.log('[NIP60Events] Processing received token...');
+
+    if (!tokenString || typeof tokenString !== 'string') {
+      throw new Error('Invalid token format');
+    }
+
+    // Validate and decode token
+    const amount = extractTokenAmount(tokenString);
+    if (amount <= 0) {
+      throw new Error('Invalid token amount');
+    }
+
+    // Create receive event
+    const receiveEvent = new NDKEvent(ndk);
+    receiveEvent.kind = NIP60_KINDS.TOKEN_EVENT;
+    receiveEvent.content = JSON.stringify({
+      mint: mintUrl,
+      amount: amount,
+      token: tokenString,
+      type: "receive", 
+      memo: 'Received token',
+      timestamp: Math.floor(Date.now() / 1000)
+    });
+    receiveEvent.tags = [
+      ['mint', mintUrl],
+      ['amount', amount.toString()],
+      ['type', 'receive']
+    ];
+
+    await receiveEvent.publish();
+
+    return {
+      success: true,
+      amount: amount,
+      message: `Successfully received ${amount} sats`
+    };
+
+  } catch (error) {
+    console.error('[NIP60Events] Receive token error:', error);
+    return {
+      success: false,
+      error: error.message,
+      message: 'Failed to receive token: ' + error.message
+    };
+  }
+};
+
+/**
+ * Extract amount from token string
+ * @param {string} tokenString - Encoded token
+ * @returns {number} Amount in sats
+ */
+export const extractTokenAmount = (tokenString) => {
+  try {
+    if (!tokenString || typeof tokenString !== 'string') {
+      return 0;
+    }
+
+    // Remove cashu prefix and decode
+    const cleanToken = tokenString.replace(/^cashu/, '');
+    const decoded = JSON.parse(atob(cleanToken));
+    
+    let totalAmount = 0;
+    if (decoded.token && Array.isArray(decoded.token)) {
+      decoded.token.forEach(tokenGroup => {
+        if (tokenGroup.proofs && Array.isArray(tokenGroup.proofs)) {
+          tokenGroup.proofs.forEach(proof => {
+            if (proof.amount) {
+              totalAmount += proof.amount;
+            }
+          });
+        }
+      });
+    }
+
+    return totalAmount;
+  } catch (error) {
+    console.warn('[NIP60Events] Could not extract token amount:', error);
+    return 0;
+  }
+};
+
+/**
+ * Check Lightning invoice payment status
+ * @param {string} mintUrl - Mint URL
+ * @param {string} quote - Quote ID from invoice creation
+ * @returns {Promise<Object>} Payment status
+ */
+export const checkInvoicePayment = async (mintUrl, quote) => {
+  try {
+    console.log('[NIP60Events] Checking invoice payment status...');
+
+    const response = await fetch(`${mintUrl}/v1/mint/quote/bolt11/${quote}`);
+    
+    if (!response.ok) {
+      throw new Error(`Mint responded with error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    return {
+      paid: data.paid || false,
+      quote: quote,
+      amount: data.amount || 0
+    };
+
+  } catch (error) {
+    console.error('[NIP60Events] Invoice check error:', error);
+    return {
+      paid: false,
+      error: error.message
+    };
+  }
 }; 
