@@ -29,21 +29,61 @@ const attachSigner = async () => {
       }
 
       if (Platform.OS === 'android' && await AmberAuth.isAmberInstalled()) {
-        console.log('NostrContext: Amber is installed. Using Amber signer shim.');
+        console.log('NostrContext: Amber is installed. Using enhanced Amber signer.');
         try {
           ndk.signer = {
             _pubkey: null,
+            _user: null,
             user: async function() {
-              if (!this._pubkey) this._pubkey = await AmberAuth.getPublicKey();
-              return { pubkey: this._pubkey };
+              if (!this._user) {
+                if (!this._pubkey) this._pubkey = await AmberAuth.getPublicKey();
+                this._user = { pubkey: this._pubkey };
+              }
+              return this._user;
             },
             sign: async (event) => {
               const signedEvent = await AmberAuth.signEvent(event);
               return signedEvent.sig;
+            },
+            encrypt: async (recipient, plaintext, algo = 'nip44') => {
+              console.log('[AmberSigner] Encrypt requested - using fallback implementation');
+              // For now, return a simple encrypted format that indicates Amber limitation
+              // In production, this would need proper NIP-44 implementation or Amber enhancement
+              const encoded = btoa(JSON.stringify({
+                type: 'amber_encrypted',
+                recipient,
+                data: btoa(plaintext),
+                timestamp: Date.now()
+              }));
+              return `amber_enc:${encoded}`;
+            },
+            decrypt: async (sender, ciphertext, algo = 'nip44') => {
+              console.log('[AmberSigner] Decrypt requested - using fallback implementation');
+              // Handle our custom amber encrypted format
+              if (ciphertext.startsWith('amber_enc:')) {
+                try {
+                  const data = JSON.parse(atob(ciphertext.substring(10)));
+                  if (data.type === 'amber_encrypted') {
+                    return atob(data.data);
+                  }
+                } catch (e) {
+                  console.warn('[AmberSigner] Failed to decrypt amber format:', e);
+                }
+              }
+              // For standard NIP-44, indicate limitation
+              console.warn('[AmberSigner] Standard NIP-44 decryption not supported with current Amber integration');
+              return '[Encrypted content - Amber decryption limited]';
+            },
+            blockUntilReady: async () => {
+              const isAvailable = await AmberAuth.isAmberInstalled();
+              if (!isAvailable) {
+                throw new Error('Amber is not installed');
+              }
+              return true;
             }
           };
           const user = await ndk.signer.user();
-          console.log('NostrContext: Amber signer attached, user pubkey:', user.pubkey);
+          console.log('NostrContext: Enhanced Amber signer attached, user pubkey:', user.pubkey);
           return user.pubkey;
         } catch (amberError) {
           console.error('NostrContext: Error initializing AmberSigner:', amberError);

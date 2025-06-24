@@ -1,6 +1,6 @@
 import { useEffect, useContext, useState } from 'react';
 import { NostrContext } from '../contexts/NostrContext';
-import { WalletContext } from '../contexts/WalletContext.jsx';
+import { useNDKWallet } from '../contexts/NDKWalletContext';
 import { useRunFeed } from '../hooks/useRunFeed';
 import { usePostInteractions } from '../hooks/usePostInteractions';
 import { PostList } from '../components/PostList';
@@ -10,7 +10,7 @@ import '../components/RunClub.css';
 
 export const RunClub = () => {
   const { defaultZapAmount } = useContext(NostrContext);
-  const { wallet } = useContext(WalletContext);
+  const { wallet } = useNDKWallet();
   const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Feed hook

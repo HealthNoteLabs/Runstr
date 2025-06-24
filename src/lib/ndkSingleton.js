@@ -1,15 +1,29 @@
 // Lightweight JS fallback so Node diagnostics can run without TS loader.
 import NDK from '@nostr-dev-kit/ndk';
+import NDKCacheAdapterDexie from '@nostr-dev-kit/ndk-cache-dexie';
 import { relays } from '../config/relays.js';
 
 console.log('[ndkSingleton.js] Initializing NDK with relays:', relays);
-const ndk = new NDK({ explicitRelayUrls: relays });
+
+// Initialize Dexie cache adapter for nutzap state persistence (MEDIUM PRIORITY FIX)
+const dexieAdapter = new NDKCacheAdapterDexie({ dbName: 'runstr-ndk-cache' });
+
+const ndk = new NDK({ 
+  explicitRelayUrls: relays,
+  cacheAdapter: dexieAdapter // Enable automatic nutzap state persistence
+});
 
 const ndkReadyPromise = (async () => {
   console.log('[ndkSingleton.js] ndkReadyPromise: Attempting ndk.connect()...');
   try {
     await ndk.connect();
     console.log('[ndkSingleton.js] ndk.connect() successful.');
+    
+    // Pass the NDK instance to the adapter after NDK is initialized
+    // This allows the adapter to use the NDK instance if needed (e.g., for deserializing events)
+    dexieAdapter.ndk = ndk;
+    console.log('[ndkSingleton.js] Cache adapter configured with NDK instance.');
+    
     return true;
   } catch (err) {
     console.error('[ndkSingleton.js] ndk.connect() FAILED:', err);

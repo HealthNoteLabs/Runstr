@@ -1,6 +1,6 @@
 import { AlbyWallet } from '../albyWallet';
-import { WalletContext, WalletProvider, CONNECTION_STATES } from '../../contexts/WalletContext';
-import { useWallet } from '../../hooks/useWallet';
+import { NDKWalletProvider, useNDKWallet } from '../../contexts/NDKWalletContext';
+import { useWallet, CONNECTION_STATES } from '../../hooks/useWallet';
 import {
   initWalletService,
   connectWallet,
@@ -15,10 +15,10 @@ import {
 
 export { 
   AlbyWallet,
-  WalletContext,
-  WalletProvider, 
-  CONNECTION_STATES,
+  NDKWalletProvider,
+  useNDKWallet,
   useWallet,
+  CONNECTION_STATES,
   initWalletService,
   connectWallet,
   softDisconnectWallet,

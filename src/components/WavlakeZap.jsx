@@ -1,6 +1,6 @@
 import { useState, useContext } from 'react';
 import PropTypes from 'prop-types';
-import { WalletContext } from '../contexts/WalletContext';
+import { useWallet } from '../hooks/useWallet';
 import { getLnurlForTrack, processWavlakeLnurlPayment } from '../utils/wavlake';
 import '../assets/styles/WavlakeZap.css';
 
@@ -25,7 +25,7 @@ const WavlakeZap = ({
   onSuccess,
   onError
 }) => {
-  const { wallet, isConnected, ensureConnected } = useContext(WalletContext);
+  const { wallet, isConnected, ensureConnected } = useWallet();
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasErrored, setHasErrored] = useState(false);
   // Add payment state to track the current step in the payment process

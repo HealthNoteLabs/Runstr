@@ -8,7 +8,7 @@ import { TeamsProvider } from './contexts/TeamsContext';
 import { TeamChallengeProvider } from './contexts/TeamChallengeContext';
 import { ActivityModeProvider } from './contexts/ActivityModeContext';
 import { SettingsProvider } from './contexts/SettingsContext';
-import { WalletProvider } from './contexts/WalletContext';
+import { NDKWalletProvider } from './contexts/NDKWalletContext';
 import { MenuBar } from './components/MenuBar';
 import { initializeEvents } from './services/EventService';
 import './App.css';
@@ -180,7 +180,7 @@ const App = () => {
                 <RunTrackerProvider>
                   <TeamsProvider>
                     <TeamChallengeProvider>
-                      <WalletProvider>
+                      <NDKWalletProvider>
                         <div className="relative w-full min-h-screen bg-bg-primary text-text-primary">
                           <MenuBar />
                           <main className="pb-24 w-full mx-auto px-4 max-w-screen-md">
@@ -190,7 +190,7 @@ const App = () => {
                           </main>
                           <Toaster position="top-center" />
                         </div>
-                      </WalletProvider>
+                      </NDKWalletProvider>
                     </TeamChallengeProvider>
                   </TeamsProvider>
                 </RunTrackerProvider>

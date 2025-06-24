@@ -1,14 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useNip60 } from '../contexts/WalletContext';
+import { useNDKWallet } from '../contexts/NDKWalletContext';
 import { NostrContext } from '../contexts/NostrContext';
-import { 
-  createTokenEvent, 
-  sendTokenViaDM, 
-  extractCashuToken,
-  NIP60_KINDS
-} from '../utils/nip60Events';
-import { NDKEvent } from '@nostr-dev-kit/ndk';
 
 /**
  * Pure NDK Lightning invoice creation
@@ -186,25 +179,31 @@ export const DashboardWalletHeader = () => {
   const { ndk, publicKey } = useContext(NostrContext);
   const { 
     balance, 
-    hasWallet: isConnected, 
     loading,
     error,
     isInitialized,
-    tokenEvents: transactions,
-    SUPPORTED_MINTS,
-    currentMint,
-    refreshWallet
-  } = useNip60();
+    status,
+    wallet,
+    sendCashuPayment,
+    payLightningInvoice,
+    receiveToken,
+    createDeposit,
+    refreshBalance,
+    DEFAULT_MINT_URL
+  } = useNDKWallet();
+
+  const isConnected = status === 'ready' && wallet;
+  const currentMint = { url: DEFAULT_MINT_URL, name: 'CoinOS' };
+  const refreshWallet = refreshBalance;
 
   // Add debugging
-  console.log('[DashboardWalletHeader] Wallet State:', {
-    hasWallet: isConnected,
+  console.log('[DashboardWalletHeader] NDK Wallet State:', {
+    isConnected,
     balance,
     loading,
     isInitialized,
-    currentMint: currentMint?.name,
-    tokenCount: transactions?.length || 0,
-    walletEvent: !!hasWallet,
+    status,
+    walletExists: !!wallet,
     error: error
   });
 
@@ -229,7 +228,7 @@ export const DashboardWalletHeader = () => {
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [receiveMethod, setReceiveMethod] = useState('lightning'); // 'lightning' or 'token'
   const [receiveAmount, setReceiveAmount] = useState('');
-  const [receiveToken, setReceiveToken] = useState('');
+  const [receiveTokenString, setReceiveTokenString] = useState('');
   const [receiveInvoice, setReceiveInvoice] = useState('');
   const [receiveQuote, setReceiveQuote] = useState('');
   const [isReceiving, setIsReceiving] = useState(false);
@@ -256,7 +255,7 @@ export const DashboardWalletHeader = () => {
     navigate('/ecash');
   };
 
-  // Handle sending tokens via pure NDK
+  // Handle sending tokens via NDK wallet
   const handleSendTokens = async () => {
     if (!sendAmount || !sendRecipient) {
       setSendError('Please fill in amount and recipient');
@@ -269,13 +268,8 @@ export const DashboardWalletHeader = () => {
       return;
     }
 
-    if (amount > balance) {
+    if (amount > (balance?.amount || 0)) {
       setSendError('Insufficient balance');
-      return;
-    }
-
-    if (!currentMint?.url) {
-      setSendError('No mint available');
       return;
     }
 
@@ -284,12 +278,12 @@ export const DashboardWalletHeader = () => {
     setSendSuccess('');
 
     try {
-      console.log('[DashboardWalletHeader] Sending ecash token via pure NDK...');
+      console.log('[DashboardWalletHeader] Sending payment via NDK wallet...');
 
-      // Use pure NDK sending function
-      const result = await sendEcashToken(ndk, sendRecipient, amount, currentMint.url, sendMemo);
+      // Use NDK wallet's sendCashuPayment method
+      const result = await sendCashuPayment(sendRecipient, amount, sendMemo);
       
-      if (result.success) {
+      if (result) {
         setSendSuccess(`Successfully sent ${amount} sats!`);
         
         // Refresh wallet after sending
@@ -302,30 +296,18 @@ export const DashboardWalletHeader = () => {
           setSendSuccess('');
         }, 2000);
       } else {
-        throw new Error(result.message || 'Send failed');
+        throw new Error('Send failed - no result returned');
       }
 
     } catch (error) {
       console.error('[DashboardWalletHeader] Send error:', error);
-      
-      const debugInfo = `
-PURE NDK SEND ERROR:
-Message: ${error?.message || 'No message'}
-Type: ${typeof error}
-Amount: ${amount || 'none'}
-Recipient: ${sendRecipient?.substring(0, 16) || 'none'}...
-Balance: ${balance || 0}
-Current Mint: ${currentMint?.url || 'none'}
-NDK Available: ${!!ndk}
-`;
-      
-      setSendError(`Failed to send: ${error.message}\n\n${debugInfo}`);
+      setSendError(`Failed to send: ${error.message || 'Unknown error'}`);
     } finally {
       setIsSending(false);
     }
   };
 
-  // Handle creating Lightning invoice via pure NDK
+  // Handle creating Lightning invoice via NDK wallet
   const handleRequestInvoice = async () => {
     if (!receiveAmount) {
       setReceiveError('Please enter an amount');
@@ -338,50 +320,49 @@ NDK Available: ${!!ndk}
       return;
     }
 
-    if (!currentMint?.url) {
-      setReceiveError('No mint available');
-      return;
-    }
-
     setIsReceiving(true);
     setReceiveError('');
 
     try {
-      console.log('[DashboardWalletHeader] Creating Lightning invoice via pure NDK...');
+      console.log('[DashboardWalletHeader] Creating Lightning deposit via NDK wallet...');
 
-      // Use pure NDK invoice creation
-      const result = await createLightningInvoice(currentMint.url, amount);
+      // Use NDK wallet's createDeposit method
+      const deposit = createDeposit(amount);
       
-      if (result.success) {
-        setReceiveInvoice(result.invoice);
-        setReceiveQuote(result.quote);
+      if (deposit) {
+        // Listen for deposit events
+        deposit.on('success', (token) => {
+          console.log('[DashboardWalletHeader] Deposit successful:', token);
+          setReceiveSuccess(`Successfully received ${amount} sats!`);
+          refreshWallet();
+        });
+
+        deposit.on('error', (error) => {
+          console.error('[DashboardWalletHeader] Deposit error:', error);
+          setReceiveError(`Deposit failed: ${error.message || 'Unknown error'}`);
+        });
+
+        // Start the deposit process
+        await deposit.start();
+        
+        // If we get here, the invoice was created
+        setReceiveInvoice(deposit.quoteResponse?.quote?.request || 'Invoice created');
         setReceiveSuccess(`Invoice created for ${amount} sats`);
       } else {
-        throw new Error(result.message || 'Invoice creation failed');
+        throw new Error('Failed to create deposit');
       }
 
     } catch (error) {
-      console.error('[DashboardWalletHeader] Invoice error:', error);
-      
-      const debugInfo = `
-PURE NDK INVOICE ERROR:
-Message: ${error?.message || 'No message'}
-Type: ${typeof error}
-Amount: ${amount}
-Current Mint: ${currentMint?.url || 'none'}
-NDK Available: ${!!ndk}
-NDK Connected: ${ndk?.pool?.connectedRelays?.length || 0} relays
-`;
-      
-      setReceiveError(`Failed to create invoice: ${error.message}\n\n${debugInfo}`);
+      console.error('[DashboardWalletHeader] Deposit error:', error);
+      setReceiveError(`Failed to create invoice: ${error.message || 'Unknown error'}`);
     } finally {
       setIsReceiving(false);
     }
   };
 
-  // Handle receiving tokens via pure NDK
+  // Handle receiving tokens via NDK wallet
   const handleReceiveToken = async () => {
-    if (!receiveToken) {
+    if (!receiveTokenString) {
       setReceiveError('Please paste a token');
       return;
     }
@@ -390,38 +371,28 @@ NDK Connected: ${ndk?.pool?.connectedRelays?.length || 0} relays
     setReceiveError('');
 
     try {
-      console.log('[DashboardWalletHeader] Receiving token via pure NDK...');
+      console.log('[DashboardWalletHeader] Receiving token via NDK wallet...');
 
-      // Use pure NDK receiving function
-      const result = await receiveEcashToken(ndk, publicKey, receiveToken, currentMint?.url || 'https://mint.coinos.io');
+      // Use NDK wallet's receiveToken method
+      const result = await receiveToken(receiveTokenString, 'Received via dashboard');
       
-      if (result.success) {
-        setReceiveSuccess(`Successfully received ${result.amount} sats!`);
+      if (result) {
+        setReceiveSuccess('Successfully received token!');
         
         // Refresh wallet after receiving
         setTimeout(() => {
           refreshWallet();
           setShowReceiveModal(false);
-          setReceiveToken('');
+          setReceiveTokenString('');
           setReceiveSuccess('');
         }, 2000);
       } else {
-        throw new Error(result.message || 'Receive failed');
+        throw new Error('Receive failed - no result returned');
       }
 
     } catch (error) {
       console.error('[DashboardWalletHeader] Receive error:', error);
-      
-      const debugInfo = `
-PURE NDK TOKEN RECEIVE ERROR:
-Message: ${error?.message || 'No message'}
-Type: ${typeof error}
-Token Length: ${receiveToken?.length || 0}
-Token Preview: ${receiveToken?.substring(0, 50) || 'empty'}...
-Current Mint: ${currentMint?.url || 'none'}
-`;
-      
-      setReceiveError(`Failed to receive token: ${error.message}\n\n${debugInfo}`);
+      setReceiveError(`Failed to receive token: ${error.message || 'Unknown error'}`);
     } finally {
       setIsReceiving(false);
     }
@@ -787,8 +758,8 @@ Current Mint: ${currentMint?.url || 'none'}
                     Paste Ecash Token:
                   </label>
                   <textarea
-                    value={receiveToken}
-                    onChange={(e) => setReceiveToken(e.target.value)}
+                    value={receiveTokenString}
+                    onChange={(e) => setReceiveTokenString(e.target.value)}
                     placeholder="cashu..."
                     disabled={isReceiving}
                     style={{
@@ -826,7 +797,7 @@ Current Mint: ${currentMint?.url || 'none'}
                   </button>
                   <button 
                     onClick={handleReceiveToken}
-                    disabled={isReceiving || !receiveToken}
+                    disabled={isReceiving || !receiveTokenString}
                     style={{
                       padding: '8px 16px',
                       border: 'none',
@@ -835,7 +806,7 @@ Current Mint: ${currentMint?.url || 'none'}
                       color: 'white',
                       cursor: 'pointer',
                       fontSize: '0.9rem',
-                      opacity: (isReceiving || !receiveToken) ? 0.5 : 1
+                      opacity: (isReceiving || !receiveTokenString) ? 0.5 : 1
                     }}
                   >
                     {isReceiving ? 'Receiving...' : 'Receive Token'}
