@@ -7,6 +7,7 @@ import { getFastestRelays, directFetchRunningPosts } from './feedFetcher.js';
 import { encryptContentNip44 } from './nip44.js';
 import { getEventTargetId, chunkArray } from './eventHelpers.js';
 import { v4 as uuidv4 } from 'uuid'; // Import uuid
+import { getUserPublicKey } from './nostrClient.js';
 
 // Import the NDK singleton
 import { ndk, ndkReadyPromise } from '../lib/ndkSingleton.js'; // Adjusted path
@@ -671,7 +672,7 @@ export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null
         // For Android with Amber, we use Amber for signing
         if (!pubkey) {
           // If no pubkey provided, we need to get it first
-          pubkey = localStorage.getItem('userPublicKey');
+          pubkey = await getUserPublicKey();
           
           if (!pubkey) {
             throw new Error('No public key available. Please log in first.');
@@ -700,16 +701,14 @@ export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null
           created_at: Math.floor(Date.now() / 1000)
         };
         
-        // Sign using Amber
-        signedEvent = await AmberAuth.signEvent(event);
-        publishResult.signMethod = 'amber';
-        
-        // If signedEvent is null, the signing is happening asynchronously
-        // and we'll need to handle it via deep linking
-        if (!signedEvent) {
-          // In a real implementation, you would return a Promise that
-          // resolves when the deep link callback is received
-          return null;
+        try {
+          // Sign using Amber - this will either resolve with a signed event or reject with an error
+          signedEvent = await AmberAuth.signEvent(event);
+          publishResult.signMethod = 'amber';
+        } catch (amberError) {
+          console.error('Amber signing failed:', amberError);
+          // Don't throw here - allow fallback to window.nostr
+          console.log('Attempting fallback to window.nostr...');
         }
       }
     }

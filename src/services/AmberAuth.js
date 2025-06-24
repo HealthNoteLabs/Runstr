@@ -63,9 +63,23 @@ const getPublicKey = () => {
     if (Platform.OS !== 'android') return reject(new Error('Amber is Android-only'));
     const id = `pubkey_${Math.random()}`;
     
+    // Add timeout mechanism (30 seconds)
+    const timeoutId = setTimeout(() => {
+      if (pendingRequests.has(id)) {
+        pendingRequests.delete(id);
+        reject(new Error('Amber authentication timeout - no response received after 30 seconds'));
+      }
+    }, 30000);
+
     pendingRequests.set(id, {
-      resolve: (signedAuthEvent) => resolve(signedAuthEvent.pubkey),
-      reject
+      resolve: (signedAuthEvent) => {
+        clearTimeout(timeoutId);
+        resolve(signedAuthEvent.pubkey);
+      },
+      reject: (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      }
     });
 
     const authEvent = {
@@ -81,8 +95,9 @@ const getPublicKey = () => {
     try {
       await Linking.openURL(amberUri);
     } catch (e) {
+      clearTimeout(timeoutId);
       pendingRequests.delete(id);
-      reject(e);
+      reject(new Error(`Failed to open Amber: ${e.message}`));
     }
   });
 };
@@ -92,7 +107,24 @@ const signEvent = (event) => {
     if (Platform.OS !== 'android') return reject(new Error('Amber is Android-only'));
     const id = `sign_${Math.random()}`;
     
-    pendingRequests.set(id, { resolve, reject });
+    // Add timeout mechanism (30 seconds)
+    const timeoutId = setTimeout(() => {
+      if (pendingRequests.has(id)) {
+        pendingRequests.delete(id);
+        reject(new Error('Amber signing timeout - no response received after 30 seconds'));
+      }
+    }, 30000);
+
+    pendingRequests.set(id, { 
+      resolve: (signedEvent) => {
+        clearTimeout(timeoutId);
+        resolve(signedEvent);
+      },
+      reject: (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      }
+    });
 
     if (!event.created_at) event.created_at = Math.floor(Date.now() / 1000);
     
@@ -103,8 +135,9 @@ const signEvent = (event) => {
     try {
       await Linking.openURL(amberUri);
     } catch (e) {
+      clearTimeout(timeoutId);
       pendingRequests.delete(id);
-      reject(e);
+      reject(new Error(`Failed to open Amber: ${e.message}`));
     }
   });
 };
@@ -175,7 +208,6 @@ const requestAuthentication = async () => {
 // Simple stub of AmberAuth for diagnostic scripts running outside the mobile app.
 export default {
   isLoggedIn: () => false,
-  signEvent: async (ev) => ev,
   isAmberInstalled,
   requestAuthentication,
   setupDeepLinkHandling,

@@ -5,6 +5,7 @@ import { ndk, ndkReadyPromise } from '../lib/ndkSingleton'; // Consistent import
 import { NDKNip07Signer, NDKPrivateKeySigner } from '@nostr-dev-kit/ndk'; // Keep NDKSigner types
 import AmberAuth from '../services/AmberAuth.js';
 import { Platform } from '../utils/react-native-shim.js';
+import { setAmberUserPubkey } from '../utils/nostrClient.js';
 
 // Function to attach the appropriate signer TO THE SINGLETON NDK
 const attachSigner = async () => {
@@ -36,7 +37,11 @@ const attachSigner = async () => {
             _user: null,
             user: async function() {
               if (!this._user) {
-                if (!this._pubkey) this._pubkey = await AmberAuth.getPublicKey();
+                if (!this._pubkey) {
+                  this._pubkey = await AmberAuth.getPublicKey();
+                  // Store the pubkey using the proper function that syncs with localStorage
+                  setAmberUserPubkey(this._pubkey);
+                }
                 this._user = { pubkey: this._pubkey };
               }
               return this._user;
@@ -84,6 +89,8 @@ const attachSigner = async () => {
           };
           const user = await ndk.signer.user();
           console.log('NostrContext: Enhanced Amber signer attached, user pubkey:', user.pubkey);
+          // Store the pubkey using the proper function that syncs with localStorage
+          setAmberUserPubkey(user.pubkey);
           return user.pubkey;
         } catch (amberError) {
           console.error('NostrContext: Error initializing AmberSigner:', amberError);
@@ -364,6 +371,7 @@ export const NostrProvider = ({ children }) => {
     if (!pk && typeof window !== 'undefined') {
         window.localStorage.removeItem('runstr_privkey');
         window.localStorage.removeItem('runstr_lightning_addr');
+        window.localStorage.removeItem('userPublicKey'); // Clear the Amber public key as well
         ndk.signer = undefined; // Clear signer on explicit logout
         signerAttachmentPromise = null; // Allow re-attachment
         setLightningAddress(null);

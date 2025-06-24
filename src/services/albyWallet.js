@@ -1,6 +1,9 @@
 import { LN, nwc } from '@getalby/sdk';
-import { Platform } from '../utils/react-native-shim';
-import AmberAuth from '../services/AmberAuth';
+import { Platform } from '../utils/react-native-shim.js';
+import AmberAuth from './AmberAuth.js';
+import { webln } from '@getalby/sdk';
+import { createNWCClient } from '@getalby/lightning-tools';
+import { getUserPublicKey } from '../utils/nostrClient.js';
 
 /**
  * AlbyWallet class provides a complete wallet implementation using
@@ -442,7 +445,13 @@ export class AlbyWallet {
             console.log('[AlbyWallet] Signing zap request with Amber');
             try {
               // Get user's public key first if needed
-              const userPubkey = localStorage.getItem('userPublicKey') || await AmberAuth.getPublicKey();
+              let userPubkey = await getUserPublicKey();
+              if (!userPubkey) {
+                userPubkey = await AmberAuth.getPublicKey();
+                // Store the pubkey using the proper function that syncs with localStorage
+                const { setAmberUserPubkey } = await import('../utils/nostrClient.js');
+                setAmberUserPubkey(userPubkey);
+              }
               zapRequest.pubkey = userPubkey;
               
               // Sign the zap request with Amber

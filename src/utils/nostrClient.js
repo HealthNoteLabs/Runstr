@@ -88,7 +88,11 @@ let amberUserPubkey = null;
 export const setAmberUserPubkey = (pubkey) => {
   if (pubkey && typeof pubkey === 'string') {
     amberUserPubkey = pubkey;
-    console.log('Set Amber user pubkey:', pubkey);
+    // Also store in localStorage to ensure consistency
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem('userPublicKey', pubkey);
+    }
+    console.log('Set Amber user pubkey and synced to localStorage:', pubkey);
   }
 };
 
@@ -475,12 +479,23 @@ export const getSigningKey = async () => {
  */
 export const getUserPublicKey = async () => {
   try {
-    // First priority: Check if we have an Amber-authenticated pubkey
+    // First priority: Check if we have an Amber-authenticated pubkey cached
     if (amberUserPubkey) {
       return amberUserPubkey;
     }
     
-    console.warn('No Amber-authenticated public key found');
+    // Second priority: Check localStorage for stored public key
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const storedPubkey = window.localStorage.getItem('userPublicKey');
+      if (storedPubkey) {
+        // Cache it for future calls
+        amberUserPubkey = storedPubkey;
+        console.log('getUserPublicKey: Found pubkey in localStorage, cached for future use');
+        return storedPubkey;
+      }
+    }
+    
+    console.warn('No public key found in cache or localStorage');
     return null;
   } catch (error) {
     console.error('Error in getUserPublicKey:', error);

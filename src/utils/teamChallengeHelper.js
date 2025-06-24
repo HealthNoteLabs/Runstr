@@ -1,5 +1,6 @@
 import { resolveTeamName, resolveChallengeNames, cacheTeamName, cacheChallengeNames } from '../services/nameResolver';
 import { getDefaultPostingTeamIdentifier } from './settingsManager';
+import { getUserPublicKey } from './nostrClient';
 
 /**
  * Get team and challenge associations for a workout record.
@@ -13,7 +14,7 @@ export const getWorkoutAssociations = async (teamChallengeData = null) => {
   // 🏷️ Get user's public key for team member identification
   let userPubkey = null;
   try {
-    userPubkey = localStorage.getItem('userPublicKey') || (typeof window !== 'undefined' && window.nostr ? await window.nostr.getPublicKey() : null);
+    userPubkey = await getUserPublicKey() || (typeof window !== 'undefined' && window.nostr ? await window.nostr.getPublicKey() : null);
   } catch (pubkeyErr) {
     console.warn('getWorkoutAssociations: could not get user public key', pubkeyErr);
   }

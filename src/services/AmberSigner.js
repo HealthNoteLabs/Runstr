@@ -3,6 +3,7 @@ import { NDKSigner } from '@nostr-dev-kit/ndk';
 import * as nip44 from '@noble/ciphers/chacha';
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { sha256 } from '@noble/hashes/sha256';
+import { setAmberUserPubkey } from '../utils/nostrClient.js';
 
 /**
  * NDK-compatible Amber signer that implements all required methods
@@ -22,6 +23,8 @@ export class AmberSigner extends NDKSigner {
     if (!this._user) {
       if (!this._pubkey) {
         this._pubkey = await AmberAuth.getPublicKey();
+        // Store the pubkey using the proper function that syncs with localStorage
+        setAmberUserPubkey(this._pubkey);
       }
       this._user = { pubkey: this._pubkey };
     }
@@ -143,6 +146,8 @@ export class AmberSigner extends NDKSigner {
       
       // Try to get public key to verify Amber is working
       this._pubkey = await AmberAuth.getPublicKey();
+      // Store the pubkey using the proper function that syncs with localStorage
+      setAmberUserPubkey(this._pubkey);
       return true;
     } catch (error) {
       console.error('[AmberSigner] Not ready:', error);
@@ -156,6 +161,8 @@ export class AmberSigner extends NDKSigner {
   async getPublicKey() {
     if (!this._pubkey) {
       this._pubkey = await AmberAuth.getPublicKey();
+      // Store the pubkey using the proper function that syncs with localStorage
+      setAmberUserPubkey(this._pubkey);
     }
     return this._pubkey;
   }

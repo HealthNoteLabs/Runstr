@@ -1,4 +1,5 @@
 import { createWorkoutEvent, createAndPublishEvent } from './nostr';
+import { getUserPublicKey } from './nostrClient';
 import { getActiveRelayList } from '../contexts/SettingsContext';
 import { resolveTeamName, resolveChallengeNames, cacheTeamName, cacheChallengeNames } from '../services/nameResolver';
 import { getDefaultPostingTeamIdentifier } from './settingsManager';
@@ -20,7 +21,7 @@ export const publishRun = async (run, distanceUnit = 'km', settings = {}, teamCh
   // 🏷️ Get user's public key for team member identification
   let userPubkey = null;
   try {
-    userPubkey = localStorage.getItem('userPublicKey') || (typeof window !== 'undefined' && window.nostr ? await window.nostr.getPublicKey() : null);
+    userPubkey = await getUserPublicKey() || (typeof window !== 'undefined' && window.nostr ? await window.nostr.getPublicKey() : null);
   } catch (pubkeyErr) {
     console.warn('runPublisher: could not get user public key', pubkeyErr);
   }
