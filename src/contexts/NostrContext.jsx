@@ -26,6 +26,8 @@ const attachSigner = async () => {
           ndk.signer = new NDKPrivateKeySigner(storedPrivKey);
           const user = await ndk.signer.user();
           console.log('NostrContext: Private key signer attached to singleton NDK, user pubkey:', user.pubkey);
+          // Persist pubkey to canonical storage for app-wide retrieval
+          setAmberUserPubkey(user.pubkey);
           return user.pubkey;
         } catch (pkError) {
             console.error('NostrContext: Error initializing NDKPrivateKeySigner:', pkError);
@@ -119,6 +121,8 @@ const attachSigner = async () => {
           console.log('NostrContext: Attempting to get user from NIP-07 signer...');
           const user = await nip07signer.user();
           console.log('NostrContext: NIP-07 Signer attached to singleton NDK, user pubkey:', user.pubkey);
+          // Persist pubkey for other modules
+          setAmberUserPubkey(user.pubkey);
           return user.pubkey;
 
         } catch (nip07Error) {
@@ -403,12 +407,13 @@ export const NostrProvider = ({ children }) => {
         window.localStorage.removeItem('runstr_privkey');
         window.localStorage.removeItem('runstr_lightning_addr');
         window.localStorage.removeItem('userPublicKey'); // Clear the Amber public key as well
-        // Also clear the in-memory cache by setting it to null
-        setAmberUserPubkey(null);
+        window.localStorage.removeItem('currentNpub'); // Legacy key cleanup
+        window.localStorage.removeItem('runstr_pubkey'); // Legacy key cleanup
         ndk.signer = undefined; // Clear signer on explicit logout
         signerAttachmentPromise = null; // Allow re-attachment
         setLightningAddress(null);
         setSignerAvailable(false); // Update signer state on logout
+        setAmberUserPubkey(null);
     }
   }, []);
 

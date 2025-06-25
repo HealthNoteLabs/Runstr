@@ -527,18 +527,51 @@ export const getUserPublicKey = async () => {
       return amberUserPubkey;
     }
     
-    // Second priority: Check localStorage for stored public key
+    // Second priority: Check localStorage for stored public key (canonical key)
     if (typeof window !== 'undefined' && window.localStorage) {
       const storedPubkey = window.localStorage.getItem('userPublicKey');
       if (storedPubkey) {
         // Cache it for future calls
         amberUserPubkey = storedPubkey;
-        console.log('getUserPublicKey: Found pubkey in localStorage, cached for future use');
+        console.log('getUserPublicKey: Found pubkey in localStorage (userPublicKey), cached for future use');
         return storedPubkey;
       }
+      /* BEGIN: Legacy fallback keys  */
+      // Older RUNSTR versions stored the pubkey under different keys. Check them once and migrate if found.
+      const legacyKeys = ['currentNpub', 'runstr_pubkey'];
+      for (const legacyKey of legacyKeys) {
+        const legacyValue = window.localStorage.getItem(legacyKey);
+        if (legacyValue) {
+          console.log(`getUserPublicKey: Migrating legacy key ${legacyKey} -> userPublicKey`);
+          // Persist to the canonical key for future reads
+          window.localStorage.setItem('userPublicKey', legacyValue);
+          amberUserPubkey = legacyValue;
+          return legacyValue;
+        }
+      }
+      /* END: Legacy fallback keys  */
+    }
+
+    // Third priority: If NDK signer is already attached, ask it for the user
+    try {
+      const { ndk } = await import('../lib/ndkSingleton');
+      if (ndk?.signer?.user) {
+        const signerUser = await ndk.signer.user();
+        if (signerUser?.pubkey) {
+          console.log('getUserPublicKey: Obtained pubkey from NDK signer.user()', signerUser.pubkey);
+          // Persist for future use
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem('userPublicKey', signerUser.pubkey);
+          }
+          amberUserPubkey = signerUser.pubkey;
+          return signerUser.pubkey;
+        }
+      }
+    } catch (e) {
+      // Ignore errors from dynamic import or signer lookup
     }
     
-    console.warn('No public key found in cache or localStorage');
+    console.warn('getUserPublicKey: No public key found in any source');
     return null;
   } catch (error) {
     console.error('Error in getUserPublicKey:', error);
