@@ -217,9 +217,8 @@ export const RunHistoryCard: React.FC<RunHistoryCardProps> = ({
     setShareSuccess(null);
 
     try {
-      // Get team and challenge associations
-      const { getWorkoutAssociations } = await import('../utils/teamChallengeHelper');
-      const { teamAssociation, challengeUUIDs, challengeNames, userPubkey } = await getWorkoutAssociations();
+      // Use publishRun() for consistent team/challenge association logic
+      const { publishRun } = await import('../utils/runPublisher');
       
       const eventRunData: RunData = {
           ...run,
@@ -230,28 +229,21 @@ export const RunHistoryCard: React.FC<RunHistoryCardProps> = ({
           unit: distanceUnit,
       };
 
-      // Create workout event with team/challenge tags
-      const eventTemplate = createWorkoutEvent(eventRunData, distanceUnit, { 
-        teamAssociation, 
-        challengeUUIDs, 
-        challengeNames, 
-        userPubkey: userPubkey || publicKey 
-      });
-
-      if (!eventTemplate) {
-        setShareError('Failed to prepare workout event for Nostr.');
-        setIsSharing(false);
-        setTimeout(() => setShareError(null), 5000);
-        return;
-      }
-
-      const publishedEventOutcome = await createAndPublishEvent(eventTemplate, publicKey);
-      if (publishedEventOutcome && publishedEventOutcome.success) {
-        console.log('RunHistoryCard: Workout event published:', publishedEventOutcome);
+      const results = await publishRun(eventRunData, distanceUnit, {});
+      
+      // Check if the summary (kind 1301) was successfully published
+      const summaryResult = results.find(r => r.kind === 1301);
+      if (summaryResult && summaryResult.success && summaryResult.result?.id) {
+        console.log('RunHistoryCard: Workout event published:', summaryResult.result);
         setShareSuccess('Successfully shared to Nostr!');
+                 // Update the run record with the published event ID
+         if (eventRunData.id && summaryResult.result.id) {
+           const runDataService = await import('../services/RunDataService');
+           runDataService.default.updateRun(eventRunData.id, { nostrWorkoutEventId: summaryResult.result.id });
+         }
       } else {
-        console.error("RunHistoryCard: Publishing failed:", publishedEventOutcome?.error);
-        setShareError(publishedEventOutcome?.error || 'Failed to share to Nostr. Check relay connections.');
+        console.error("RunHistoryCard: Publishing failed:", summaryResult?.error);
+        setShareError(summaryResult?.error || 'Failed to share to Nostr. Check relay connections.');
       }
     } catch (err: any) {
       console.error('RunHistoryCard: Error sharing to Nostr:', err);

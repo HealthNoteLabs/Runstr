@@ -25,20 +25,14 @@ export const SyncConfirmationModal = ({ isOpen, onClose, run, distanceUnit = 'km
     // Optionally publish
     if (postToNostr && savedRun) {
       try {
-        // Get team and challenge associations
-        const { getWorkoutAssociations } = await import('../../utils/teamChallengeHelper');
-        const { teamAssociation, challengeUUIDs, challengeNames, userPubkey } = await getWorkoutAssociations();
+        // Use publishRun() for consistent team/challenge association logic
+        const { publishRun } = await import('../../utils/runPublisher');
+        const results = await publishRun(savedRun, distanceUnit, {});
         
-        // Create workout event with team/challenge tags
-        const nostrEvent = createWorkoutEvent(savedRun, distanceUnit, { 
-          teamAssociation, 
-          challengeUUIDs, 
-          challengeNames, 
-          userPubkey 
-        });
-        const published = await createAndPublishEvent(nostrEvent);
-        if (published?.id) {
-          runDataService.updateRun(savedRun.id, { nostrWorkoutEventId: published.id });
+        // Check if the summary (kind 1301) was successfully published
+        const summaryResult = results.find(r => r.kind === 1301);
+        if (summaryResult && summaryResult.success && summaryResult.result?.id) {
+          runDataService.updateRun(savedRun.id, { nostrWorkoutEventId: summaryResult.result.id });
         }
       } catch (err) {
         console.error('[SyncModal] Failed to publish to Nostr', err);

@@ -5,7 +5,12 @@ import { ndk, ndkReadyPromise } from '../lib/ndkSingleton'; // Consistent import
 import { NDKNip07Signer, NDKPrivateKeySigner } from '@nostr-dev-kit/ndk'; // Keep NDKSigner types
 import AmberAuth from '../services/AmberAuth.js';
 import { Platform } from '../utils/react-native-shim.js';
-import { setAmberUserPubkey } from '../utils/nostrClient.js';
+import { 
+  setAmberUserPubkey, 
+  getUserPublicKey, 
+  registerPubkeyUpdateCallback, 
+  unregisterPubkeyUpdateCallback 
+} from '../utils/nostrClient.js';
 
 // Function to attach the appropriate signer TO THE SINGLETON NDK
 const attachSigner = async () => {
@@ -250,6 +255,30 @@ export const NostrProvider = ({ children }) => {
     // Setup Amber deep link handler once.
     AmberAuth.setupDeepLinkHandling();
 
+    // Register callback to sync React state when Amber updates pubkey
+    const handlePubkeyUpdate = (pubkey) => {
+      console.log('NostrContext: Received pubkey update from Amber:', pubkey);
+      if (isMounted && pubkey) {
+        setPublicKeyInternal(pubkey);
+        setNdkError(prev => prev && prev.includes("Signer:") ? null : prev); // Clear signer errors on successful auth
+      }
+    };
+    registerPubkeyUpdateCallback(handlePubkeyUpdate);
+
+    // Check for existing pubkey on initialization (in case Amber already authenticated)
+    const checkExistingPubkey = async () => {
+      try {
+        const existingPubkey = await getUserPublicKey();
+        if (existingPubkey && isMounted) {
+          console.log('NostrContext: Found existing pubkey on initialization:', existingPubkey);
+          setPublicKeyInternal(existingPubkey);
+        }
+      } catch (error) {
+        console.warn('NostrContext: Error checking for existing pubkey:', error);
+      }
+    };
+    checkExistingPubkey();
+
     const initializeNostrSystem = async () => {
       console.log('>>> NostrProvider: Awaiting ndkReadyPromise (initial connection attempt) <<<');
       let initialNdkConnectionSuccess = false;
@@ -342,6 +371,8 @@ export const NostrProvider = ({ children }) => {
         ndk.pool.off('relay:connect', updateNdkStatus);
         ndk.pool.off('relay:disconnect', updateNdkStatus);
       }
+      // Unregister pubkey update callback
+      unregisterPubkeyUpdateCallback();
       signerAttachmentPromise = null; // Reset signer promise on unmount
     };
 
@@ -372,6 +403,8 @@ export const NostrProvider = ({ children }) => {
         window.localStorage.removeItem('runstr_privkey');
         window.localStorage.removeItem('runstr_lightning_addr');
         window.localStorage.removeItem('userPublicKey'); // Clear the Amber public key as well
+        // Also clear the in-memory cache by setting it to null
+        setAmberUserPubkey(null);
         ndk.signer = undefined; // Clear signer on explicit logout
         signerAttachmentPromise = null; // Allow re-attachment
         setLightningAddress(null);

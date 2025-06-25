@@ -1,8 +1,81 @@
 import PropTypes from 'prop-types';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { LoadingButton } from './ui/LoadingSpinner';
 import appToast from '../utils/toast';
+import { getDefaultPostingTeamIdentifier } from '../utils/settingsManager';
+import { resolveTeamName, resolveChallengeNames } from '../services/nameResolver';
+
+// Component to show tag preview for team/challenge associations
+const TagPreview = () => {
+  const [tagInfo, setTagInfo] = useState(null);
+
+  useEffect(() => {
+    const getTagPreview = () => {
+      try {
+        // Get default team from settings
+        const defaultTeamId = getDefaultPostingTeamIdentifier();
+        if (!defaultTeamId) return null;
+
+        const parts = defaultTeamId.split(':');
+        if (parts.length !== 2) return null;
+
+        const [teamCaptainPubkey, teamUUID] = parts;
+        const teamName = resolveTeamName(teamUUID, teamCaptainPubkey);
+        
+        // Get active challenges for this team
+        const activeKey = `runstr:activeChallenges:${teamUUID}`;
+        const stored = JSON.parse(localStorage.getItem(activeKey) || '[]');
+        let challengeNames = [];
+        
+        if (Array.isArray(stored) && stored.length > 0) {
+          challengeNames = resolveChallengeNames(stored, teamUUID);
+        }
+
+        return {
+          teamName: teamName || 'Team',
+          challengeNames: challengeNames || []
+        };
+      } catch (error) {
+        console.warn('TagPreview: Error getting tag info', error);
+        return null;
+      }
+    };
+
+    setTagInfo(getTagPreview());
+  }, []);
+
+  if (!tagInfo) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-2">
+      {tagInfo.teamName && (
+        <div className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/20 text-primary border border-primary/30">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+          {tagInfo.teamName}
+        </div>
+      )}
+      {tagInfo.challengeNames.map((challengeName, index) => (
+        <div key={index} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-warning/20 text-warning border border-warning/30">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+            <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path>
+            <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path>
+            <path d="M4 22h16"></path>
+            <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path>
+            <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path>
+            <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path>
+          </svg>
+          {challengeName}
+        </div>
+      ))}
+    </div>
+  );
+};
 
 export function DashboardRunCard({ 
   run, 
@@ -33,6 +106,20 @@ export function DashboardRunCard({
             </div>
           </div>
         </div>
+
+        {/* Tag Preview - show what tags will be applied */}
+        {!isWorkoutSaved && (
+          <div className="bg-bg-primary/30 rounded-lg p-2 border border-border-secondary">
+            <div className="text-xs text-text-muted mb-1 flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                <line x1="7" y1="7" x2="7.01" y2="7"></line>
+              </svg>
+              Tags to be applied:
+            </div>
+            <TagPreview />
+          </div>
+        )}
 
         <div className="grid grid-cols-1 gap-2 mt-2">
           <div className="bg-bg-primary/50 rounded-lg p-2.5 flex items-center border border-border-secondary">

@@ -907,3 +907,48 @@ The ecash wallet now works perfectly with RUNSTR's Amber external signer archite
 **Status**: ✅ **PRODUCTION READY** - Full NIP60 ecash wallet functionality
 
 --- 
+
+## NDK Pubkey Synchronization Issue - FIXED
+
+**Reported:** Multiple components failing with "no user pubkey" errors:
+- Wallet doesn't initialize 
+- League tab doesn't load 
+- Teams don't load
+- Profile page shows "Error: no user pubkey"
+
+**Root Cause Analysis:**
+- **State Synchronization Gap**: Amber authentication was successfully storing the pubkey in localStorage and in-memory cache via `setAmberUserPubkey()`, but the NostrContext React state wasn't being updated
+- **Multiple Storage Locations**: The app stored pubkey in 4+ different places without proper synchronization:
+  1. In-memory variable `amberUserPubkey` (nostrClient.js)
+  2. localStorage `'userPublicKey'` 
+  3. React state `publicKey` (NostrContext.jsx)
+  4. Various signer object properties
+- **Timing Issue**: Components were checking `nostrContext.publicKey` (React state) but Amber was only updating the in-memory cache and localStorage
+
+**Solution Implemented:**
+1. **Added Callback System** in `nostrClient.js`:
+   - `registerPubkeyUpdateCallback()` - allows NostrContext to register for pubkey updates
+   - `unregisterPubkeyUpdateCallback()` - cleanup function
+   - Modified `setAmberUserPubkey()` to notify registered callbacks when pubkey changes
+
+2. **Enhanced NostrContext Synchronization**:
+   - Registers callback on mount to receive pubkey updates from Amber
+   - Adds fallback check for existing pubkey in localStorage on initialization
+   - Properly cleans up callback on unmount
+   - Handles both setting and clearing of pubkey (for logout)
+
+3. **Improved Error Handling**:
+   - Clears signer-related errors when successful authentication occurs
+   - Better logging for pubkey update flow
+
+**Files Modified:**
+- `src/utils/nostrClient.js` - Added callback mechanism
+- `src/contexts/NostrContext.jsx` - Added callback registration and fallback checking
+
+**Expected Outcome:**
+- All components should now receive the pubkey immediately after Amber authentication
+- Wallet, teams, league tab, and profile should initialize properly
+- No more "no user pubkey" errors due to state synchronization issues
+- Maintains clean architecture with single source of truth in NostrContext
+
+**Status:** ✅ FIXED - Ready for testing 

@@ -188,12 +188,23 @@ export const publishRun = async (run, distanceUnit = 'km', settings = {}, teamCh
       }
     }
 
-    // Log the associations that will be added to the workout
+    // Log and provide mobile-friendly feedback about associations
     if (teamAssociation || challengeUUIDs.length > 0) {
+      const teamName = teamAssociation?.teamName || teamAssociation?.teamUUID || 'Team';
+      const challengeList = challengeNames.length > 0 ? challengeNames : challengeUUIDs;
+      
       console.log('runPublisher: Adding team/challenge associations:', {
-        team: teamAssociation?.teamName || teamAssociation?.teamUUID,
-        challenges: challengeNames.length > 0 ? challengeNames : challengeUUIDs
+        team: teamName,
+        challenges: challengeList
       });
+      
+      // Store association info for mobile feedback
+      if (typeof window !== 'undefined') {
+        window.__lastWorkoutTags = {
+          team: teamName,
+          challenges: challengeList
+        };
+      }
     }
 
   } catch (err) {

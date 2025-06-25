@@ -81,9 +81,27 @@ let cachedKeyPair = null;
 // Storage for authenticated user's public key from Amber
 let amberUserPubkey = null;
 
+// Callback for when pubkey gets updated (used by NostrContext)
+let pubkeyUpdateCallback = null;
+
+/**
+ * Register a callback to be notified when the user's pubkey is updated
+ * @param {Function} callback - Function to call when pubkey changes
+ */
+export const registerPubkeyUpdateCallback = (callback) => {
+  pubkeyUpdateCallback = callback;
+};
+
+/**
+ * Unregister the pubkey update callback
+ */
+export const unregisterPubkeyUpdateCallback = () => {
+  pubkeyUpdateCallback = null;
+};
+
 /**
  * Set the authenticated user's public key from Amber
- * @param {string} pubkey - The user's public key
+ * @param {string|null} pubkey - The user's public key or null to clear
  */
 export const setAmberUserPubkey = (pubkey) => {
   if (pubkey && typeof pubkey === 'string') {
@@ -93,6 +111,31 @@ export const setAmberUserPubkey = (pubkey) => {
       window.localStorage.setItem('userPublicKey', pubkey);
     }
     console.log('Set Amber user pubkey and synced to localStorage:', pubkey);
+    
+    // Notify NostrContext if callback is registered
+    if (pubkeyUpdateCallback) {
+      try {
+        pubkeyUpdateCallback(pubkey);
+      } catch (error) {
+        console.error('Error in pubkey update callback:', error);
+      }
+    }
+  } else if (pubkey === null) {
+    // Handle logout/clear case
+    amberUserPubkey = null;
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem('userPublicKey');
+    }
+    console.log('Cleared Amber user pubkey and localStorage');
+    
+    // Notify NostrContext of the clearing
+    if (pubkeyUpdateCallback) {
+      try {
+        pubkeyUpdateCallback(null);
+      } catch (error) {
+        console.error('Error in pubkey update callback during clear:', error);
+      }
+    }
   }
 };
 

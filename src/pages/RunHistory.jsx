@@ -343,19 +343,15 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     let publishedWorkoutEventId = null;
     
     try {
-      // Get team and challenge associations
-      const { getWorkoutAssociations } = await import('../utils/teamChallengeHelper');
-      const { teamAssociation, challengeUUIDs, challengeNames, userPubkey } = await getWorkoutAssociations();
+      // Use publishRun() for consistent team/challenge association logic
+      const { publishRun } = await import('../utils/runPublisher');
+      const results = await publishRun(run, distanceUnit, {});
       
-      // Create workout event with team/challenge tags
-      const workoutEvent = createWorkoutEvent(run, distanceUnit, { 
-        teamAssociation, 
-        challengeUUIDs, 
-        challengeNames, 
-        userPubkey 
-      });
-      const publishedEvent = await createAndPublishEvent(workoutEvent);
-      publishedWorkoutEventId = publishedEvent?.id;
+      // Check if the summary (kind 1301) was successfully published
+      const summaryResult = results.find(r => r.kind === 1301);
+      if (summaryResult && summaryResult.success && summaryResult.result?.id) {
+        publishedWorkoutEventId = summaryResult.result.id;
+      }
 
       if (publishedWorkoutEventId) {
         setWorkoutSavedRuns(prev => new Set([...prev, run.id]));

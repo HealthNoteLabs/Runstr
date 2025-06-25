@@ -362,30 +362,39 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     setWorkoutSaved(false);
     
     try {
-      // Get team and challenge associations
-      const { getWorkoutAssociations } = await import('../utils/teamChallengeHelper');
-      const { teamAssociation, challengeUUIDs, challengeNames, userPubkey } = await getWorkoutAssociations();
+      // Use publishRun() for consistent team/challenge association logic
+      const results = await publishRun(recentRun, distanceUnit, {});
       
-      // Create a workout event with kind 1301 format including team/challenge tags
-      const workoutEvent = createWorkoutEvent(recentRun, distanceUnit, { 
-        teamAssociation, 
-        challengeUUIDs, 
-        challengeNames, 
-        userPubkey 
-      });
-      
-      // Use the existing createAndPublishEvent function
-      const publishedEvent = await createAndPublishEvent(workoutEvent);
-      
-      const publishedEventId = publishedEvent?.id;
-      if (publishedEventId) {
+      // Check if the summary (kind 1301) was successfully published
+      const summaryResult = results.find(r => r.kind === 1301);
+      if (summaryResult && summaryResult.success && summaryResult.result?.id) {
         setWorkoutSaved(true);
-        recentRun.nostrWorkoutEventId = publishedEventId;
-        runDataService.updateRun(recentRun.id, { nostrWorkoutEventId: publishedEventId });
+        recentRun.nostrWorkoutEventId = summaryResult.result.id;
+        runDataService.updateRun(recentRun.id, { nostrWorkoutEventId: summaryResult.result.id });
+        
+        // Show mobile-friendly feedback about applied tags
+        const tagInfo = typeof window !== 'undefined' ? window.__lastWorkoutTags : null;
+        if (tagInfo && (tagInfo.team || tagInfo.challenges.length > 0)) {
+          let tagMessage = 'Workout saved with ';
+          if (tagInfo.team) {
+            tagMessage += `Team: ${tagInfo.team}`;
+          }
+          if (tagInfo.challenges.length > 0) {
+            if (tagInfo.team) tagMessage += ', ';
+            tagMessage += `Challenges: ${tagInfo.challenges.join(', ')}`;
+          }
+          
+          if (window.Android && window.Android.showToast) {
+            window.Android.showToast(tagMessage);
+          } else {
+            appToast.success(tagMessage);
+          }
+        }
+        
         setShowPostRunWizard(true);
         // Streak & reward are now automatically handled when the run is saved.
       } else {
-        throw new Error('Failed to get ID from published workout event.');
+        throw new Error('Failed to publish workout event successfully.');
       }
     } catch (error) {
       console.error('Error saving workout record:', error);
