@@ -18,9 +18,8 @@ export const TeamsProvider = ({ children }) => {
   // Get Nostr context state - This is now the source of truth
   const { 
       publicKey: nostrPublicKey, 
-      isInitialized: nostrInitialized, // Use this flag
-      // eslint-disable-next-line no-unused-vars
-      ndk // Use the NDK instance from NostrContext - Added eslint disable for now
+      canReadData, // Use this for read operations instead of isInitialized
+      ndk // Use the NDK instance from NostrContext
   } = useContext(NostrContext);
   
   // State for Nostr groups fetched via NDK
@@ -33,14 +32,21 @@ export const TeamsProvider = ({ children }) => {
   // Fetch groups using NDK when NostrContext is ready
   useEffect(() => {
     const fetchNdkGroups = async () => {
-      // Only fetch if NostrContext is initialized and we have a pubkey
-      if (!nostrInitialized || !nostrPublicKey) {
-        console.log('TeamsContext: NDK not ready or no pubkey, clearing groups.');
+      // Only require NDK connection for reading team data, not user pubkey
+      if (!canReadData) {
+        console.log('TeamsContext: NDK not ready for data reading, clearing groups.');
         setMyNostrGroups([]);
         return;
       }
 
-      console.log('TeamsContext: NDK ready, fetching user groups for pubkey:', nostrPublicKey);
+      // For user-specific operations (like fetching "my" groups), check for pubkey
+      if (!nostrPublicKey) {
+        console.log('TeamsContext: No user pubkey available for user-specific groups, setting empty array.');
+        setMyNostrGroups([]);
+        return;
+      }
+
+      console.log('TeamsContext: NDK ready for data reading, fetching user groups for pubkey:', nostrPublicKey);
       setLoadingNostrGroups(true);
       setError(null);
       
@@ -69,7 +75,7 @@ export const TeamsProvider = ({ children }) => {
 
     fetchNdkGroups();
     // Depend on the readiness flags from NostrContext
-  }, [nostrPublicKey, nostrInitialized]);
+  }, [nostrPublicKey, canReadData]);
 
   // Clear error
   const clearError = useCallback(() => {
@@ -82,7 +88,7 @@ export const TeamsProvider = ({ children }) => {
     loadingNostrGroups,
     error,
     clearError,
-    nostrInitialized // Pass down the flag from NostrContext
+    canReadData // Pass down the flag from NostrContext
   };
 
   return (

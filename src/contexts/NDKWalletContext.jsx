@@ -105,13 +105,25 @@ export const NDKWalletProvider = ({ children }) => {
    * Initialize the NDK Cashu wallet with discovery logic
    */
   const initializeWallet = async () => {
-    if (!ndk || !publicKey) {
-      console.log('[NDKWallet] NDK or publicKey not available');
+    if (!ndk) {
+      console.log('[NDKWallet] NDK not available, cannot initialize wallet');
       setWalletState(prev => ({
         ...prev,
-        error: 'Please sign in with Amber to access your wallet',
+        error: 'Network connection not ready. Please wait for connection to initialize.',
         isInitialized: true,
         status: 'failed'
+      }));
+      return;
+    }
+
+    if (!publicKey) {
+      console.log('[NDKWallet] PublicKey not available, waiting for authentication...');
+      setWalletState(prev => ({
+        ...prev,
+        error: null,
+        loading: true,
+        status: 'waiting_for_auth',
+        isInitialized: false
       }));
       return;
     }

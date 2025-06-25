@@ -10,7 +10,7 @@ import { fetchEvents } from '../utils/nostr';
  * @returns {Object} { leaderboard, isLoading, error, refresh, lastUpdated }
  */
 export const useLeagueLeaderboard = () => {
-  const { ndk } = useContext(NostrContext);
+  const { ndk, canReadData } = useContext(NostrContext);
   const [leaderboard, setLeaderboard] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -160,14 +160,18 @@ export const useLeagueLeaderboard = () => {
       return;
     }
 
+    // Check if NDK is ready for reading data (don't need user pubkey for this)
+    if (!canReadData || !ndk) {
+      console.log('[useLeagueLeaderboard] NDK not ready for data reading, waiting...');
+      setIsLoading(true);
+      setError(null);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
     try {
-      if (!ndk) {
-        throw new Error('NDK not available');
-      }
-
       console.log('[useLeagueLeaderboard] Fetching all 1301 events...');
       
       // Fetch ALL 1301 events from ALL users
@@ -211,7 +215,7 @@ export const useLeagueLeaderboard = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [ndk, loadCachedData, processEvents, saveToCache]);
+  }, [canReadData, ndk, loadCachedData, processEvents, saveToCache]);
 
   /**
    * Force refresh leaderboard (bypass cache)
@@ -241,6 +245,14 @@ export const useLeagueLeaderboard = () => {
   useEffect(() => {
     backgroundRefresh();
   }, [backgroundRefresh]);
+
+  // Retry fetch when NDK becomes ready for reading data
+  useEffect(() => {
+    if (canReadData && leaderboard.length === 0 && !isLoading) {
+      console.log('[useLeagueLeaderboard] NDK ready for reading, fetching leaderboard...');
+      backgroundRefresh();
+    }
+  }, [canReadData, leaderboard.length, isLoading, backgroundRefresh]);
 
   // Auto-refresh every 30 minutes
   useEffect(() => {

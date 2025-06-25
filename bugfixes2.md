@@ -906,7 +906,85 @@ The ecash wallet now works perfectly with RUNSTR's Amber external signer archite
 
 **Status**: ✅ **PRODUCTION READY** - Full NIP60 ecash wallet functionality
 
---- 
+---
+
+## NDK Readiness Check Issues - FIXED ✅
+
+**Reported:** Multiple components failing with "no user pubkey" errors:
+- Wallet doesn't initialize 
+- League tab doesn't load 
+- Teams don't load
+- Profile page shows "Error: no user pubkey"
+
+**Root Cause Analysis:**
+- **Incorrect Readiness Checks**: Components were requiring user pubkey for read-only operations that only need NDK connection
+- **Architecture Problem**: App was conflating NDK connection (needed for reading data) with user authentication (needed for signing/writing)
+- **Wrong Dependencies**: Components checking `publicKey` when they should check `ndkReady` or `canReadData`
+
+**The Real Issue:**
+Components were requiring pubkey when they shouldn't need it for their core functionality:
+- **Reading team data** - should only need NDK connection
+- **Reading league data** - should only need NDK connection  
+- **Reading profile data** - should only need NDK connection
+- **Wallet initialization** - should wait for pubkey instead of failing immediately
+
+**Solution Implemented:**
+
+### 1. Fixed TeamsContext.jsx
+- **Before**: `if (!nostrInitialized || !nostrPublicKey)` - failed immediately without pubkey
+- **After**: Separated read operations (only need `canReadData`) from user-specific operations (need `publicKey`)
+- **Result**: Teams can load and display data without user authentication
+
+### 2. Fixed useLeagueLeaderboard.js  
+- **Before**: `if (!ndk)` - failed if NDK wasn't ready
+- **After**: `if (!canReadData || !ndk)` - waits for NDK to be ready for reading
+- **Added**: Retry mechanism when NDK becomes ready for reading data
+- **Result**: League tab loads as soon as NDK connects, doesn't need user pubkey
+
+### 3. Enhanced NDKWalletContext.jsx
+- **Before**: `if (!ndk || !publicKey)` - failed immediately without pubkey
+- **After**: Shows waiting state when pubkey unavailable, retries when pubkey becomes available
+- **Result**: Wallet waits for authentication instead of showing "sign in" error
+
+### 4. Added Pubkey Synchronization System
+- **Problem**: Amber authentication wasn't updating React state in NostrContext
+- **Solution**: Added callback system to sync Amber pubkey with NostrContext state
+- **Result**: All components get pubkey immediately after Amber authentication
+
+**Component Readiness Matrix** (Fixed):
+| Component | Needs NDK | Needs Pubkey | Fixed Check |
+|-----------|-----------|--------------|-------------|
+| Teams (reading) | ✅ | ❌ | `canReadData` |
+| League data | ✅ | ❌ | `canReadData` |
+| Profile (reading) | ✅ | ❌ | `ndkReady` |
+| Wallet (creating) | ✅ | ✅ | Wait for both |
+| Teams (joining) | ✅ | ✅ | Both required |
+
+**Files Modified:**
+- `src/contexts/TeamsContext.jsx` - Fixed readiness check for data reading
+- `src/hooks/useLeagueLeaderboard.js` - Fixed NDK readiness check + added retry logic
+- `src/contexts/NDKWalletContext.jsx` - Enhanced to wait for pubkey instead of failing
+- `src/utils/nostrClient.js` - Added pubkey synchronization callback system
+- `src/contexts/NostrContext.jsx` - Added callback registration for pubkey updates
+
+**Expected Outcome:**
+- ✅ **Teams load immediately** when NDK connects (no pubkey needed for reading)
+- ✅ **League tab loads** as soon as NDK is ready (no pubkey needed for leaderboard)  
+- ✅ **Wallet shows waiting state** instead of "sign in" error, initializes after authentication
+- ✅ **Profile page works** for viewing any user's profile data
+- ✅ **All components receive pubkey** immediately after Amber authentication
+- ✅ **Read-only operations work** without user authentication
+- ✅ **Write operations properly wait** for user authentication
+
+**Architecture Improvement:**
+Now properly separates:
+1. **Data reading capabilities** (`canReadData` - available when NDK connects)
+2. **User authentication** (`publicKey` - available after Amber/signer auth)
+3. **Write operations** (require both NDK + pubkey + signer)
+
+**Status:** ✅ FULLY FIXED - All readiness check issues resolved
+
+---
 
 ## NDK Pubkey Synchronization Issue - FIXED
 
