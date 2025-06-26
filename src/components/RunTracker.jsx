@@ -11,7 +11,6 @@ import DashboardRunCard from './DashboardRunCard';
 import AchievementCard from './AchievementCard';
 import { validateEventRun, initializeEvents } from '../services/EventService';
 import { PostRunWizardModal } from './PostRunWizardModal';
-import PlannedDistanceSelector from './PlannedDistanceSelector';
 import { useContext } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
 import { NostrContext } from '../contexts/NostrContext';
@@ -30,9 +29,6 @@ export const RunTracker = () => {
     activityType,
     estimatedSteps,
     currentSpeed,
-    plannedDistance,
-    isPlannedRun,
-    plannedDistanceProgress,
     startRun,
     pauseRun,
     resumeRun,
@@ -485,23 +481,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
           </div>
           <div className="display-text">{convertDistance(distance, distanceUnit)}</div>
           <div className="text-sm text-text-muted">{distanceUnit}</div>
-          {/* Show planned distance progress if active */}
-          {isTracking && isPlannedRun && plannedDistance && (
-            <div className="mt-2">
-              <div className="text-xs text-text-muted mb-1">
-                Target: {convertDistance(plannedDistance, distanceUnit)} {distanceUnit}
-              </div>
-              <div className="w-full bg-border-secondary rounded-full h-1.5">
-                <div 
-                  className="bg-success h-1.5 rounded-full transition-all duration-300"
-                  style={{ width: `${Math.min(plannedDistanceProgress, 100)}%` }}
-                ></div>
-              </div>
-              <div className="text-xs text-text-muted mt-1">
-                {Math.round(plannedDistanceProgress)}% complete
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Time Card */}
@@ -569,9 +548,6 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         </div>
       )}
       
-      {/* Planned Distance Selector - Show only when not tracking */}
-      {!isTracking && <PlannedDistanceSelector />}
-
       {/* Start Activity Button */}
       {!isTracking ? (
         <Button 

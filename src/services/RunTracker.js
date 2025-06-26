@@ -63,10 +63,6 @@ class RunTracker extends EventEmitter {
     this.timerInterval = null; // For updating duration every second
     this.paceInterval = null; // For calculating pace at regular intervals
     this.smoothedSpeedMps = 0; // For smoothing speed calculations in cycling mode
-    
-    // Planned distance properties
-    this.plannedDistanceMeters = null; // Target distance in meters, null means no planned distance
-    this.isPlannedRun = false; // Whether this is a planned distance run
   }
 
   // Helper method to get the current distance unit from localStorage
@@ -309,21 +305,6 @@ class RunTracker extends EventEmitter {
 
         // Emit an event with updated splits array
         this.emit('splitRecorded', this.splits);
-      }
-      
-      // Check for auto-stop if this is a planned distance run
-      if (this.isPlannedRun && this.plannedDistanceMeters && this.distance >= this.plannedDistanceMeters) {
-        console.log(`Planned distance reached: ${this.distance}m / ${this.plannedDistanceMeters}m`);
-        this.emit('plannedDistanceReached', this.distance);
-        
-        // Auto-stop the run - use setTimeout to avoid blocking the current position processing
-        setTimeout(async () => {
-          try {
-            await this.stop();
-          } catch (error) {
-            console.error('Error auto-stopping run:', error);
-          }
-        }, 100);
       }
     }
 
@@ -726,23 +707,6 @@ class RunTracker extends EventEmitter {
     this.emit('elevationChange', {...this.elevation});
     this.emit('stepsChange', this.estimatedSteps);
     this.emit('speedChange', this.currentSpeed);
-  }
-
-  // Planned distance methods
-  setPlannedDistance(distanceInMeters) {
-    if (!this.isTracking) {
-      this.plannedDistanceMeters = distanceInMeters;
-      this.isPlannedRun = distanceInMeters > 0;
-      console.log(`Planned distance set to: ${distanceInMeters}m (${(distanceInMeters / 1000).toFixed(1)}km)`);
-    } else {
-      console.warn('Cannot set planned distance while run is active');
-    }
-  }
-
-  clearPlannedDistance() {
-    this.plannedDistanceMeters = null;
-    this.isPlannedRun = false;
-    console.log('Planned distance cleared');
   }
 
   // Get custom stride length from settings or calculate from height
