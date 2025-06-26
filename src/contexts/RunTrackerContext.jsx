@@ -31,10 +31,15 @@ export const useRunTracker = () => {
       dailySteps: 0,
       dailyStepGoal: 10000,
       dailyStepProgress: 0,
+      plannedDistance: null,
+      isPlannedRun: false,
+      plannedDistanceProgress: 0,
       startRun: () => console.warn('RunTracker not initialized'),
       pauseRun: () => console.warn('RunTracker not initialized'),
       resumeRun: () => console.warn('RunTracker not initialized'),
       stopRun: () => console.warn('RunTracker not initialized'),
+      setPlannedDistance: () => console.warn('RunTracker not initialized'),
+      clearPlannedDistance: () => console.warn('RunTracker not initialized'),
       runTracker
     };
   }
@@ -69,7 +74,10 @@ export const RunTrackerProvider = ({ children }) => {
         pedometerStatus: isPedometerEnabled() ? 'idle' : 'disabled',
         dailySteps,
         dailyStepGoal,
-        dailyStepProgress
+        dailyStepProgress,
+        plannedDistance: null, // in meters, null means no planned distance
+        isPlannedRun: false,
+        plannedDistanceProgress: 0 // percentage 0-100
       };
     } catch (error) {
       console.error('Error initializing run tracker state:', error);
@@ -87,7 +95,10 @@ export const RunTrackerProvider = ({ children }) => {
         pedometerStatus: isPedometerEnabled() ? 'idle' : 'disabled',
         dailySteps,
         dailyStepGoal,
-        dailyStepProgress
+        dailyStepProgress,
+        plannedDistance: null,
+        isPlannedRun: false,
+        plannedDistanceProgress: 0
       };
     }
   });
@@ -109,7 +120,17 @@ export const RunTrackerProvider = ({ children }) => {
   useEffect(() => {
     try {
       const handleDistanceChange = (distance) => {
-        setTrackingState(prev => ({ ...prev, distance }));
+        setTrackingState(prev => {
+          const newState = { ...prev, distance };
+          
+          // Calculate planned distance progress if this is a planned run
+          if (prev.isPlannedRun && prev.plannedDistance > 0) {
+            const progress = Math.min((distance / prev.plannedDistance) * 100, 100);
+            newState.plannedDistanceProgress = progress;
+          }
+          
+          return newState;
+        });
       };
 
       const handleDurationChange = (duration) => {
@@ -189,6 +210,21 @@ export const RunTrackerProvider = ({ children }) => {
         
         // Reset speed tracking for daily step counter when run stops
         updateSpeed(0);
+        
+        // Reset planned distance state when run stops
+        setTrackingState(prev => ({
+          ...prev,
+          plannedDistance: null,
+          isPlannedRun: false,
+          plannedDistanceProgress: 0
+        }));
+      };
+
+      // Handler for auto-stop when planned distance is reached
+      const handlePlannedDistanceReached = (finalDistance) => {
+        console.log('Planned distance reached:', finalDistance);
+        // The auto-stop will be handled by the RunTracker service
+        // This is just for logging and any additional UI updates
       };
 
       // Subscribe to events from the run tracker
@@ -201,6 +237,7 @@ export const RunTrackerProvider = ({ children }) => {
       runTracker.on('stopped', handleRunStopped);
       runTracker.on('stepsChange', handleStepsChange);
       runTracker.on('speedChange', handleSpeedChange);
+      runTracker.on('plannedDistanceReached', handlePlannedDistanceReached);
 
       // Check for active run state in localStorage on mount
       const savedRunState = localStorage.getItem('activeRunState');
@@ -256,6 +293,7 @@ export const RunTrackerProvider = ({ children }) => {
         runTracker.off('stopped', handleRunStopped);
         runTracker.off('stepsChange', handleStepsChange);
         runTracker.off('speedChange', handleSpeedChange);
+        runTracker.off('plannedDistanceReached', handlePlannedDistanceReached);
       };
     } catch (error) {
       console.error('Error setting up run tracker event listeners:', error);
@@ -306,6 +344,11 @@ export const RunTrackerProvider = ({ children }) => {
       // Update the activity type to current mode before starting
       runTracker.activityType = activityType;
       
+      // Set planned distance on the service if we have one
+      if (trackingState.plannedDistance) {
+        runTracker.setPlannedDistance(trackingState.plannedDistance);
+      }
+      
       await runTracker.start();
       setTrackingState(prev => ({
         ...prev,
@@ -319,7 +362,8 @@ export const RunTrackerProvider = ({ children }) => {
         splits: [],
         elevation: { current: null, gain: 0, loss: 0, lastAltitude: null },
         activityType: activityType,
-        pedometerStatus: isPedometerEnabled() ? 'starting' : 'disabled'
+        pedometerStatus: isPedometerEnabled() ? 'starting' : 'disabled',
+        plannedDistanceProgress: 0
       }));
     } catch (error) {
       console.error('Error starting run:', error);
@@ -368,8 +412,37 @@ export const RunTrackerProvider = ({ children }) => {
         splits: [],
         elevation: { current: null, gain: 0, loss: 0, lastAltitude: null },
         activityType: activityType,
-        pedometerStatus: isPedometerEnabled() ? 'idle' : 'disabled'
+        pedometerStatus: isPedometerEnabled() ? 'idle' : 'disabled',
+        plannedDistance: null,
+        isPlannedRun: false,
+        plannedDistanceProgress: 0
       }));
+    }
+  };
+
+  // Planned distance methods
+  const setPlannedDistance = (distanceInMeters) => {
+    if (!trackingState.isTracking) {
+      setTrackingState(prev => ({
+        ...prev,
+        plannedDistance: distanceInMeters,
+        isPlannedRun: distanceInMeters > 0,
+        plannedDistanceProgress: 0
+      }));
+    }
+  };
+
+  const clearPlannedDistance = () => {
+    if (!trackingState.isTracking) {
+      setTrackingState(prev => ({
+        ...prev,
+        plannedDistance: null,
+        isPlannedRun: false,
+        plannedDistanceProgress: 0
+      }));
+      
+      // Also clear from the service
+      runTracker.clearPlannedDistance();
     }
   };
 
@@ -380,6 +453,8 @@ export const RunTrackerProvider = ({ children }) => {
     pauseRun,
     resumeRun,
     stopRun,
+    setPlannedDistance,
+    clearPlannedDistance,
     runTracker, // Expose the original instance for advanced use cases
     pedometerStatus: trackingState.pedometerStatus
   };

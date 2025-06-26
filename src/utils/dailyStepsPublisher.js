@@ -1,5 +1,5 @@
 import { ndk } from '../lib/ndkSingleton';
-import { NostrEvent } from '@nostr-dev-kit/ndk';
+import { NDKEvent } from '@nostr-dev-kit/ndk';
 import { getTodayKey } from './dailyStepStorage';
 
 /**
@@ -83,7 +83,7 @@ export const publishDailySteps = async (stepData, options = {}) => {
 
     // Create the event
     const eventData = createDailyStepsEvent(stepData, options);
-    const ndkEvent = new NostrEvent(ndk, eventData);
+    const ndkEvent = new NDKEvent(ndk, eventData);
 
     // Sign the event
     await ndkEvent.sign();
