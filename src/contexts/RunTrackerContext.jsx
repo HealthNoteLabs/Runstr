@@ -136,8 +136,10 @@ export const RunTrackerProvider = ({ children }) => {
         setTrackingState(prev => ({ ...prev, currentSpeed: speed }));
         
         // Update daily step counter with current speed for filtering
+        // Pass GPS active status based on tracking state
         if (speed && speed.value !== undefined) {
-          updateSpeed(speed.value);
+          const isGpsActive = trackingState.isTracking && !trackingState.isPaused;
+          updateSpeed(speed.value, isGpsActive);
         }
       };
 

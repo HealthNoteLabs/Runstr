@@ -11,6 +11,11 @@ class DailyStepCounterService extends EventEmitter {
     this.currentSpeed = 0;
     this.speedCheckTimeout = null;
     this.isPausedForSpeed = false;
+    this.lastValidSpeedTime = null;
+    this.speedHistory = [];
+    this.isGpsActive = false;
+    this.healthCheckInterval = null;
+    this.lastStepTime = null;
     
     // Initialize from storage
     this.loadDailySteps();
@@ -67,32 +72,140 @@ class DailyStepCounterService extends EventEmitter {
     return stored ? parseInt(stored, 10) : 10000;
   }
 
-  // Update current speed for filtering
-  updateSpeed(speed) {
+  // Update current speed for filtering with improved logic
+  updateSpeed(speed, isGpsActive = true) {
+    // Mark GPS as active when speed updates are coming in
+    this.isGpsActive = isGpsActive;
+    this.lastValidSpeedTime = Date.now();
+    
+    // Only process speed if it's a valid number
+    if (typeof speed !== 'number' || isNaN(speed) || speed < 0) {
+      console.warn('Invalid speed data received:', speed);
+      return;
+    }
+    
     this.currentSpeed = speed;
+    
+    // Add to speed history for smoothing (keep last 5 readings)
+    this.speedHistory.push({ speed, timestamp: Date.now() });
+    if (this.speedHistory.length > 5) {
+      this.speedHistory.shift();
+    }
     
     // Clear existing timeout
     if (this.speedCheckTimeout) {
       clearTimeout(this.speedCheckTimeout);
     }
 
-    // Check if we should pause counting due to high speed (vehicle movement)
-    const speedThreshold = 15; // km/h
-    const shouldPause = speed > speedThreshold;
+    // Only apply vehicle detection if GPS is actively providing data
+    if (!this.isGpsActive) {
+      return;
+    }
+
+    // Calculate smoothed speed from recent readings
+    const recentReadings = this.speedHistory.filter(
+      reading => Date.now() - reading.timestamp < 10000 // Last 10 seconds
+    );
+    const smoothedSpeed = recentReadings.length > 0 
+      ? recentReadings.reduce((sum, reading) => sum + reading.speed, 0) / recentReadings.length
+      : speed;
+
+    // Vehicle detection threshold (adjusted for better accuracy)
+    const speedThreshold = 20; // km/h - increased to reduce false positives
+    const shouldPause = smoothedSpeed > speedThreshold && recentReadings.length >= 3;
 
     if (shouldPause && !this.isPausedForSpeed) {
-      console.log(`Pausing step counting due to high speed: ${speed} km/h`);
+      console.log(`Pausing step counting due to high speed: ${smoothedSpeed.toFixed(1)} km/h (raw: ${speed})`);
       this.isPausedForSpeed = true;
-      this.emit('speedPause', { speed, paused: true });
+      this.emit('speedPause', { speed: smoothedSpeed, paused: true, reason: 'vehicle_detected' });
     } else if (!shouldPause && this.isPausedForSpeed) {
       // Add a delay before resuming to avoid frequent pause/resume cycles
       this.speedCheckTimeout = setTimeout(() => {
-        if (this.currentSpeed <= speedThreshold) {
-          console.log(`Resuming step counting, speed normalized: ${this.currentSpeed} km/h`);
+        // Re-check speed is still low
+        const currentSmoothedSpeed = this.speedHistory.length > 0
+          ? this.speedHistory.reduce((sum, reading) => sum + reading.speed, 0) / this.speedHistory.length
+          : 0;
+          
+        if (currentSmoothedSpeed <= speedThreshold) {
+          console.log(`Resuming step counting, speed normalized: ${currentSmoothedSpeed.toFixed(1)} km/h`);
           this.isPausedForSpeed = false;
-          this.emit('speedPause', { speed: this.currentSpeed, paused: false });
+          this.emit('speedPause', { speed: currentSmoothedSpeed, paused: false, reason: 'speed_normalized' });
         }
-      }, 5000); // 5 second delay
+      }, 8000); // 8 second delay
+    }
+
+    // Auto-resume if no GPS data for extended period (indoor scenario)
+    setTimeout(() => {
+      if (this.isPausedForSpeed && Date.now() - this.lastValidSpeedTime > 30000) {
+        console.log('Auto-resuming step counting: No GPS data for 30+ seconds (likely indoors)');
+        this.isPausedForSpeed = false;
+        this.isGpsActive = false;
+        this.speedHistory = [];
+        this.emit('speedPause', { speed: 0, paused: false, reason: 'gps_timeout' });
+      }
+    }, 35000);
+  }
+
+  // Start health monitoring
+  startHealthMonitoring() {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+    }
+    
+    this.healthCheckInterval = setInterval(() => {
+      this.performHealthCheck();
+    }, 60000); // Check every minute
+  }
+
+  // Stop health monitoring
+  stopHealthMonitoring() {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+  }
+
+  // Perform health check on the service
+  async performHealthCheck() {
+    try {
+      // Check if pedometer is still listening
+      if (!Pedometer.listening && this.isRunning) {
+        console.warn('Health check: Pedometer not listening, attempting restart');
+        this.emit('error', new Error('Pedometer service stopped unexpectedly'));
+        
+        // Attempt to restart
+        try {
+          await this.restart();
+        } catch (restartError) {
+          console.error('Failed to restart pedometer:', restartError);
+          this.emit('error', restartError);
+        }
+      }
+      
+      // Check if we've received steps recently (if user should be moving)
+      if (this.lastStepTime && Date.now() - this.lastStepTime > 300000) { // 5 minutes
+        console.warn('Health check: No steps received in 5+ minutes');
+        // Don't auto-restart here as user might genuinely be stationary
+      }
+      
+      // Check daily reset
+      this.checkDailyReset();
+      
+    } catch (error) {
+      console.error('Health check failed:', error);
+      this.emit('error', error);
+    }
+  }
+
+  // Restart the service
+  async restart() {
+    console.log('Restarting daily step counter service...');
+    
+    const wasRunning = this.isRunning;
+    await this.stop();
+    
+    if (wasRunning && this.isEnabled()) {
+      await this.start();
     }
   }
 
@@ -125,6 +238,8 @@ class DailyStepCounterService extends EventEmitter {
       });
 
       this.isRunning = true;
+      this.startHealthMonitoring();
+      
       console.log('Daily step counter started');
       this.emit('started', { steps: this.dailySteps });
       return true;
@@ -153,19 +268,34 @@ class DailyStepCounterService extends EventEmitter {
       this.speedCheckTimeout = null;
     }
 
+    // Stop health monitoring
+    this.stopHealthMonitoring();
+
     // Note: We don't stop the Pedometer service itself as it might be used by other parts of the app
 
     this.isRunning = false;
     this.isPausedForSpeed = false;
+    this.isGpsActive = false;
+    this.speedHistory = [];
+    
     console.log('Daily step counter stopped');
     this.emit('stopped', { steps: this.dailySteps });
   }
 
-  // Handle incoming step data from pedometer
+  // Handle incoming step data from pedometer with validation
   handleStepData(data) {
-    const newSteps = data.count || 0;
+    // Validate step data
+    if (!data || typeof data.count !== 'number' || data.count < 0) {
+      console.warn('Invalid step data received:', data);
+      return;
+    }
     
-    // Simple increment approach - count each step event
+    // Update last step time for health monitoring
+    this.lastStepTime = Date.now();
+    
+    // For step detector events, increment by 1
+    // For step counter events, the count represents total steps since start
+    // The Android plugin handles this distinction and sends appropriate count
     this.dailySteps += 1;
     
     // Save to storage
@@ -178,7 +308,8 @@ class DailyStepCounterService extends EventEmitter {
     this.emit('stepsUpdate', { 
       steps: this.dailySteps, 
       goal: this.getDailyGoal(),
-      date: this.getTodayKey()
+      date: this.getTodayKey(),
+      lastStepTime: this.lastStepTime
     });
   }
 
@@ -195,7 +326,8 @@ class DailyStepCounterService extends EventEmitter {
           milestone, 
           steps: this.dailySteps, 
           goal,
-          date: this.getTodayKey()
+          date: this.getTodayKey(),
+          id: `${this.getTodayKey()}-${milestone}`
         });
       }
     });
@@ -210,7 +342,13 @@ class DailyStepCounterService extends EventEmitter {
       progress: Math.min((this.dailySteps / this.getDailyGoal()) * 100, 100),
       date: this.getTodayKey(),
       isRunning: this.isRunning,
-      isPausedForSpeed: this.isPausedForSpeed
+      isPausedForSpeed: this.isPausedForSpeed,
+      lastStepTime: this.lastStepTime,
+      serviceHealth: {
+        pedometerListening: Pedometer.listening,
+        isGpsActive: this.isGpsActive,
+        speedHistoryLength: this.speedHistory.length
+      }
     };
   }
 

@@ -190,4 +190,100 @@ export const importStepData = (exportedData) => {
   }
   
   return importedCount;
+};
+
+// Debug utility for troubleshooting the always-on step counter
+export const getStepCounterDebugInfo = () => {
+  const todayKey = getTodayKey();
+  const isEnabled = isAlwaysOnEnabled();
+  
+  // Import the service dynamically to avoid circular dependencies
+  let serviceInfo = null;
+  try {
+    // This will only work if the service is already loaded
+    if (window.dailyStepCounter || (typeof require !== 'undefined')) {
+      const { dailyStepCounter } = require('../services/DailyStepCounterService');
+      const stepData = dailyStepCounter.getDailySteps();
+      serviceInfo = {
+        isRunning: dailyStepCounter.isRunning,
+        isPausedForSpeed: dailyStepCounter.isPausedForSpeed,
+        isGpsActive: dailyStepCounter.isGpsActive,
+        lastStepTime: dailyStepCounter.lastStepTime,
+        speedHistoryLength: dailyStepCounter.speedHistory?.length || 0,
+        serviceHealth: stepData.serviceHealth
+      };
+    }
+  } catch (error) {
+    console.warn('Could not access daily step counter service:', error);
+  }
+  
+  return {
+    timestamp: new Date().toISOString(),
+    todayKey,
+    settings: {
+      alwaysOnEnabled: localStorage.getItem('alwaysOnStepCounter') === 'true',
+      pedometerEnabled: localStorage.getItem('usePedometer') === 'true',
+      isEnabled,
+      dailyGoal: getDailyStepGoal()
+    },
+    storage: {
+      todaySteps: loadDailySteps(todayKey),
+      lastResetDate: localStorage.getItem('dailyStepsLastReset'),
+      recentHistory: getStepHistory(3)
+    },
+    service: serviceInfo,
+    browser: {
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      deviceMemory: navigator.deviceMemory || 'unknown',
+      hardwareConcurrency: navigator.hardwareConcurrency || 'unknown'
+    },
+    permissions: {
+      // Note: These would need to be checked with proper permission APIs
+      // This is just a placeholder for future enhancement
+      activityRecognition: 'unknown',
+      locationServices: 'unknown'
+    }
+  };
+};
+
+// Console-friendly debug function
+export const debugStepCounter = () => {
+  const info = getStepCounterDebugInfo();
+  
+  console.group('🚶 Always-On Step Counter Debug Info');
+  console.log('📅 Date:', info.todayKey);
+  console.log('⚙️ Settings:', info.settings);
+  console.log('💾 Storage:', info.storage);
+  console.log('🔧 Service:', info.service || 'Service not available');
+  console.log('🌐 Browser:', info.browser);
+  console.groupEnd();
+  
+  // Check for common issues
+  const issues = [];
+  if (!info.settings.alwaysOnEnabled) {
+    issues.push('❌ Always-on step counter is disabled in settings');
+  }
+  if (!info.settings.pedometerEnabled) {
+    issues.push('❌ Pedometer is disabled in settings');
+  }
+  if (info.service && !info.service.isRunning) {
+    issues.push('⚠️ Service is not running');
+  }
+  if (info.service && !info.service.serviceHealth?.pedometerListening) {
+    issues.push('⚠️ Pedometer sensor is not connected');
+  }
+  if (info.service && info.service.isPausedForSpeed) {
+    issues.push('⏸️ Service is paused due to high speed detection');
+  }
+  
+  if (issues.length > 0) {
+    console.group('🚨 Potential Issues Detected');
+    issues.forEach(issue => console.log(issue));
+    console.groupEnd();
+  } else {
+    console.log('✅ No obvious issues detected');
+  }
+  
+  return info;
 }; 

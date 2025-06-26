@@ -9,12 +9,19 @@ export const useDailySteps = () => {
     progress: 0,
     date: '',
     isRunning: false,
-    isPausedForSpeed: false
+    isPausedForSpeed: false,
+    lastStepTime: null,
+    serviceHealth: {
+      pedometerListening: false,
+      isGpsActive: false,
+      speedHistoryLength: 0
+    }
   });
   
   const [milestones, setMilestones] = useState([]);
   const [isEnabled, setIsEnabled] = useState(false);
   const [error, setError] = useState(null);
+  const [serviceStatus, setServiceStatus] = useState('unknown');
   
   // Track if component is mounted to prevent state updates after unmount
   const isMountedRef = useRef(true);
@@ -39,16 +46,20 @@ export const useDailySteps = () => {
     
     const enabled = isAlwaysOnEnabled();
     setIsEnabled(enabled);
+    updateServiceStatus();
     
     if (enabled && !dailyStepCounter.isRunning) {
+      setServiceStatus('starting');
       dailyStepCounter.start().catch(err => {
         console.error('Failed to start daily step counter:', err);
         setError(err.message);
+        setServiceStatus('error');
       });
     } else if (!enabled && dailyStepCounter.isRunning) {
+      setServiceStatus('stopping');
       dailyStepCounter.stop();
     }
-  }, []);
+  }, [updateServiceStatus]);
 
   // Handle step updates from service
   const handleStepsUpdate = useCallback((data) => {
@@ -93,19 +104,44 @@ export const useDailySteps = () => {
   const handleServiceStart = useCallback(() => {
     if (!isMountedRef.current) return;
     updateStepData();
-  }, [updateStepData]);
+    updateServiceStatus();
+    setError(null); // Clear any previous errors on successful start
+  }, [updateStepData, updateServiceStatus]);
 
   const handleServiceStop = useCallback(() => {
     if (!isMountedRef.current) return;
     updateStepData();
-  }, [updateStepData]);
+    updateServiceStatus();
+  }, [updateStepData, updateServiceStatus]);
 
   // Handle service errors
   const handleError = useCallback((err) => {
     if (!isMountedRef.current) return;
     console.error('Daily step counter error:', err);
     setError(err.message || 'Unknown error occurred');
+    setServiceStatus('error');
+    
+    // Auto-clear error after 30 seconds if service recovers
+    setTimeout(() => {
+      if (isMountedRef.current && dailyStepCounter.isRunning) {
+        setError(null);
+        setServiceStatus('running');
+      }
+    }, 30000);
   }, []);
+
+  // Update service status based on events
+  const updateServiceStatus = useCallback(() => {
+    if (!isMountedRef.current) return;
+    
+    if (!isEnabled) {
+      setServiceStatus('disabled');
+    } else if (dailyStepCounter.isRunning) {
+      setServiceStatus('running');
+    } else {
+      setServiceStatus('stopped');
+    }
+  }, [isEnabled]);
 
   // Dismiss a milestone notification
   const dismissMilestone = useCallback((milestoneId) => {
@@ -205,6 +241,9 @@ export const useDailySteps = () => {
     isPausedForSpeed: stepData.isPausedForSpeed,
     isEnabled,
     error,
+    serviceStatus,
+    lastStepTime: stepData.lastStepTime,
+    serviceHealth: stepData.serviceHealth,
     
     // Milestone notifications
     milestones,
