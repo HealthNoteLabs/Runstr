@@ -10,6 +10,7 @@ import { ActivityModeProvider } from './contexts/ActivityModeContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { WalletProvider } from './contexts/WalletContext';
 import { MenuBar } from './components/MenuBar';
+import { DailyStepsProgressBanner } from './components/DailyStepsProgressBanner';
 import { initializeEvents } from './services/EventService';
 import './App.css';
 import ErrorFallback from './components/ErrorFallback';
@@ -183,6 +184,7 @@ const App = () => {
                       <WalletProvider>
                         <div className="relative w-full min-h-screen bg-bg-primary text-text-primary">
                           <MenuBar />
+                          <DailyStepsProgressBanner />
                           <main className="pb-24 w-full mx-auto px-4 max-w-screen-md">
                             <Suspense fallback={<EnhancedLoadingFallback />}>
                               <AppRoutes />

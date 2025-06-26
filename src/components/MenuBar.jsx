@@ -22,6 +22,8 @@ export const MenuBar = () => {
     blossomEndpoint, setBlossomEndpoint,
     skipStartCountdown, setSkipStartCountdown,
     usePedometer, setUsePedometer,
+    alwaysOnStepCounter, setAlwaysOnStepCounter,
+    dailyStepGoal, setDailyStepGoal,
     useLocalStats, setUseLocalStats,
     autoPostToNostr, setAutoPostToNostr
   } = useSettings();
@@ -399,7 +401,7 @@ export const MenuBar = () => {
               <h4 className="subsection-heading mb-3">Step Counting (Walking)</h4>
               <div className="space-y-3">
                 {/* NEW Pedometer Button - Replaced with Checkbox */}
-                <div className="flex items-center justify-between bg-bg-tertiary p-3 rounded-lg mb-3 border border-border-secondary">
+                <div className="flex items-center justify-between bg-bg-tertiary p-3 rounded-lg border border-border-secondary">
                   <span className="text-sm text-text-secondary mr-3">Use Device Step Counter</span>
                   <input
                     type="checkbox"
@@ -408,7 +410,44 @@ export const MenuBar = () => {
                     onChange={() => setUsePedometer(!usePedometer)}
                   />
                 </div>
-                {/* End Pedometer Checkbox */}
+                
+                {/* Always-On Daily Step Counter */}
+                <div className="flex items-center justify-between bg-bg-tertiary p-3 rounded-lg border border-border-secondary">
+                  <div className="flex-1 mr-3">
+                    <span className="text-sm text-text-secondary">Always-On Daily Steps</span>
+                    <p className="text-xs text-text-muted mt-1">Track steps throughout the day, even when not actively exercising</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    className="form-checkbox h-5 w-5 text-primary bg-bg-tertiary border-border-secondary focus:ring-primary rounded"
+                    checked={alwaysOnStepCounter}
+                    onChange={() => setAlwaysOnStepCounter(!alwaysOnStepCounter)}
+                    disabled={!usePedometer}
+                  />
+                </div>
+                
+                {/* Daily Step Goal */}
+                {alwaysOnStepCounter && (
+                  <div className="bg-bg-tertiary p-3 rounded-lg border border-border-secondary">
+                    <label className="block text-sm text-text-secondary mb-2">Daily Step Goal</label>
+                    <select
+                      value={dailyStepGoal}
+                      onChange={e => setDailyStepGoal(parseInt(e.target.value, 10))}
+                      className="w-full bg-bg-primary p-2 rounded-md text-text-primary text-sm border border-border-secondary focus:ring-primary focus:border-border-focus outline-none"
+                    >
+                      <option value={5000}>5,000 steps</option>
+                      <option value={8000}>8,000 steps</option>
+                      <option value={10000}>10,000 steps</option>
+                      <option value={12000}>12,000 steps</option>
+                      <option value={15000}>15,000 steps</option>
+                      <option value={20000}>20,000 steps</option>
+                    </select>
+                    <p className="text-xs text-text-muted mt-2">
+                      Set your daily step goal for progress tracking and milestone notifications
+                    </p>
+                  </div>
+                )}
+                {/* End Daily Step Settings */}
               </div>
             </div>
             

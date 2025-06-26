@@ -41,6 +41,10 @@ export const useSettings = () => {
       setSkipStartCountdown: () => console.warn('Settings not initialized'),
       usePedometer: true,
       setUsePedometer: () => console.warn('Settings not initialized'),
+      alwaysOnStepCounter: false,
+      setAlwaysOnStepCounter: () => console.warn('Settings not initialized'),
+      dailyStepGoal: 10000,
+      setDailyStepGoal: () => console.warn('Settings not initialized'),
       autoPostToNostr: false,
       setAutoPostToNostr: () => console.warn('Settings not initialized'),
       useLocalStats: false,
@@ -80,6 +84,11 @@ export const SettingsProvider = ({ children }) => {
   const [blossomEndpoint, setBlossomEndpoint] = useState(() => localStorage.getItem('blossomEndpoint') || 'https://cdn.satellite.earth');
   const [skipStartCountdown, setSkipStartCountdown] = useState(() => initBooleanState('skipStartCountdown', false));
   const [usePedometer, setUsePedometer] = useState(() => initBooleanState('usePedometer', true));
+  const [alwaysOnStepCounter, setAlwaysOnStepCounter] = useState(() => initBooleanState('alwaysOnStepCounter', false));
+  const [dailyStepGoal, setDailyStepGoal] = useState(() => {
+    const stored = localStorage.getItem('dailyStepGoal');
+    return stored ? parseInt(stored, 10) : 10000;
+  });
   const [autoPostToNostr, setAutoPostToNostr] = useState(() => initBooleanState('autoPostToNostr', false));
   const [useLocalStats, setUseLocalStats] = useState(() => initBooleanState('useLocalStats', false));
 
@@ -105,6 +114,8 @@ export const SettingsProvider = ({ children }) => {
   useEffect(() => localStorage.setItem('blossomEndpoint', blossomEndpoint), [blossomEndpoint]);
   useEffect(() => localStorage.setItem('skipStartCountdown', skipStartCountdown.toString()), [skipStartCountdown]);
   useEffect(() => localStorage.setItem('usePedometer', usePedometer.toString()), [usePedometer]);
+  useEffect(() => localStorage.setItem('alwaysOnStepCounter', alwaysOnStepCounter.toString()), [alwaysOnStepCounter]);
+  useEffect(() => localStorage.setItem('dailyStepGoal', dailyStepGoal.toString()), [dailyStepGoal]);
   useEffect(() => localStorage.setItem('autoPostToNostr', autoPostToNostr.toString()), [autoPostToNostr]);
   useEffect(() => localStorage.setItem('useLocalStats', useLocalStats.toString()), [useLocalStats]);
 
@@ -164,6 +175,10 @@ export const SettingsProvider = ({ children }) => {
     setSkipStartCountdown,
     usePedometer,
     setUsePedometer,
+    alwaysOnStepCounter,
+    setAlwaysOnStepCounter,
+    dailyStepGoal,
+    setDailyStepGoal,
     autoPostToNostr,
     setAutoPostToNostr,
     useLocalStats,
@@ -179,6 +194,8 @@ export const SettingsProvider = ({ children }) => {
     blossomEndpoint, setBlossomEndpoint,
     skipStartCountdown, setSkipStartCountdown,
     usePedometer, setUsePedometer,
+    alwaysOnStepCounter, setAlwaysOnStepCounter,
+    dailyStepGoal, setDailyStepGoal,
     autoPostToNostr, setAutoPostToNostr,
     useLocalStats, setUseLocalStats,
     metricPublishPrefs,

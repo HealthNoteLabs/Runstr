@@ -5,6 +5,7 @@ import { useActivityMode } from './ActivityModeContext';
 import { ACTIVITY_TYPES } from '../services/RunDataService';
 import { NostrContext } from './NostrContext';
 import { Pedometer } from '../services/PedometerService';
+import { useDailySteps } from '../hooks/useDailySteps';
 
 // Create the context
 const RunTrackerContext = createContext(null);
@@ -27,6 +28,9 @@ export const useRunTracker = () => {
       elevation: { current: null, gain: 0, loss: 0 },
       activityType: ACTIVITY_TYPES.RUN,
       pedometerStatus: 'idle',
+      dailySteps: 0,
+      dailyStepGoal: 10000,
+      dailyStepProgress: 0,
       startRun: () => console.warn('RunTracker not initialized'),
       pauseRun: () => console.warn('RunTracker not initialized'),
       resumeRun: () => console.warn('RunTracker not initialized'),
@@ -44,6 +48,9 @@ const isPedometerEnabled = () => localStorage.getItem('usePedometer') === 'true'
 export const RunTrackerProvider = ({ children }) => {
   const { mode: activityType } = useActivityMode();
   const { publicKey, lightningAddress } = useContext(NostrContext);
+  
+  // Use daily steps hook for integration
+  const { steps: dailySteps, goal: dailyStepGoal, progress: dailyStepProgress, updateSpeed } = useDailySteps();
 
   // Initialize state with try/catch to prevent fatal errors on startup
   const [trackingState, setTrackingState] = useState(() => {
@@ -59,7 +66,10 @@ export const RunTrackerProvider = ({ children }) => {
         splits: runTracker.splits,
         elevation: runTracker.elevation,
         activityType: runTracker.activityType || activityType,
-        pedometerStatus: isPedometerEnabled() ? 'idle' : 'disabled'
+        pedometerStatus: isPedometerEnabled() ? 'idle' : 'disabled',
+        dailySteps,
+        dailyStepGoal,
+        dailyStepProgress
       };
     } catch (error) {
       console.error('Error initializing run tracker state:', error);
@@ -74,13 +84,26 @@ export const RunTrackerProvider = ({ children }) => {
         splits: [],
         elevation: { current: null, gain: 0, loss: 0, lastAltitude: null },
         activityType: activityType,
-        pedometerStatus: isPedometerEnabled() ? 'idle' : 'disabled'
+        pedometerStatus: isPedometerEnabled() ? 'idle' : 'disabled',
+        dailySteps,
+        dailyStepGoal,
+        dailyStepProgress
       };
     }
   });
 
   // Add a ref for pedometer unsubscribe
   const pedometerUnsubRef = useRef(null);
+
+  // Update tracking state when daily steps change
+  useEffect(() => {
+    setTrackingState(prev => ({
+      ...prev,
+      dailySteps,
+      dailyStepGoal,
+      dailyStepProgress
+    }));
+  }, [dailySteps, dailyStepGoal, dailyStepProgress]);
 
   // Listen for changes in the run tracker state
   useEffect(() => {
@@ -111,6 +134,11 @@ export const RunTrackerProvider = ({ children }) => {
 
       const handleSpeedChange = (speed) => {
         setTrackingState(prev => ({ ...prev, currentSpeed: speed }));
+        
+        // Update daily step counter with current speed for filtering
+        if (speed && speed.value !== undefined) {
+          updateSpeed(speed.value);
+        }
       };
 
       const handleStatusChange = () => {
@@ -158,6 +186,9 @@ export const RunTrackerProvider = ({ children }) => {
       const handleRunStopped = (finalResults) => {
         console.log('Run completed:', finalResults);
         // The actual saving is now handled by the RunTracker service using RunDataService
+        
+        // Reset speed tracking for daily step counter when run stops
+        updateSpeed(0);
       };
 
       // Subscribe to events from the run tracker
@@ -178,7 +209,8 @@ export const RunTrackerProvider = ({ children }) => {
           const runData = JSON.parse(savedRunState);
           
           // Update state
-          setTrackingState({
+          setTrackingState(prev => ({
+            ...prev,
             isTracking: runData.isRunning,
             isPaused: runData.isPaused,
             distance: runData.distance,
@@ -190,7 +222,7 @@ export const RunTrackerProvider = ({ children }) => {
             elevation: runData.elevation,
             activityType: runData.activityType || activityType,
             pedometerStatus: isPedometerEnabled() ? 'idle' : 'disabled'
-          });
+          }));
           
           // Restore tracking if active and not paused
           if (runData.isRunning && !runData.isPaused) {
@@ -230,7 +262,7 @@ export const RunTrackerProvider = ({ children }) => {
       // Return empty cleanup function
       return () => {};
     }
-  }, [activityType]); // Include activityType in dependencies
+  }, [activityType, updateSpeed]); // Include updateSpeed in dependencies
 
   // Save run state to localStorage when it changes
   useEffect(() => {
@@ -275,7 +307,8 @@ export const RunTrackerProvider = ({ children }) => {
       runTracker.activityType = activityType;
       
       await runTracker.start();
-      setTrackingState({
+      setTrackingState(prev => ({
+        ...prev,
         isTracking: true,
         isPaused: false,
         distance: 0,
@@ -287,7 +320,7 @@ export const RunTrackerProvider = ({ children }) => {
         elevation: { current: null, gain: 0, loss: 0, lastAltitude: null },
         activityType: activityType,
         pedometerStatus: isPedometerEnabled() ? 'starting' : 'disabled'
-      });
+      }));
     } catch (error) {
       console.error('Error starting run:', error);
       alert('Could not start tracking. Please check permissions and try again.');
@@ -323,7 +356,8 @@ export const RunTrackerProvider = ({ children }) => {
     } catch (error) {
       console.error('Error stopping run:', error);
       // Force update state to stopped in case event listeners fail
-      setTrackingState({
+      setTrackingState(prev => ({
+        ...prev,
         isTracking: false,
         isPaused: false,
         distance: 0,
@@ -335,7 +369,7 @@ export const RunTrackerProvider = ({ children }) => {
         elevation: { current: null, gain: 0, loss: 0, lastAltitude: null },
         activityType: activityType,
         pedometerStatus: isPedometerEnabled() ? 'idle' : 'disabled'
-      });
+      }));
     }
   };
 
