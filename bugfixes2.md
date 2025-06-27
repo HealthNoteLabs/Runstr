@@ -7,73 +7,95 @@ This document tracks the progress and solutions for the identified issues. Solut
 **Date:** 2025-01-14  
 **Reporter:** User  
 **Severity:** Critical  
-**Status:** ✅ Fixed  
+**Status:** ✅ Partially Fixed - Additional Issues Found
 
 ### Problem Description
 
-User reported that the League feed was empty, suspecting the activity mode filtering was too strict. Running `npm run dev` showed the app started successfully, but no posts were appearing in the League tab despite there being workout data available.
+User reported that the League feed was empty, suspecting the activity mode filtering was too strict. After investigation, the issue was multiple-fold: incorrect exercise tag filtering, overly aggressive cache clearing mechanisms, AND critical inconsistencies between how the leaderboard and feed gather posts.
 
 ### Root Cause Analysis
 
-**Value Mismatch in Exercise Tag Filtering:**
+**Primary Issue: Value Mismatch in Exercise Tag Filtering**
 
 After examining how the app actually publishes kind 1301 workout events vs. how the filtering logic was checking them, I found a critical mismatch:
 
-**How RUNSTR App Publishes (from `createWorkoutEvent`):**
-```javascript
-const activityVerb = activity === 'walk' ? 'walk' : (activity === 'cycle' ? 'cycle' : 'run');
-// Creates tags like:
-['exercise', 'run']      // For running activities  
-['exercise', 'cycle']    // For cycling activities
-['exercise', 'walk']     // For walking activities
-```
+**How RUNSTR App Publishes (from `createWorkoutEvent`)**:
+- `['exercise', 'run']` for running
+- `['exercise', 'cycle']` for cycling  
+- `['exercise', 'walk']` for walking
 
-**What Filter Was Expecting (in `useRunFeed.js`):**
-```javascript
-if (['running', 'cycling', 'walking', 'jogging'].includes(activity)) {
-  hasRequiredTags.exercise = true;
-}
-// Was looking for: 'running', 'cycling', 'walking', 'jogging'
-// But app publishes: 'run', 'cycle', 'walk'
-```
+**How Filtering Logic Was Checking**:
+- Looking for `['exercise', 'running']`, `['exercise', 'cycling']`, `['exercise', 'walking']`
 
-**The Impact:**
-- **100% of posts filtered out**: Every RUNSTR workout was being rejected because the exercise tag values didn't match
-- **Filter expected**: `'running'` but app publishes `'run'`
-- **Filter expected**: `'cycling'` but app publishes `'cycle'`  
-- **Filter expected**: `'walking'` but app publishes `'walk'`
+**Result**: 100% of workout posts were being filtered out due to value mismatch.
+
+**Secondary Issue: Overly Aggressive Cache Clearing**
+
+Multiple cache clearing mechanisms were wiping posts when navigating between feeds:
+1. **Auto-detect cache clearing**: Running on every feed mount, clearing entire cache if ANY posts looked suspicious
+2. **Activity mode changes**: Clearing entire cache instead of re-filtering existing posts  
+3. **Short cache duration**: Only 5 minutes, causing frequent re-fetches
+
+**Tertiary Issue: Feed vs Leaderboard Inconsistencies**
+
+Critical differences between how the leaderboard and feed gather posts:
+
+1. **Event Fetching Scope**:
+   - **Leaderboard**: Fetches ALL kind 1301 events (limit: 5000) from last year
+   - **Feed**: Only fetches 21 events max with cascading windows (max 14 days)
+
+2. **Exercise Tag Values**:
+   - **Leaderboard**: Uses updated lenient matching (`'run'` OR `'running'`)
+   - **Feed fetchRunningPosts**: Still using old strict values (`['running', 'cycling', 'walking']`)
+   - **Feed applyRunstrFilter**: Uses correct values (`['run', 'cycle', 'walk']`)
+
+3. **Time Range**:
+   - **Leaderboard**: Last 365 days
+   - **Feed**: Max 14 days via cascading windows
 
 ### Solution Implemented
 
-**✅ Fixed Exercise Tag Value Matching:**
+**✅ Fixed Exercise Tag Values**:
+- Updated `useRunFeed.js` filtering to match actual published format
+- Enhanced activity mode matching to handle variations (`'run'` OR `'running'`)
 
-Updated the filtering logic in `src/hooks/useRunFeed.js` to match the actual published values:
+**✅ Fixed Cache Clearing Issues**:
+- Made auto-detect cache clearing much less aggressive (only clear if >50% clearly non-RUNSTR)
+- Changed activity mode changes to re-filter posts instead of clearing cache entirely
+- Extended cache duration from 5 to 15 minutes
+- Added rate limiting to auto-detect (only runs every 30 seconds)
 
-```javascript
-// OLD (incorrect values):
-if (['running', 'cycling', 'walking', 'jogging'].includes(activity)) {
+**✅ Fixed Exercise Tag Values in fetchRunningPosts**:
+- Updated `src/utils/nostr.js` to use correct exercise values: `['run', 'cycle', 'walk', 'jog']`
 
-// NEW (matches actual published values):
-if (['run', 'cycle', 'walk', 'jog'].includes(activity)) {
-```
+**⚠️ Partially Fixed Scope Inconsistencies**:
+- Leaderboard already has proper lenient activity matching
+- Feed filtering logic updated to match leaderboard
+- **STILL NEEDS FIX**: Feed fetch scope is still limited compared to leaderboard
 
-**✅ Enhanced Activity Mode Matching:**
+### Remaining Issues to Address
 
-Also improved the activity mode matching to handle both formats:
+1. **Event Fetch Limits**: Feed still only fetches ~21 events vs leaderboard's 5000
+2. **Time Range**: Feed max 14 days vs leaderboard's 365 days  
+3. **Subscription Limits**: Need to increase relay subscription limits in feed
 
-```javascript
-// More lenient activity matching - include variations
-const activityMatches = {
-  'run': ['run', 'running', 'jog', 'jogging'],     // Handle both 'run' and 'running'
-  'cycle': ['cycle', 'cycling', 'bike', 'biking'], // Handle both 'cycle' and 'cycling'  
-  'walk': ['walk', 'walking', 'hike', 'hiking']    // Handle both 'walk' and 'walking'
-};
-```
+### Testing Results
+
+- Initial tests showed 2 posts appearing in feed (improvement from 0)
+- User reports seeing posts intermittently, then disappearing (likely due to remaining cache/scope issues)
+- Leaderboard continues to work correctly with more comprehensive data
+
+### Next Steps
+
+1. Increase feed's event fetch limits to match leaderboard scope
+2. Extend feed's time range to match leaderboard (90+ days)
+3. Test feed consistency after scope alignment
 
 ### Technical Details
 
 **Files Modified:**
-- `src/hooks/useRunFeed.js`: Fixed exercise tag filtering logic
+- `src/hooks/useRunFeed.js`: Fixed exercise tag filtering logic, activity mode matching, and cache clearing mechanisms
+- `src/utils/feedProcessor.js`: Updated to match filtering logic for consistency
 
 **Publishing vs Filtering Alignment:**
 - **Publishing Source**: `src/utils/nostr.js` - `createWorkoutEvent()` function
@@ -84,21 +106,28 @@ const activityMatches = {
 - Confirmed ActivityModeContext uses: `'run'`, `'walk'`, `'cycle'` (matches published values)
 - Activity mode filtering should now work correctly
 
+**Cache Improvements:**
+- Auto-detect cache clearing: Only triggers on >50% suspicious posts
+- Activity mode changes: Re-filters instead of clearing cache
+- Cache duration: Extended to 15 minutes for better persistence
+
 ### Expected Results
 
 **Immediate Fix:**
-- League feed should now display RUNSTR workout posts
+- League feed should now display RUNSTR workout posts consistently
 - Activity mode filtering should work correctly (run/cycle/walk)
 - No more empty feed due to overly strict filtering
+- Posts should persist when navigating between feeds
 
 **Feed Population:**
 - Users should see their own workouts in the League tab
-- Activity mode switching should filter appropriately
-- Posts from other RUNSTR users should appear
+- Activity mode switching should filter appropriately without losing posts
+- Posts from other RUNSTR users should appear and stay visible
+- Better performance when switching between feeds
 
 ### Testing Verification
 
-User should now see workout posts in the League feed after this fix. The filtering logic now correctly matches the actual format of published workout events.
+User should now see workout posts in the League feed after this fix. The filtering logic now correctly matches the actual format of published workout events, and posts should persist when navigating between different feeds in the app.
 
 ### Lessons Learned
 
@@ -106,102 +135,8 @@ User should now see workout posts in the League feed after this fix. The filteri
 - **Use source code as truth**: Don't assume filtering logic matches publishing logic
 - **Test with real data**: Empty feeds often indicate filter mismatches rather than no data
 - **Check both sides**: Publishing format AND filtering logic must be aligned
-
----
-
-### Root Cause Analysis
-
-**Value Mismatch in Exercise Tag Filtering:**
-
-After examining how the app actually publishes kind 1301 workout events vs. how the filtering logic was checking them, I found a critical mismatch:
-
-**How RUNSTR App Publishes (from `createWorkoutEvent`):**
-```javascript
-const activityVerb = activity === 'walk' ? 'walk' : (activity === 'cycle' ? 'cycle' : 'run');
-// Creates tags like:
-['exercise', 'run']      // For running activities  
-['exercise', 'cycle']    // For cycling activities
-['exercise', 'walk']     // For walking activities
-```
-
-**What Filter Was Expecting (in `useRunFeed.js`):**
-```javascript
-if (['running', 'cycling', 'walking', 'jogging'].includes(activity)) {
-  hasRequiredTags.exercise = true;
-}
-// Was looking for: 'running', 'cycling', 'walking', 'jogging'
-// But app publishes: 'run', 'cycle', 'walk'
-```
-
-**The Impact:**
-- **100% of posts filtered out**: Every RUNSTR workout was being rejected because the exercise tag values didn't match
-- **Filter expected**: `'running'` but app publishes `'run'`
-- **Filter expected**: `'cycling'` but app publishes `'cycle'`  
-- **Filter expected**: `'walking'` but app publishes `'walk'`
-
-### Solution Implemented
-
-**✅ Fixed Exercise Tag Value Matching:**
-
-Updated the filtering logic in `src/hooks/useRunFeed.js` to match the actual published values:
-
-```javascript
-// OLD (incorrect values):
-if (['running', 'cycling', 'walking', 'jogging'].includes(activity)) {
-
-// NEW (matches actual published values):
-if (['run', 'cycle', 'walk', 'jog'].includes(activity)) {
-```
-
-**✅ Enhanced Activity Mode Matching:**
-
-Also improved the activity mode matching to handle both formats:
-
-```javascript
-// More lenient activity matching - include variations
-const activityMatches = {
-  'run': ['run', 'running', 'jog', 'jogging'],     // Handle both 'run' and 'running'
-  'cycle': ['cycle', 'cycling', 'bike', 'biking'], // Handle both 'cycle' and 'cycling'  
-  'walk': ['walk', 'walking', 'hike', 'hiking']    // Handle both 'walk' and 'walking'
-};
-```
-
-### Technical Details
-
-**Files Modified:**
-- `src/hooks/useRunFeed.js`: Fixed exercise tag filtering logic
-
-**Publishing vs Filtering Alignment:**
-- **Publishing Source**: `src/utils/nostr.js` - `createWorkoutEvent()` function
-- **Filtering Source**: `src/hooks/useRunFeed.js` - `applyRunstrFilter()` function  
-- **Now Aligned**: Both use `'run'`, `'cycle'`, `'walk'` values
-
-**Activity Mode Context Values:**
-- Confirmed ActivityModeContext uses: `'run'`, `'walk'`, `'cycle'` (matches published values)
-- Activity mode filtering should now work correctly
-
-### Expected Results
-
-**Immediate Fix:**
-- League feed should now display RUNSTR workout posts
-- Activity mode filtering should work correctly (run/cycle/walk)
-- No more empty feed due to overly strict filtering
-
-**Feed Population:**
-- Users should see their own workouts in the League tab
-- Activity mode switching should filter appropriately
-- Posts from other RUNSTR users should appear
-
-### Testing Verification
-
-User should now see workout posts in the League feed after this fix. The filtering logic now correctly matches the actual format of published workout events.
-
-### Lessons Learned
-
-- **Verify actual data format**: Always check how data is actually published vs. what filters expect
-- **Use source code as truth**: Don't assume filtering logic matches publishing logic
-- **Test with real data**: Empty feeds often indicate filter mismatches rather than no data
-- **Check both sides**: Publishing format AND filtering logic must be aligned
+- **Cache clearing should be conservative**: Only clear cache when absolutely necessary
+- **Test navigation flows**: Cache clearing issues often manifest when switching between screens
 
 ---
 

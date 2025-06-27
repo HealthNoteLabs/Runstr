@@ -338,52 +338,60 @@ export const useRunFeed = (filterSource = null) => {
     globalState.lastFilterSource = filterSource;
   }, [filterSource]);
 
-  // Clear cache when activity mode changes (similar to leaderboard)
+  // Re-filter cache when activity mode changes (DON'T clear cache, just re-filter)
   useEffect(() => {
     if (globalState.lastActivityMode !== null && globalState.lastActivityMode !== activityMode) {
-      console.log(`[useRunFeed] Activity mode changed from '${globalState.lastActivityMode}' to '${activityMode}', clearing cache`);
-      globalState.allPosts = [];
-      globalState.lastFetchTime = 0;
-      setAllPosts([]);
-      setPosts([]);
+      console.log(`[useRunFeed] Activity mode changed from '${globalState.lastActivityMode}' to '${activityMode}', re-filtering posts instead of clearing cache`);
+      
+      // Don't clear cache - just re-filter existing posts
+      if (globalState.allPosts.length > 0) {
+        const reFilteredPosts = applyRunstrFilter(globalState.allPosts, filterSource);
+        setAllPosts(reFilteredPosts);
+        setPosts(reFilteredPosts.slice(0, displayLimit));
+        console.log(`[useRunFeed] Re-filtered from ${globalState.allPosts.length} to ${reFilteredPosts.length} posts for activity mode '${activityMode}'`);
+      }
     }
     globalState.lastActivityMode = activityMode;
-  }, [activityMode]);
+  }, [activityMode, filterSource, applyRunstrFilter, displayLimit]);
 
-  // Auto-detect and clear potentially unfiltered cache
+  // Auto-detect and clear potentially unfiltered cache - MADE LESS AGGRESSIVE
   useEffect(() => {
     const detectAndClearUnfilteredCache = () => {
       // If we're using RUNSTR filter and have cached posts, check if any are likely non-RUNSTR
       if (filterSource === 'RUNSTR' && globalState.allPosts.length > 0) {
         const suspiciousPosts = globalState.allPosts.filter(post => {
-          // Check for posts that might be from other apps (like POWR strength workouts)
+          // Only check for clearly non-RUNSTR posts (like POWR strength workouts)
           const exerciseTag = post.tags?.find(tag => tag[0] === 'exercise');
           const hasStrengthActivity = exerciseTag && exerciseTag[1]?.toLowerCase().includes('strength');
           
-          // Check for posts without RUNSTR identification
-          const hasRunstrSource = post.tags?.some(tag => 
-            (tag[0] === 'source' && tag[1]?.toUpperCase() === 'RUNSTR') ||
-            (tag[0] === 'client' && tag[1]?.toLowerCase() === 'runstr')
-          );
-          
-          return hasStrengthActivity || !hasRunstrSource;
+          // Only clear if we have obvious non-RUNSTR posts, not just missing tags
+          return hasStrengthActivity;
         });
         
-        if (suspiciousPosts.length > 0) {
-          console.log(`[useRunFeed] Detected ${suspiciousPosts.length} potentially unfiltered posts in cache, clearing automatically`);
+        // Only clear cache if we have MANY suspicious posts (more than 50% of cache)
+        // This prevents clearing cache for just a few imperfect posts
+        const suspiciousRatio = suspiciousPosts.length / globalState.allPosts.length;
+        if (suspiciousPosts.length > 0 && suspiciousRatio > 0.5) {
+          console.log(`[useRunFeed] Detected ${suspiciousPosts.length}/${globalState.allPosts.length} (${Math.round(suspiciousRatio * 100)}%) clearly non-RUNSTR posts in cache, clearing automatically`);
           globalState.allPosts = [];
           globalState.lastFetchTime = 0;
           globalState.lastFilterSource = null;
           setAllPosts([]);
           setPosts([]);
           return true; // Cache was cleared
+        } else if (suspiciousPosts.length > 0) {
+          console.log(`[useRunFeed] Found ${suspiciousPosts.length}/${globalState.allPosts.length} suspicious posts but keeping cache (ratio: ${Math.round(suspiciousRatio * 100)}%)`);
         }
       }
       return false; // No cache clearing needed
     };
 
-    // Run detection on mount if we have a filter
-    if (filterSource) {
+    // Only run detection on mount if we have a filter AND it's been more than 30 seconds since last check
+    // This prevents constant cache clearing on every navigation
+    const now = Date.now();
+    const lastCheck = globalState.lastCacheCheck || 0;
+    if (filterSource && (now - lastCheck > 30000)) {
+      globalState.lastCacheCheck = now;
       detectAndClearUnfilteredCache();
     }
   }, []); // Run once on mount

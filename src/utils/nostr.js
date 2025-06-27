@@ -82,7 +82,7 @@ export const getProfile = async (pubkey) => {
  * @param {string} filterSource - Optional filter for specific app source ('RUNSTR' for RUNSTR-only posts)
  * @returns {Promise<Array<NDKEvent>>} Array of running posts
  */
-export const fetchRunningPosts = async (limit = 7, since = undefined, fallbackWindows = [2 * 3600, 24 * 3600, 14 * 24 * 3600], filterSource = null) => {
+export const fetchRunningPosts = async (limit = 7, since = undefined, fallbackWindows = [7 * 24 * 3600, 30 * 24 * 3600, 90 * 24 * 3600], filterSource = null) => {
   // Helper function to check if event matches RUNSTR's exact publishing signature
   const isDefinitelyRunstrWorkout = (event) => {
     if (!filterSource || filterSource.toUpperCase() !== 'RUNSTR') {
@@ -126,10 +126,10 @@ export const fetchRunningPosts = async (limit = 7, since = undefined, fallbackWi
           }
           break;
         case 'exercise':
-          // RUNSTR uses 'exercise' tag (not 'activity_type') for running/cycling/walking
+          // RUNSTR uses 'exercise' tag for running/cycling/walking
           if (tag[1]) {
             const activity = tag[1].toLowerCase();
-            if (['running', 'cycling', 'walking', 'jogging'].includes(activity)) {
+            if (['run', 'cycle', 'walk', 'jog'].includes(activity)) {
               hasRequiredTags.exercise = true;
             }
           }
@@ -215,7 +215,7 @@ export const fetchRunningPosts = async (limit = 7, since = undefined, fallbackWi
         const relaySet = NDKRelaySet.fromRelayUrls(fastRelays, ndk);
         const sub = ndk.subscribe({
           kinds: [1301], // Changed to Kind 1301
-          limit: limit * 3, // Fetch more to allow for client-side filtering
+          limit: limit * 10, // Fetch more to allow for client-side filtering (like leaderboard)
           // "#t": ["runstr"], // Removed hashtag filter, will filter client-side for activity_type
           since: sinceTimestamp
         }, { closeOnEose: false, relaySet });

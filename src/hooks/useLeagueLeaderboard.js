@@ -138,8 +138,22 @@ export const useLeagueLeaderboard = () => {
       const exerciseTag = event.tags?.find(tag => tag[0] === 'exercise');
       const eventActivityType = exerciseTag?.[1]?.toLowerCase();
       
+      // More lenient activity matching - include variations (same logic as feed)
+      const activityMatches = {
+        'run': ['run', 'running', 'jog', 'jogging'],     // Handle both 'run' and 'running'
+        'cycle': ['cycle', 'cycling', 'bike', 'biking'], // Handle both 'cycle' and 'cycling'  
+        'walk': ['walk', 'walking', 'hike', 'hiking']    // Handle both 'walk' and 'walking'
+      };
+      
+      const acceptedActivities = activityMatches[activityMode] || [activityMode];
+      
       // Skip events that don't match current activity mode
-      if (!eventActivityType || eventActivityType !== activityMode) return;
+      if (eventActivityType && !acceptedActivities.includes(eventActivityType)) return;
+      
+      // If no exercise tag but is valid event, allow it through (fallback)
+      if (!eventActivityType) {
+        console.log(`[useLeagueLeaderboard] Event with no exercise tag - allowing through`);
+      }
       
       const distance = extractDistance(event);
       if (distance <= 0) return;
