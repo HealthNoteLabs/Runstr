@@ -12,6 +12,7 @@ import { startFeed, subscribeFeed, getFeed } from '../lib/feedManager';
 import { getEventTargetId } from '../utils/eventHelpers';
 import { useProfileCache } from '../hooks/useProfileCache.js';
 import { ensureRelays } from '../utils/relays.js';
+import { useActivityMode } from '../contexts/ActivityModeContext';
 
 // Global state for caching posts across component instances
 const globalState = {
@@ -20,6 +21,7 @@ const globalState = {
   isInitialized: false,
   activeSubscription: null,
   lastFilterSource: null, // Track what filter was used for cache
+  lastActivityMode: null, // Track what activity mode was used for cache
   cacheVersion: '1.1.0', // Version to track cache compatibility
 };
 
@@ -32,6 +34,7 @@ const checkCacheVersion = () => {
       globalState.allPosts = [];
       globalState.lastFetchTime = 0;
       globalState.lastFilterSource = null;
+      globalState.lastActivityMode = null;
       localStorage.setItem('runstr_cache_version', globalState.cacheVersion);
       // Also clear any related localStorage items
       localStorage.removeItem('runstr_league_leaderboard');
@@ -46,6 +49,9 @@ const checkCacheVersion = () => {
 };
 
 export const useRunFeed = (filterSource = null) => {
+  // Get activity mode for filtering
+  const { mode: activityMode } = useActivityMode();
+  
   // Prefer central manager; hydrate immediately
   const [posts, setPosts] = useState(() => getFeed());
   const [loading, setLoading] = useState(getFeed().length === 0);
@@ -280,6 +286,17 @@ export const useRunFeed = (filterSource = null) => {
       
       const isRunstrWorkout = hasRunstrIdentification && hasRunstrStructure;
       
+      // Add activity mode filter (same logic as useLeagueLeaderboard)
+      if (isRunstrWorkout && activityMode) {
+        const exerciseTag = event.tags?.find(tag => tag[0] === 'exercise');
+        const eventActivityType = exerciseTag?.[1]?.toLowerCase();
+        
+        // Skip events that don't match current activity mode
+        if (!eventActivityType || eventActivityType !== activityMode) {
+          return false;
+        }
+      }
+      
       // Debug logging for rejected events
       if (!isRunstrWorkout && (hasRequiredTags.source || hasRequiredTags.client)) {
         console.log('[useRunFeed] Event has RUNSTR tags but missing signature:', {
@@ -292,7 +309,7 @@ export const useRunFeed = (filterSource = null) => {
       
       return isRunstrWorkout;
     });
-  }, []);
+  }, [activityMode]);
 
   // Clear cache if filter source has changed
   useEffect(() => {
@@ -305,6 +322,18 @@ export const useRunFeed = (filterSource = null) => {
     }
     globalState.lastFilterSource = filterSource;
   }, [filterSource]);
+
+  // Clear cache when activity mode changes (similar to leaderboard)
+  useEffect(() => {
+    if (globalState.lastActivityMode !== null && globalState.lastActivityMode !== activityMode) {
+      console.log(`[useRunFeed] Activity mode changed from '${globalState.lastActivityMode}' to '${activityMode}', clearing cache`);
+      globalState.allPosts = [];
+      globalState.lastFetchTime = 0;
+      setAllPosts([]);
+      setPosts([]);
+    }
+    globalState.lastActivityMode = activityMode;
+  }, [activityMode]);
 
   // Auto-detect and clear potentially unfiltered cache
   useEffect(() => {
