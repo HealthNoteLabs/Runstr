@@ -20,6 +20,29 @@ const globalState = {
   isInitialized: false,
   activeSubscription: null,
   lastFilterSource: null, // Track what filter was used for cache
+  cacheVersion: '1.1.0', // Version to track cache compatibility
+};
+
+// Check and clear incompatible cache on startup
+const checkCacheVersion = () => {
+  try {
+    const storedVersion = localStorage.getItem('runstr_cache_version');
+    if (storedVersion !== globalState.cacheVersion) {
+      console.log(`[useRunFeed] Cache version mismatch (${storedVersion} → ${globalState.cacheVersion}), clearing cache`);
+      globalState.allPosts = [];
+      globalState.lastFetchTime = 0;
+      globalState.lastFilterSource = null;
+      localStorage.setItem('runstr_cache_version', globalState.cacheVersion);
+      // Also clear any related localStorage items
+      localStorage.removeItem('runstr_league_leaderboard');
+      localStorage.removeItem('relayPerformance');
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn('[useRunFeed] Cache version check failed:', err);
+    return false;
+  }
 };
 
 export const useRunFeed = (filterSource = null) => {
@@ -47,6 +70,9 @@ export const useRunFeed = (filterSource = null) => {
   // Ensure NDK as soon as the hook is used
   useEffect(() => {
     const initNostr = async () => {
+      // Check and clear incompatible cache first
+      checkCacheVersion();
+      
       // Only initialize once
       if (!globalState.isInitialized) {
         await awaitNDKReady();
@@ -279,6 +305,44 @@ export const useRunFeed = (filterSource = null) => {
     }
     globalState.lastFilterSource = filterSource;
   }, [filterSource]);
+
+  // Auto-detect and clear potentially unfiltered cache
+  useEffect(() => {
+    const detectAndClearUnfilteredCache = () => {
+      // If we're using RUNSTR filter and have cached posts, check if any are likely non-RUNSTR
+      if (filterSource === 'RUNSTR' && globalState.allPosts.length > 0) {
+        const suspiciousPosts = globalState.allPosts.filter(post => {
+          // Check for posts that might be from other apps (like POWR strength workouts)
+          const exerciseTag = post.tags?.find(tag => tag[0] === 'exercise');
+          const hasStrengthActivity = exerciseTag && exerciseTag[1]?.toLowerCase().includes('strength');
+          
+          // Check for posts without RUNSTR identification
+          const hasRunstrSource = post.tags?.some(tag => 
+            (tag[0] === 'source' && tag[1]?.toUpperCase() === 'RUNSTR') ||
+            (tag[0] === 'client' && tag[1]?.toLowerCase() === 'runstr')
+          );
+          
+          return hasStrengthActivity || !hasRunstrSource;
+        });
+        
+        if (suspiciousPosts.length > 0) {
+          console.log(`[useRunFeed] Detected ${suspiciousPosts.length} potentially unfiltered posts in cache, clearing automatically`);
+          globalState.allPosts = [];
+          globalState.lastFetchTime = 0;
+          globalState.lastFilterSource = null;
+          setAllPosts([]);
+          setPosts([]);
+          return true; // Cache was cleared
+        }
+      }
+      return false; // No cache clearing needed
+    };
+
+    // Run detection on mount if we have a filter
+    if (filterSource) {
+      detectAndClearUnfilteredCache();
+    }
+  }, []); // Run once on mount
 
   // Main function to fetch run posts
   const fetchRunPostsViaSubscription = useCallback(async () => {

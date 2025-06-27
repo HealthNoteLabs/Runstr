@@ -73,27 +73,6 @@ export const RunClub = () => {
 
   return (
     <div className="runclub-container">
-      {/* Add debug button for development builds */}
-      {process.env.NODE_ENV === 'development' && (
-        <div style={{ position: 'fixed', top: '80px', right: '10px', zIndex: 1000 }}>
-          <button 
-            onClick={hardRefresh}
-            style={{
-              background: '#ff4444',
-              color: 'white',
-              border: 'none',
-              padding: '8px 12px',
-              borderRadius: '4px',
-              fontSize: '12px',
-              cursor: 'pointer'
-            }}
-            disabled={loading || isRefreshing}
-          >
-            🗑️ Clear Cache
-          </button>
-        </div>
-      )}
-      
       {/* League Map Component */}
       <LeagueMap />
       
