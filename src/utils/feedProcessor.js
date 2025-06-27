@@ -93,10 +93,22 @@ export const lightweightProcessPosts = (posts, filterSource = null, activityMode
         const exerciseTag = event.tags?.find(tag => tag[0] === 'exercise');
         const eventActivityType = exerciseTag?.[1]?.toLowerCase();
         
+        // More lenient activity matching - include variations
+        const activityMatches = {
+          'run': ['run', 'running', 'jog', 'jogging'],     // Handle both 'run' and 'running'
+          'cycle': ['cycle', 'cycling', 'bike', 'biking'], // Handle both 'cycle' and 'cycling'  
+          'walk': ['walk', 'walking', 'hike', 'hiking']    // Handle both 'walk' and 'walking'
+        };
+        
+        const acceptedActivities = activityMatches[activityMode] || [activityMode];
+        
         // Skip events that don't match current activity mode
-        if (!eventActivityType || eventActivityType !== activityMode) {
+        if (eventActivityType && !acceptedActivities.includes(eventActivityType)) {
           return false;
         }
+        
+        // If no exercise tag but is RUNSTR workout, allow it through (fallback)
+        // No need to log here as this is lightweight processing
       }
       
       // Debug logging for rejected events in lightweight processor

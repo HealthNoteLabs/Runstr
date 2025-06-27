@@ -254,7 +254,7 @@ export const useRunFeed = (filterSource = null) => {
             // RUNSTR uses 'exercise' tag for running/cycling/walking
             if (tag[1]) {
               const activity = tag[1].toLowerCase();
-              if (['running', 'cycling', 'walking', 'jogging'].includes(activity)) {
+              if (['run', 'cycle', 'walk', 'jog'].includes(activity)) {
                 hasRequiredTags.exercise = true;
               }
             }
@@ -286,14 +286,29 @@ export const useRunFeed = (filterSource = null) => {
       
       const isRunstrWorkout = hasRunstrIdentification && hasRunstrStructure;
       
-      // Add activity mode filter (same logic as useLeagueLeaderboard)
+      // Add activity mode filter (same logic as useLeagueLeaderboard) - WITH FALLBACK
       if (isRunstrWorkout && activityMode) {
         const exerciseTag = event.tags?.find(tag => tag[0] === 'exercise');
         const eventActivityType = exerciseTag?.[1]?.toLowerCase();
         
+        // More lenient activity matching - include variations
+        const activityMatches = {
+          'run': ['run', 'running', 'jog', 'jogging'],     // Handle both 'run' and 'running'
+          'cycle': ['cycle', 'cycling', 'bike', 'biking'], // Handle both 'cycle' and 'cycling'  
+          'walk': ['walk', 'walking', 'hike', 'hiking']    // Handle both 'walk' and 'walking'
+        };
+        
+        const acceptedActivities = activityMatches[activityMode] || [activityMode];
+        
         // Skip events that don't match current activity mode
-        if (!eventActivityType || eventActivityType !== activityMode) {
+        if (eventActivityType && !acceptedActivities.includes(eventActivityType)) {
+          console.log(`[useRunFeed] Filtering out ${eventActivityType} activity (mode: ${activityMode})`);
           return false;
+        }
+        
+        // If no exercise tag but is RUNSTR workout, allow it through (fallback)
+        if (!eventActivityType) {
+          console.log(`[useRunFeed] RUNSTR workout with no exercise tag - allowing through`);
         }
       }
       

@@ -2,6 +2,209 @@
 
 This document tracks the progress and solutions for the identified issues. Solutions should prioritize simplicity and leverage existing application components and patterns, avoiding unnecessary complexity or code duplication.
 
+## Bug Fix #4: Activity Mode Filtering Too Strict - Empty League Feed
+
+**Date:** 2025-01-14  
+**Reporter:** User  
+**Severity:** Critical  
+**Status:** ✅ Fixed  
+
+### Problem Description
+
+User reported that the League feed was empty, suspecting the activity mode filtering was too strict. Running `npm run dev` showed the app started successfully, but no posts were appearing in the League tab despite there being workout data available.
+
+### Root Cause Analysis
+
+**Value Mismatch in Exercise Tag Filtering:**
+
+After examining how the app actually publishes kind 1301 workout events vs. how the filtering logic was checking them, I found a critical mismatch:
+
+**How RUNSTR App Publishes (from `createWorkoutEvent`):**
+```javascript
+const activityVerb = activity === 'walk' ? 'walk' : (activity === 'cycle' ? 'cycle' : 'run');
+// Creates tags like:
+['exercise', 'run']      // For running activities  
+['exercise', 'cycle']    // For cycling activities
+['exercise', 'walk']     // For walking activities
+```
+
+**What Filter Was Expecting (in `useRunFeed.js`):**
+```javascript
+if (['running', 'cycling', 'walking', 'jogging'].includes(activity)) {
+  hasRequiredTags.exercise = true;
+}
+// Was looking for: 'running', 'cycling', 'walking', 'jogging'
+// But app publishes: 'run', 'cycle', 'walk'
+```
+
+**The Impact:**
+- **100% of posts filtered out**: Every RUNSTR workout was being rejected because the exercise tag values didn't match
+- **Filter expected**: `'running'` but app publishes `'run'`
+- **Filter expected**: `'cycling'` but app publishes `'cycle'`  
+- **Filter expected**: `'walking'` but app publishes `'walk'`
+
+### Solution Implemented
+
+**✅ Fixed Exercise Tag Value Matching:**
+
+Updated the filtering logic in `src/hooks/useRunFeed.js` to match the actual published values:
+
+```javascript
+// OLD (incorrect values):
+if (['running', 'cycling', 'walking', 'jogging'].includes(activity)) {
+
+// NEW (matches actual published values):
+if (['run', 'cycle', 'walk', 'jog'].includes(activity)) {
+```
+
+**✅ Enhanced Activity Mode Matching:**
+
+Also improved the activity mode matching to handle both formats:
+
+```javascript
+// More lenient activity matching - include variations
+const activityMatches = {
+  'run': ['run', 'running', 'jog', 'jogging'],     // Handle both 'run' and 'running'
+  'cycle': ['cycle', 'cycling', 'bike', 'biking'], // Handle both 'cycle' and 'cycling'  
+  'walk': ['walk', 'walking', 'hike', 'hiking']    // Handle both 'walk' and 'walking'
+};
+```
+
+### Technical Details
+
+**Files Modified:**
+- `src/hooks/useRunFeed.js`: Fixed exercise tag filtering logic
+
+**Publishing vs Filtering Alignment:**
+- **Publishing Source**: `src/utils/nostr.js` - `createWorkoutEvent()` function
+- **Filtering Source**: `src/hooks/useRunFeed.js` - `applyRunstrFilter()` function  
+- **Now Aligned**: Both use `'run'`, `'cycle'`, `'walk'` values
+
+**Activity Mode Context Values:**
+- Confirmed ActivityModeContext uses: `'run'`, `'walk'`, `'cycle'` (matches published values)
+- Activity mode filtering should now work correctly
+
+### Expected Results
+
+**Immediate Fix:**
+- League feed should now display RUNSTR workout posts
+- Activity mode filtering should work correctly (run/cycle/walk)
+- No more empty feed due to overly strict filtering
+
+**Feed Population:**
+- Users should see their own workouts in the League tab
+- Activity mode switching should filter appropriately
+- Posts from other RUNSTR users should appear
+
+### Testing Verification
+
+User should now see workout posts in the League feed after this fix. The filtering logic now correctly matches the actual format of published workout events.
+
+### Lessons Learned
+
+- **Verify actual data format**: Always check how data is actually published vs. what filters expect
+- **Use source code as truth**: Don't assume filtering logic matches publishing logic
+- **Test with real data**: Empty feeds often indicate filter mismatches rather than no data
+- **Check both sides**: Publishing format AND filtering logic must be aligned
+
+---
+
+### Root Cause Analysis
+
+**Value Mismatch in Exercise Tag Filtering:**
+
+After examining how the app actually publishes kind 1301 workout events vs. how the filtering logic was checking them, I found a critical mismatch:
+
+**How RUNSTR App Publishes (from `createWorkoutEvent`):**
+```javascript
+const activityVerb = activity === 'walk' ? 'walk' : (activity === 'cycle' ? 'cycle' : 'run');
+// Creates tags like:
+['exercise', 'run']      // For running activities  
+['exercise', 'cycle']    // For cycling activities
+['exercise', 'walk']     // For walking activities
+```
+
+**What Filter Was Expecting (in `useRunFeed.js`):**
+```javascript
+if (['running', 'cycling', 'walking', 'jogging'].includes(activity)) {
+  hasRequiredTags.exercise = true;
+}
+// Was looking for: 'running', 'cycling', 'walking', 'jogging'
+// But app publishes: 'run', 'cycle', 'walk'
+```
+
+**The Impact:**
+- **100% of posts filtered out**: Every RUNSTR workout was being rejected because the exercise tag values didn't match
+- **Filter expected**: `'running'` but app publishes `'run'`
+- **Filter expected**: `'cycling'` but app publishes `'cycle'`  
+- **Filter expected**: `'walking'` but app publishes `'walk'`
+
+### Solution Implemented
+
+**✅ Fixed Exercise Tag Value Matching:**
+
+Updated the filtering logic in `src/hooks/useRunFeed.js` to match the actual published values:
+
+```javascript
+// OLD (incorrect values):
+if (['running', 'cycling', 'walking', 'jogging'].includes(activity)) {
+
+// NEW (matches actual published values):
+if (['run', 'cycle', 'walk', 'jog'].includes(activity)) {
+```
+
+**✅ Enhanced Activity Mode Matching:**
+
+Also improved the activity mode matching to handle both formats:
+
+```javascript
+// More lenient activity matching - include variations
+const activityMatches = {
+  'run': ['run', 'running', 'jog', 'jogging'],     // Handle both 'run' and 'running'
+  'cycle': ['cycle', 'cycling', 'bike', 'biking'], // Handle both 'cycle' and 'cycling'  
+  'walk': ['walk', 'walking', 'hike', 'hiking']    // Handle both 'walk' and 'walking'
+};
+```
+
+### Technical Details
+
+**Files Modified:**
+- `src/hooks/useRunFeed.js`: Fixed exercise tag filtering logic
+
+**Publishing vs Filtering Alignment:**
+- **Publishing Source**: `src/utils/nostr.js` - `createWorkoutEvent()` function
+- **Filtering Source**: `src/hooks/useRunFeed.js` - `applyRunstrFilter()` function  
+- **Now Aligned**: Both use `'run'`, `'cycle'`, `'walk'` values
+
+**Activity Mode Context Values:**
+- Confirmed ActivityModeContext uses: `'run'`, `'walk'`, `'cycle'` (matches published values)
+- Activity mode filtering should now work correctly
+
+### Expected Results
+
+**Immediate Fix:**
+- League feed should now display RUNSTR workout posts
+- Activity mode filtering should work correctly (run/cycle/walk)
+- No more empty feed due to overly strict filtering
+
+**Feed Population:**
+- Users should see their own workouts in the League tab
+- Activity mode switching should filter appropriately
+- Posts from other RUNSTR users should appear
+
+### Testing Verification
+
+User should now see workout posts in the League feed after this fix. The filtering logic now correctly matches the actual format of published workout events.
+
+### Lessons Learned
+
+- **Verify actual data format**: Always check how data is actually published vs. what filters expect
+- **Use source code as truth**: Don't assume filtering logic matches publishing logic
+- **Test with real data**: Empty feeds often indicate filter mismatches rather than no data
+- **Check both sides**: Publishing format AND filtering logic must be aligned
+
+---
+
 ## Bug Fix #3: Android Window Background Color - Blue Bleeding Through
 
 **Date:** 2025-01-14  
