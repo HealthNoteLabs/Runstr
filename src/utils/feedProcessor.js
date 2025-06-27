@@ -9,9 +9,10 @@
  * Creates minimal post objects with placeholders for supplementary data
  * @param {Array} posts - Raw post events from Nostr
  * @param {string} filterSource - Optional filter for specific app source ('RUNSTR' for RUNSTR-only posts)
+ * @param {string} activityMode - Optional activity mode filter ('running', 'cycling', 'walking')
  * @returns {Array} Minimally processed posts ready for display
  */
-export const lightweightProcessPosts = (posts, filterSource = null) => {
+export const lightweightProcessPosts = (posts, filterSource = null, activityMode = null) => {
   if (!posts || !Array.isArray(posts) || posts.length === 0) {
     return [];
   }
@@ -86,6 +87,17 @@ export const lightweightProcessPosts = (posts, filterSource = null) => {
                                 hasRequiredTags.duration;
       
       const isRunstrWorkout = hasRunstrIdentification && hasRunstrStructure;
+      
+      // Add activity mode filter (same logic as useRunFeed)
+      if (isRunstrWorkout && activityMode) {
+        const exerciseTag = event.tags?.find(tag => tag[0] === 'exercise');
+        const eventActivityType = exerciseTag?.[1]?.toLowerCase();
+        
+        // Skip events that don't match current activity mode
+        if (!eventActivityType || eventActivityType !== activityMode) {
+          return false;
+        }
+      }
       
       // Debug logging for rejected events in lightweight processor
       if (!isRunstrWorkout && (hasRequiredTags.source || hasRequiredTags.client)) {

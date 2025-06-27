@@ -426,7 +426,7 @@ export const useRunFeed = (filterSource = null) => {
       // QUICK-DISPLAY PHASE ─────────────────────────────────────────
       // Show minimally processed posts immediately (with filtering applied)
       if (runPostsArray.length > 0 && allPosts.length === 0) {
-        const quickPosts = lightweightProcessPosts(runPostsArray, filterSource);
+        const quickPosts = lightweightProcessPosts(runPostsArray, filterSource, activityMode);
         setAllPosts(quickPosts);
         setPosts(quickPosts.slice(0, displayLimit));
         setLoading(false);
@@ -463,7 +463,7 @@ export const useRunFeed = (filterSource = null) => {
       
       // Merge with quick posts (if any) so we keep order
       const finalPosts = mergeProcessedPosts(
-        allPosts.length ? allPosts : lightweightProcessPosts(runPostsArray, filterSource), 
+        allPosts.length ? allPosts : lightweightProcessPosts(runPostsArray, filterSource, activityMode), 
         finalFilteredPosts
       );
       
@@ -739,7 +739,14 @@ export const useRunFeed = (filterSource = null) => {
   }, [posts, fetchProfiles]);
 
   // --- Central Feed Manager integration ----
+  // Only use feedManager when NOT filtering for RUNSTR (preserves existing behavior for other components)
   useEffect(() => {
+    // Skip feedManager integration for RUNSTR filtering - use our comprehensive filtering instead
+    if (filterSource === 'RUNSTR') {
+      console.log('[useRunFeed] Skipping Central Feed Manager - using RUNSTR filtering pipeline');
+      return;
+    }
+    
     // Ensure the manager is running (no-op if already started)
     startFeed();
     // Subscribe for updates
@@ -748,7 +755,7 @@ export const useRunFeed = (filterSource = null) => {
       setLoading(false);
     });
     return unsub;
-  }, []);
+  }, [filterSource]);
 
   // Add effect after posts state updates
   useEffect(() => {
