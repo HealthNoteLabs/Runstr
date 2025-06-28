@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect, useCallback } from 'react';
 import { useRunFeed } from './useRunFeed';
 import { useNostr } from './useNostr';
+import { useActivityMode } from '../contexts/ActivityModeContext';
 import { season1SubscriptionService } from '../services/season1SubscriptionService';
 
 interface LeagueRunFeedResult {
@@ -37,6 +38,7 @@ interface LeagueRunFeedResult {
  */
 export function useLeagueRunFeed(): LeagueRunFeedResult {
   const { ndk } = useNostr() as any;
+  const { mode: activityMode } = useActivityMode();
   const [subscribers, setSubscribers] = useState<Set<string>>(new Set());
   const [captains, setCaptains] = useState<Set<string>>(new Set());
   const [subscriptionsLoading, setSubscriptionsLoading] = useState(false);
@@ -81,17 +83,47 @@ export function useLeagueRunFeed(): LeagueRunFeedResult {
     }
   }, [ndk, loadSubscribers]);
 
-  // Filter posts by subscription status
+  // Filter posts by subscription status AND activity mode
   const participantPosts = useCallback(() => {
     if (!runFeed.posts || subscribers.size === 0) {
       return [];
     }
     
     return runFeed.posts.filter(post => {
-      // Only include posts from Season 1 subscribers
-      return subscribers.has(post.pubkey);
+      // First filter: Only include posts from Season 1 subscribers
+      if (!subscribers.has(post.pubkey)) {
+        return false;
+      }
+      
+      // Second filter: Apply activity mode filtering (same logic as useRunFeed.js)
+      if (activityMode) {
+        const exerciseTag = post.tags?.find(tag => tag[0] === 'exercise');
+        const eventActivityType = exerciseTag?.[1]?.toLowerCase();
+        
+        // More lenient activity matching - include variations (same as useRunFeed.js)
+        const activityMatches = {
+          'run': ['run', 'running', 'jog', 'jogging'],     
+          'cycle': ['cycle', 'cycling', 'bike', 'biking'], 
+          'walk': ['walk', 'walking', 'hike', 'hiking']    
+        };
+        
+        const acceptedActivities = activityMatches[activityMode] || [activityMode];
+        
+        // Skip events that don't match current activity mode
+        if (eventActivityType && !acceptedActivities.includes(eventActivityType)) {
+          console.log(`[LeagueRunFeed] Filtering out ${eventActivityType} activity (mode: ${activityMode})`);
+          return false;
+        }
+        
+        // If no exercise tag but is RUNSTR workout, allow it through (fallback)
+        if (!eventActivityType) {
+          console.log(`[LeagueRunFeed] RUNSTR workout with no exercise tag - allowing through`);
+        }
+      }
+      
+      return true;
     });
-  }, [runFeed.posts, subscribers]);
+  }, [runFeed.posts, subscribers, activityMode]);
 
   // Get the current posts to display
   const getCurrentPosts = useCallback(() => {

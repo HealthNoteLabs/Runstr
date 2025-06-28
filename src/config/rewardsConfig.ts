@@ -16,7 +16,9 @@ export interface Season1Config {
   readonly endDate: string; // ISO string
   readonly memberFee: number; // sats
   readonly captainFee: number; // sats
-  readonly rewardsPoolAddress: string; // Lightning address for rewards pool
+  readonly subscriptionNwcUri: string; // NWC URI for collecting subscription fees
+  readonly openSatsNwcUri: string; // NWC URI for Open Sats donations
+  readonly appDevNwcUri: string; // NWC URI for app development funding
   readonly prizePool: {
     readonly first: number;
     readonly second: number; 
@@ -48,7 +50,9 @@ export const REWARDS = {
     endDate: '2025-10-04T23:59:59Z', // 3 months later
     memberFee: 5000, // 5,000 sats for members
     captainFee: 10000, // 10,000 sats for captains
-    rewardsPoolAddress: 'runstr@geyser.fund', // Using existing address for now
+    subscriptionNwcUri: 'nostr+walletconnect://30f239de1ae8acccf8f2daa8b13883f7fe231418929db0d7963f88c26e6c6816?relay=wss://scornfulsalt9.lnbits.com/nostrclient/api/v1/relay&secret=5ea5ef12f03f34b562758ea9d4f9fc1b0543506861ccf65b06a7d59948251a46', // NWC URI for subscription collection
+    openSatsNwcUri: 'nostr+walletconnect://30f239de1ae8acccf8f2daa8b13883f7fe231418929db0d7963f88c26e6c6816?relay=wss://scornfulsalt9.lnbits.com/nostrclient/api/v1/relay&secret=80eb7165272acd3258bd434d1c6f02d54e015c6f8064699e70c8e5c881858ad6', // NWC URI for Open Sats
+    appDevNwcUri: 'nostr+walletconnect://30f239de1ae8acccf8f2daa8b13883f7fe231418929db0d7963f88c26e6c6816?relay=wss://scornfulsalt9.lnbits.com/nostrclient/api/v1/relay&secret=b74d86b62fc7f5ef90b3237f596887835ac299483ad4162f2cf26bd5849bc1aa', // NWC URI for app development
     prizePool: {
       first: 50000, // 50k sats for 1st place
       second: 30000, // 30k sats for 2nd place  
@@ -71,7 +75,7 @@ export type RewardKey = keyof typeof REWARDS;
 // export type StreakConfig = typeof REWARDS["STREAK"]; // Now an interface
 export type DailyLeaderboardConfig = typeof REWARDS["DAILY_LEADERBOARD"]; // Now an interface
 export type Event100kConfig = typeof REWARDS["EVENT_100K"]; // Now an interface
-export type Season1Config = typeof REWARDS["SEASON_1"]; // Season 1 config type
+// Season1Config is now defined as an interface above
 
 export const MIN_STREAK_DISTANCE = {
   km: 0, // lowered from 500 (0.5 km) to allow any run to qualify during testing

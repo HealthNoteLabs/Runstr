@@ -1,5 +1,4 @@
-﻿import { useCallback } from 'react';
-import { payLnurl } from '../utils/lnurlPay';
+﻿import { useCallback, useState, useEffect, useRef } from 'react';
 import { useAuth } from './useAuth';
 import { useNostr } from './useNostr';
 import { REWARDS } from '../config/rewardsConfig';
@@ -9,26 +8,37 @@ import {
 } from '../services/nostr/NostrTeamsService';
 import { createAndPublishEvent } from '../utils/nostr';
 import { useTeamSubscriptionStatus, SubscriptionPhase } from './useTeamSubscriptionStatus';
-
-export type Season1Tier = 'member' | 'captain';
+import subscriptionService, { type Season1Tier, type SubscriptionInvoice } from '../services/subscriptionService';
 
 interface Season1SubscriptionStatus {
   phase: SubscriptionPhase;
   tier: Season1Tier | null;
   nextDue?: number; // unix seconds
-  subscribe: (tier: Season1Tier) => Promise<void>;
+  subscribe: (tier: Season1Tier) => Promise<SubscriptionInvoice>;
+  finalizePayment: (invoice: string, tier: Season1Tier) => Promise<void>;
   isProcessing: boolean;
+  currentInvoice?: SubscriptionInvoice;
+  paymentStatus: 'none' | 'pending' | 'polling' | 'paid' | 'expired' | 'error';
+  statusMessage?: string;
 }
 
 /**
  * Hook to manage Season 1 subscription status for the current user.
- * Adapts existing team subscription infrastructure for Season 1.
+ * Uses NWC invoice generation for subscription collection.
  */
 export function useSeasonSubscription(
   userPubkey: string | null
 ): Season1SubscriptionStatus {
   const { wallet } = useAuth();
   const { ndk } = useNostr() as any;
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [currentInvoice, setCurrentInvoice] = useState<SubscriptionInvoice | undefined>();
+  const [paymentStatus, setPaymentStatus] = useState<'none' | 'pending' | 'polling' | 'paid' | 'expired' | 'error'>('none');
+  const [statusMessage, setStatusMessage] = useState<string | undefined>();
+  
+  // Refs for polling management
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const expirationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Use existing team subscription hook with Season 1 identifier
   const memberStatus = useTeamSubscriptionStatus(
@@ -42,6 +52,89 @@ export function useSeasonSubscription(
     userPubkey,
     REWARDS.SEASON_1.captainFee
   );
+
+  // Clean up polling on unmount or when payment completes
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    if (expirationTimeoutRef.current) {
+      clearTimeout(expirationTimeoutRef.current);
+      expirationTimeoutRef.current = null;
+    }
+  }, []);
+
+  // Start automatic payment polling
+  const startPaymentPolling = useCallback((invoice: SubscriptionInvoice) => {
+    stopPolling(); // Clear any existing polling
+    
+    setPaymentStatus('polling');
+    setStatusMessage('Checking for payment...');
+    
+    // Set up expiration timeout
+    const timeUntilExpiration = (invoice.expires * 1000) - Date.now();
+    if (timeUntilExpiration > 0) {
+      expirationTimeoutRef.current = setTimeout(() => {
+        stopPolling();
+        setPaymentStatus('expired');
+        setStatusMessage('Invoice expired. Please try again.');
+        setCurrentInvoice(undefined);
+      }, timeUntilExpiration);
+    }
+    
+    // Poll every 5 seconds
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        console.log('[useSeasonSubscription] Polling for payment...');
+        
+        const verificationResult = await subscriptionService.verifySubscriptionPayment(
+          invoice.invoice,
+          userPubkey!,
+          invoice.tier
+        );
+        
+        if (verificationResult.success) {
+          console.log('[useSeasonSubscription] Payment detected! Completing subscription...');
+          stopPolling();
+          setPaymentStatus('paid');
+          setStatusMessage('Payment received! Completing subscription...');
+          
+          // Complete the subscription
+          const completionResult = await subscriptionService.completeSubscription(
+            userPubkey!,
+            invoice.tier,
+            invoice.amount
+          );
+          
+          if (completionResult.success) {
+            setPaymentStatus('none');
+            setStatusMessage('Subscription completed successfully!');
+            setCurrentInvoice(undefined);
+            
+            // Refresh subscription status
+            memberStatus.renew?.();
+            captainStatus.renew?.();
+            
+            // Clear success message after 5 seconds
+            setTimeout(() => setStatusMessage(undefined), 5000);
+          } else {
+            setPaymentStatus('error');
+            setStatusMessage(`Failed to complete subscription: ${completionResult.error}`);
+          }
+        }
+      } catch (error) {
+        console.error('[useSeasonSubscription] Error during payment polling:', error);
+        // Don't stop polling on individual errors, just log them
+      }
+    }, 5000); // Poll every 5 seconds
+    
+  }, [userPubkey, memberStatus, captainStatus, stopPolling]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return stopPolling;
+  }, [stopPolling]);
 
   // Determine current subscription tier and phase
   const getCurrentStatus = useCallback(() => {
@@ -73,57 +166,97 @@ export function useSeasonSubscription(
 
   const currentStatus = getCurrentStatus();
 
-  // Subscribe function that handles both member and captain subscriptions
-  const subscribe = useCallback(async (tier: Season1Tier) => {
-    if (!wallet) throw new Error('Wallet not connected');
+  // Generate invoice for subscription - now automatically starts polling
+  const subscribe = useCallback(async (tier: Season1Tier): Promise<SubscriptionInvoice> => {
     if (!userPubkey) throw new Error('User not identified');
     
-    const amount = tier === 'captain' ? REWARDS.SEASON_1.captainFee : REWARDS.SEASON_1.memberFee;
+    setIsProcessing(true);
+    setPaymentStatus('pending');
+    setStatusMessage('Generating invoice...');
     
     try {
-      // Use existing payment infrastructure
-      await payLnurl({
-        lightning: REWARDS.SEASON_1.rewardsPoolAddress,
-        amount,
-        wallet,
-        comment: `RUNSTR Season 1 ${tier} subscription`,
-      });
+      console.log(`[useSeasonSubscription] Generating ${tier} subscription invoice`);
       
-      // Create subscription receipt using existing pattern
-      const startTime = Math.floor(Date.now() / 1000);
-      const endTime = new Date(REWARDS.SEASON_1.endDate).getTime() / 1000; // Season end time
+      const result = await subscriptionService.processSubscription(userPubkey, tier);
       
-      const receiptTemplate = prepareTeamSubscriptionReceiptEvent(
-        REWARDS.SEASON_1.identifier,
-        userPubkey,
-        amount,
-        startTime,
-        endTime
-      );
-      
-      if (!receiptTemplate) {
-        throw new Error('Failed to prepare subscription receipt');
+      if (!result.success || !result.invoice) {
+        throw new Error(result.error || 'Failed to generate subscription invoice');
       }
       
-      // Publish receipt event
-      await createAndPublishEvent(receiptTemplate, null);
+      setCurrentInvoice(result.invoice);
+      setStatusMessage('Invoice generated! Please pay with your wallet.');
+      console.log(`[useSeasonSubscription] Successfully generated ${tier} subscription invoice`);
       
-      console.log(`Season 1 ${tier} subscription completed successfully`);
+      // Start automatic payment polling
+      startPaymentPolling(result.invoice);
+      
+      return result.invoice;
     } catch (error) {
-      console.error(`Season 1 ${tier} subscription failed:`, error);
+      console.error(`[useSeasonSubscription] Failed to generate ${tier} subscription invoice:`, error);
+      setPaymentStatus('error');
+      setStatusMessage(error instanceof Error ? error.message : 'Failed to generate invoice');
       throw error;
+    } finally {
+      setIsProcessing(false);
     }
-  }, [wallet, userPubkey]);
+  }, [userPubkey, startPaymentPolling]);
 
-  // Return processing state if either subscription is processing
-  const isProcessing = memberStatus.isProcessing || captainStatus.isProcessing;
+  // Manual finalization (kept for backward compatibility, but now rarely needed)
+  const finalizePayment = useCallback(async (invoice: string, tier: Season1Tier): Promise<void> => {
+    if (!userPubkey) throw new Error('User not identified');
+    
+    setIsProcessing(true);
+    setStatusMessage('Verifying payment...');
+    
+    try {
+      console.log(`[useSeasonSubscription] Manually finalizing ${tier} subscription payment`);
+      
+      const amount = tier === 'captain' ? REWARDS.SEASON_1.captainFee : REWARDS.SEASON_1.memberFee;
+      
+      const result = await subscriptionService.finalizeSubscription(
+        invoice,
+        userPubkey,
+        tier,
+        amount
+      );
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to finalize subscription');
+      }
+      
+      stopPolling(); // Stop any ongoing polling
+      setCurrentInvoice(undefined);
+      setPaymentStatus('none');
+      setStatusMessage('Subscription completed successfully!');
+      console.log(`[useSeasonSubscription] Successfully finalized ${tier} subscription`);
+      
+      // Refresh subscription status
+      memberStatus.renew?.();
+      captainStatus.renew?.();
+      
+      // Clear success message after 5 seconds
+      setTimeout(() => setStatusMessage(undefined), 5000);
+      
+    } catch (error) {
+      console.error(`[useSeasonSubscription] Failed to finalize ${tier} subscription:`, error);
+      setPaymentStatus('error');
+      setStatusMessage(error instanceof Error ? error.message : 'Failed to complete subscription');
+      throw error;
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [userPubkey, memberStatus, captainStatus, stopPolling]);
 
   return {
     phase: currentStatus.phase,
     tier: currentStatus.tier,
     nextDue: currentStatus.nextDue,
     subscribe,
-    isProcessing
+    finalizePayment,
+    isProcessing,
+    currentInvoice,
+    paymentStatus,
+    statusMessage
   };
 }
 

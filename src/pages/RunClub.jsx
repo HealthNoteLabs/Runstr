@@ -7,6 +7,7 @@ import { usePostInteractions } from '../hooks/usePostInteractions';
 import { PostList } from '../components/PostList';
 import { LeagueMap } from '../components/LeagueMap';
 import { Season1SubscriptionCard } from '../components/Season1SubscriptionCard';
+import { RewardsPoolDisplay } from '../components/RewardsPoolDisplay';
 import { handleAppBackground } from '../utils/nostr';
 import '../components/RunClub.css';
 
@@ -125,6 +126,9 @@ export const RunClub = () => {
           </div>
         )}
       </div>
+      
+      {/* Rewards Pool Display */}
+      <RewardsPoolDisplay />
       
       {/* League Map Component */}
       <LeagueMap />
