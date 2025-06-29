@@ -5,6 +5,8 @@ import { getDefaultPostingTeamIdentifier } from '../utils/settingsManager'; // A
 import { createWorkoutEvent, createAndPublishEvent } from '../utils/nostr'; // Adjust path
 import { getTimeOfDay } from '../utils/formatters'; // Import getTimeOfDay
 import { ACTIVITY_TYPES } from '../services/RunDataService'; // Ensuring this import is present
+import { useSeasonSubscription } from '../hooks/useSeasonSubscription';
+import { REWARDS } from '../config/rewardsConfig';
 
 const styles: Record<string, React.CSSProperties> = {
   card: {
@@ -176,6 +178,7 @@ export const RunHistoryCard: React.FC<RunHistoryCardProps> = ({
 }) => {
   const navigate = useNavigate();
   const { ndk, publicKey, ndkReady } = useNostr();
+  const subscription = useSeasonSubscription(publicKey);
   const [isSharing, setIsSharing] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
   const [shareSuccess, setShareSuccess] = useState<string | null>(null);
@@ -221,6 +224,15 @@ export const RunHistoryCard: React.FC<RunHistoryCardProps> = ({
       const { getWorkoutAssociations } = await import('../utils/teamChallengeHelper');
       const { teamAssociation, challengeUUIDs, challengeNames, userPubkey } = await getWorkoutAssociations();
       
+      // Prepare season subscription information if user is subscribed
+      let seasonSubscription = undefined;
+      if (subscription.phase === 'current' && subscription.tier) {
+        seasonSubscription = {
+          tier: subscription.tier,
+          identifier: REWARDS.SEASON_1.identifier
+        };
+      }
+      
       const eventRunData: RunData = {
           ...run,
           activityType: run.activityType || 'run',
@@ -235,7 +247,8 @@ export const RunHistoryCard: React.FC<RunHistoryCardProps> = ({
         teamAssociation, 
         challengeUUIDs, 
         challengeNames, 
-        userPubkey: userPubkey || publicKey 
+        userPubkey: userPubkey || publicKey,
+        seasonSubscription
       });
 
       if (!eventTemplate) {

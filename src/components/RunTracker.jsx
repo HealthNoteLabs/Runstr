@@ -15,6 +15,8 @@ import { useContext } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
 import { NostrContext } from '../contexts/NostrContext';
 import { publishRun } from '../utils/runPublisher';
+import { useSeasonSubscription } from '../hooks/useSeasonSubscription';
+import { REWARDS } from '../config/rewardsConfig';
 import appToast from '../utils/toast';
 
 export const RunTracker = () => {
@@ -38,6 +40,7 @@ export const RunTracker = () => {
   const { getActivityText, mode } = useActivityMode();
   const { distanceUnit, skipStartCountdown, skipEndCountdown, autoPostToNostr } = useSettings();
   const { publicKey, lightningAddress } = useContext(NostrContext);
+  const subscription = useSeasonSubscription(publicKey);
 
   const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const [isCountingDown, setIsCountingDown] = useState(false);
@@ -366,12 +369,22 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       const { getWorkoutAssociations } = await import('../utils/teamChallengeHelper');
       const { teamAssociation, challengeUUIDs, challengeNames, userPubkey } = await getWorkoutAssociations();
       
+      // Prepare season subscription information if user is subscribed
+      let seasonSubscription = undefined;
+      if (subscription.phase === 'current' && subscription.tier) {
+        seasonSubscription = {
+          tier: subscription.tier,
+          identifier: REWARDS.SEASON_1.identifier
+        };
+      }
+      
       // Create a workout event with kind 1301 format including team/challenge tags
       const workoutEvent = createWorkoutEvent(recentRun, distanceUnit, { 
         teamAssociation, 
         challengeUUIDs, 
         challengeNames, 
-        userPubkey 
+        userPubkey,
+        seasonSubscription
       });
       
       // Use the existing createAndPublishEvent function
@@ -459,12 +472,22 @@ ${additionalContent ? `\n${additionalContent}` : ''}
         const { getWorkoutAssociations } = await import('../utils/teamChallengeHelper');
         const { teamAssociation, challengeUUIDs, challengeNames, userPubkey } = await getWorkoutAssociations();
         
+        // Prepare season subscription information if user is subscribed
+        let seasonSubscription = undefined;
+        if (subscription.phase === 'current' && subscription.tier) {
+          seasonSubscription = {
+            tier: subscription.tier,
+            identifier: REWARDS.SEASON_1.identifier
+          };
+        }
+        
         // Create a workout event with kind 1301 format including team/challenge tags
         const workoutEvent = createWorkoutEvent(recentRun, distanceUnit, { 
           teamAssociation, 
           challengeUUIDs, 
           challengeNames, 
-          userPubkey 
+          userPubkey,
+          seasonSubscription
         });
         
         // Use the existing createAndPublishEvent function

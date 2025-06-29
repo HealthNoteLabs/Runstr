@@ -1045,6 +1045,9 @@ export const diagnoseConnection = async () => {
  * @param {Array} [options.challengeUUIDs] - Array of challenge UUIDs
  * @param {Array} [options.challengeNames] - Array of challenge names corresponding to UUIDs
  * @param {string} [options.userPubkey] - User's public key for team member identification
+ * @param {Object} [options.seasonSubscription] - Season 1 subscription information
+ * @param {string} [options.seasonSubscription.tier] - Subscription tier ('captain' or 'member')
+ * @param {string} [options.seasonSubscription.identifier] - Season identifier (e.g., 'runstr-season-1-2025')
  * @returns {Object} Event template for a kind 1301 event
  */
 export const createWorkoutEvent = (run, distanceUnit, options = {}) => {
@@ -1052,7 +1055,7 @@ export const createWorkoutEvent = (run, distanceUnit, options = {}) => {
     throw new Error('No run data provided');
   }
 
-  const { teamAssociation, challengeUUIDs, challengeNames, userPubkey } = options;
+  const { teamAssociation, challengeUUIDs, challengeNames, userPubkey, seasonSubscription } = options;
   const workoutUUID = uuidv4(); // Unique ID for this workout record
 
   const activity = (run.activityType || 'run').toLowerCase();
@@ -1166,6 +1169,20 @@ export const createWorkoutEvent = (run, distanceUnit, options = {}) => {
         }
       }
     });
+  }
+
+  // Season 1 subscription tags for filtered feeds and leaderboards
+  if (seasonSubscription && seasonSubscription.identifier && seasonSubscription.tier) {
+    // Add season identifier tag for filtering feeds by season
+    tags.push(["season", seasonSubscription.identifier]);
+    
+    // Add subscription tier tag for captain/member differentiation
+    tags.push(["subscription_tier", seasonSubscription.tier]);
+    
+    // Add discoverable hashtag for efficient season filtering
+    tags.push(["t", `season:${seasonSubscription.identifier}`]);
+    
+    console.log(`[createWorkoutEvent] Added Season 1 tags: season=${seasonSubscription.identifier}, tier=${seasonSubscription.tier}`);
   }
 
   return {

@@ -3,6 +3,8 @@ import runDataService from '../../services/RunDataService';
 import { createWorkoutEvent, createAndPublishEvent } from '../../utils/nostr';
 import { displayDistance } from '../../utils/formatters';
 import { Button } from "@/components/ui/button";
+import { useSeasonSubscription } from '../../hooks/useSeasonSubscription';
+import { REWARDS } from '../../config/rewardsConfig';
 
 /**
  * A simple full-screen modal presenting the synced run summary and two buttons:
@@ -16,6 +18,8 @@ import { Button } from "@/components/ui/button";
  * - publicKey      : string | undefined – needed for streak utils
  */
 export const SyncConfirmationModal = ({ isOpen, onClose, run, distanceUnit = 'km', publicKey }) => {
+  const subscription = useSeasonSubscription(publicKey);
+  
   if (!isOpen || !run) return null;
 
   const handleSave = async (postToNostr = false) => {
@@ -29,12 +33,22 @@ export const SyncConfirmationModal = ({ isOpen, onClose, run, distanceUnit = 'km
         const { getWorkoutAssociations } = await import('../../utils/teamChallengeHelper');
         const { teamAssociation, challengeUUIDs, challengeNames, userPubkey } = await getWorkoutAssociations();
         
+        // Prepare season subscription information if user is subscribed
+        let seasonSubscription = undefined;
+        if (subscription.phase === 'current' && subscription.tier) {
+          seasonSubscription = {
+            tier: subscription.tier,
+            identifier: REWARDS.SEASON_1.identifier
+          };
+        }
+        
         // Create workout event with team/challenge tags
         const nostrEvent = createWorkoutEvent(savedRun, distanceUnit, { 
           teamAssociation, 
           challengeUUIDs, 
           challengeNames, 
-          userPubkey 
+          userPubkey,
+          seasonSubscription
         });
         const published = await createAndPublishEvent(nostrEvent);
         if (published?.id) {

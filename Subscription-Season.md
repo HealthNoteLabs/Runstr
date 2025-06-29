@@ -132,19 +132,33 @@ RUNSTR Season 1 is a 3-month competitive event (July 4 - October 4, 2025) that c
 - ✅ `src/config/rewardsConfig.ts` - Added openSatsNwcUri and appDevNwcUri
 - ✅ `src/pages/RunClub.jsx` - Added RewardsPoolDisplay component
 
-### **Phase 3: Modify Existing Competition to Season 1** (Priority: MEDIUM)
-**Goal**: Convert RUNSTR 500 to RUNSTR Season 1 with subscription filtering
-- [ ] Update `LeagueMap.jsx` to show "RUNSTR Season 1" instead of "THE RUNSTR 500"
-- [ ] Add subscription filtering to existing `useLeagueLeaderboard.js` hook
-- [ ] Modify distance goal from 500 miles to Season 1 format (3-month period)
-- [ ] Integrate subscriber-only filtering into existing leaderboard
-- [ ] Add Season 1 branding and prize pool indicators
-- [ ] Update race track visualization for Season 1 theme
+### **Phase 3: Season 1 Competition Modifications** (Priority: MEDIUM) ✅ **COMPLETE**
+**Goal**: Convert existing competition system to Season 1 with subscription filtering and time-based competition
+- [x] Update `LeagueMap.jsx` to show "RUNSTR Season 1" instead of "THE RUNSTR 500"
+- [x] Add subscription filtering to existing `useLeagueLeaderboard.js` hook
+- [x] Remove fixed 500-mile course concept for time-based Season 1 format
+- [x] Integrate subscriber-only filtering into existing leaderboard
+- [x] Add Season 1 branding and remove completion percentage displays
+- [x] Update race track visualization for Season 1 theme with dynamic markers
+- [x] Add Season 1 date range filtering (July 4 - Oct 4, 2025)
+- [x] Filter events by Season 1 subscription tags and date range
+- [x] Remove completion percentage calculations from position tracking
 
-**Files to Modify** (NOT create):
-- `src/components/LeagueMap.jsx` (existing competition component)
-- `src/hooks/useLeagueLeaderboard.js` (add subscription filtering)
-- `src/pages/RunClub.jsx` (integrate subscription data)
+**Implementation Details**:
+- ✅ `LeagueMap.jsx` updated with Season 1 branding and removed completion percentages
+- ✅ `useLeagueLeaderboard.js` completely refactored for Season 1 subscriber filtering
+- ✅ `useLeaguePosition.js` updated with Season 1 date filtering and season tag validation
+- ✅ Removed fixed course total and completion percentage concepts
+- ✅ Added comprehensive Season 1 subscriber and captain filtering
+- ✅ Integrated activity mode filtering with Season 1 constraints
+- ✅ Time-based competition (July 4 - Oct 4, 2025) instead of distance goal
+- ✅ Only shows Season 1 participants with active subscriptions
+- ✅ Maintains existing activity mode separation (run/walk/cycle)
+
+**Files Modified**:
+- ✅ `src/components/LeagueMap.jsx` - Season 1 branding and removed completion percentages
+- ✅ `src/hooks/useLeagueLeaderboard.js` - Added subscriber filtering and Season 1 date range
+- ✅ `src/hooks/useLeaguePosition.js` - Added Season 1 filtering and removed completion calculations
 
 ### **Phase 4: Team Integration** (Priority: LOW)
 **Goal**: Connect team functionality with subscription tiers

@@ -83,15 +83,16 @@ export function useLeagueRunFeed(): LeagueRunFeedResult {
     }
   }, [ndk, loadSubscribers]);
 
-  // Filter posts by subscription status AND activity mode
+  // Filter posts by Season 1 subscription tags AND activity mode
   const participantPosts = useCallback(() => {
-    if (!runFeed.posts || subscribers.size === 0) {
+    if (!runFeed.posts) {
       return [];
     }
     
     return runFeed.posts.filter(post => {
-      // First filter: Only include posts from Season 1 subscribers
-      if (!subscribers.has(post.pubkey)) {
+      // First filter: Only include posts with Season 1 subscription tags
+      const seasonTag = post.tags?.find(tag => tag[0] === 'season' && tag[1] === 'runstr-season-1-2025');
+      if (!seasonTag) {
         return false;
       }
       
@@ -121,9 +122,10 @@ export function useLeagueRunFeed(): LeagueRunFeedResult {
         }
       }
       
+      console.log(`[LeagueRunFeed] Including Season 1 participant post from ${post.pubkey.slice(0, 8)}`);
       return true;
     });
-  }, [runFeed.posts, subscribers, activityMode]);
+  }, [runFeed.posts, activityMode]);
 
   // Get the current posts to display
   const getCurrentPosts = useCallback(() => {

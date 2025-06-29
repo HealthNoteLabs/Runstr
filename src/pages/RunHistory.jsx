@@ -12,6 +12,8 @@ import { RunHistoryCard } from '../components/RunHistoryCard';
 import { SaveRunExtrasModal } from '../components/SaveRunExtrasModal';
 import { rewardUserActivity } from '../services/rewardService';
 import { NostrContext } from '../contexts/NostrContext';
+import { useSeasonSubscription } from '../hooks/useSeasonSubscription';
+import { REWARDS } from '../config/rewardsConfig';
 import appToast from '../utils/toast';
 
 const AVERAGE_STRIDE_LENGTH_METERS = 0.73; // average stride length (adjusted from 0.762)
@@ -65,6 +67,7 @@ export const RunHistory = () => {
   const { mode, getActivityText } = useActivityMode();
   const { distanceUnit, publishMode } = useSettings();
   const { publicKey } = useContext(NostrContext);
+  const subscription = useSeasonSubscription(publicKey);
   
   // State for run history
   const [runHistory, setRunHistory] = useState([]);
@@ -347,12 +350,22 @@ ${additionalContent ? `\n${additionalContent}` : ''}
       const { getWorkoutAssociations } = await import('../utils/teamChallengeHelper');
       const { teamAssociation, challengeUUIDs, challengeNames, userPubkey } = await getWorkoutAssociations();
       
+      // Prepare season subscription information if user is subscribed
+      let seasonSubscription = undefined;
+      if (subscription.phase === 'current' && subscription.tier) {
+        seasonSubscription = {
+          tier: subscription.tier,
+          identifier: REWARDS.SEASON_1.identifier
+        };
+      }
+      
       // Create workout event with team/challenge tags
       const workoutEvent = createWorkoutEvent(run, distanceUnit, { 
         teamAssociation, 
         challengeUUIDs, 
         challengeNames, 
-        userPubkey 
+        userPubkey,
+        seasonSubscription
       });
       const publishedEvent = await createAndPublishEvent(workoutEvent);
       publishedWorkoutEventId = publishedEvent?.id;

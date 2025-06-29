@@ -2,11 +2,14 @@ import { useState, useEffect, useCallback, useContext } from 'react';
 import { NostrContext } from '../contexts/NostrContext';
 import { fetchEvents } from '../utils/nostr';
 import { useActivityMode } from '../contexts/ActivityModeContext';
+import { season1SubscriptionService } from '../services/season1SubscriptionService';
+import { REWARDS } from '../config/rewardsConfig';
 
 /**
  * Hook: useLeagueLeaderboard
- * Fetches ALL Kind 1301 workout records from ALL users and creates a comprehensive leaderboard
- * Filters by current activity mode (run/walk/cycle) for activity-specific leagues
+ * Fetches Kind 1301 workout records from Season 1 subscribers and creates a comprehensive leaderboard
+ * Filters by current activity mode (run/walk/cycle) and Season 1 subscription status
+ * Only includes workouts within Season 1 date range (July 4 - Oct 4, 2025)
  * Uses localStorage caching (30 min expiry) and lazy loading for better UX
  * 
  * @returns {Object} { leaderboard, isLoading, error, refresh, lastUpdated, activityMode }
@@ -18,12 +21,46 @@ export const useLeagueLeaderboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [subscribers, setSubscribers] = useState(new Set());
+  const [subscriptionsLoading, setSubscriptionsLoading] = useState(false);
+
+  // Season 1 Configuration
+  const SEASON_1_START = new Date(REWARDS.SEASON_1.startDate).getTime() / 1000;
+  const SEASON_1_END = new Date(REWARDS.SEASON_1.endDate).getTime() / 1000;
+  const SEASON_1_IDENTIFIER = REWARDS.SEASON_1.identifier;
 
   // Constants
-  const COURSE_TOTAL_MILES = 500; // Updated to 500 miles
   const CACHE_DURATION_MS = 30 * 60 * 1000; // 30 minutes cache
-  const CACHE_KEY = `runstr_league_leaderboard_${activityMode}`; // Activity-specific cache
+  const CACHE_KEY = `runstr_season1_leaderboard_${activityMode}`; // Season 1 specific cache
   const MAX_EVENTS = 5000; // Limit to prevent overwhelming queries
+
+  /**
+   * Load Season 1 subscribers
+   */
+  const loadSubscribers = useCallback(async () => {
+    if (!ndk) return;
+    
+    setSubscriptionsLoading(true);
+    try {
+      console.log('[useLeagueLeaderboard] Loading Season 1 subscribers...');
+      
+      // Load both regular subscribers and captains
+      const [subscriberPubkeys, captainPubkeys] = await Promise.all([
+        season1SubscriptionService.getSubscriberPubkeys(ndk),
+        season1SubscriptionService.getCaptainPubkeys(ndk)
+      ]);
+      
+      // Combine subscribers and captains into one set
+      const allSubscribers = new Set([...subscriberPubkeys, ...captainPubkeys]);
+      setSubscribers(allSubscribers);
+      
+      console.log(`[useLeagueLeaderboard] Loaded ${allSubscribers.size} total Season 1 participants`);
+    } catch (error) {
+      console.error('[useLeagueLeaderboard] Error loading subscribers:', error);
+    } finally {
+      setSubscriptionsLoading(false);
+    }
+  }, [ndk]);
 
   /**
    * Load cached leaderboard data
@@ -36,7 +73,7 @@ export const useLeagueLeaderboard = () => {
         const now = Date.now();
         
         if (now - timestamp < CACHE_DURATION_MS) {
-          console.log('[useLeagueLeaderboard] Using cached data');
+          console.log('[useLeagueLeaderboard] Using cached Season 1 data');
           setLeaderboard(data);
           setLastUpdated(new Date(timestamp));
           setIsLoading(false);
@@ -80,6 +117,14 @@ export const useLeagueLeaderboard = () => {
     // Convert to miles for consistent calculation
     return unit === 'km' ? (distanceValue * 0.621371) : distanceValue;
   }, []);
+
+  /**
+   * Check if event is within Season 1 date range
+   */
+  const isWithinSeason1 = useCallback((event) => {
+    const eventTime = event.created_at;
+    return eventTime >= SEASON_1_START && eventTime <= SEASON_1_END;
+  }, [SEASON_1_START, SEASON_1_END]);
 
   /**
    * Check for duplicate events with enhanced detection
@@ -134,7 +179,26 @@ export const useLeagueLeaderboard = () => {
     events.forEach(event => {
       if (!event.pubkey || isDuplicateEvent(event, processedEvents)) return;
       
-      // Filter by current activity mode using exercise tag
+      // Filter 1: Only Season 1 subscribers
+      if (!subscribers.has(event.pubkey)) {
+        console.log(`[useLeagueLeaderboard] Filtering out non-subscriber: ${event.pubkey.slice(0, 8)}`);
+        return;
+      }
+      
+      // Filter 2: Only events within Season 1 date range
+      if (!isWithinSeason1(event)) {
+        console.log(`[useLeagueLeaderboard] Filtering out event outside Season 1 dates: ${new Date(event.created_at * 1000).toISOString()}`);
+        return;
+      }
+      
+      // Filter 3: Check for Season 1 tag (events should be tagged with season identifier)
+      const seasonTag = event.tags?.find(tag => tag[0] === 'season' && tag[1] === SEASON_1_IDENTIFIER);
+      if (!seasonTag) {
+        console.log(`[useLeagueLeaderboard] Filtering out event without Season 1 tag: ${event.id}`);
+        return;
+      }
+      
+      // Filter 4: Filter by current activity mode using exercise tag
       const exerciseTag = event.tags?.find(tag => tag[0] === 'exercise');
       const eventActivityType = exerciseTag?.[1]?.toLowerCase();
       
@@ -148,11 +212,14 @@ export const useLeagueLeaderboard = () => {
       const acceptedActivities = activityMatches[activityMode] || [activityMode];
       
       // Skip events that don't match current activity mode
-      if (eventActivityType && !acceptedActivities.includes(eventActivityType)) return;
+      if (eventActivityType && !acceptedActivities.includes(eventActivityType)) {
+        console.log(`[useLeagueLeaderboard] Filtering out ${eventActivityType} activity (mode: ${activityMode})`);
+        return;
+      }
       
-      // If no exercise tag but is valid event, allow it through (fallback)
+      // If no exercise tag but is valid Season 1 event, allow it through (fallback)
       if (!eventActivityType) {
-        console.log(`[useLeagueLeaderboard] Event with no exercise tag - allowing through`);
+        console.log(`[useLeagueLeaderboard] Season 1 workout with no exercise tag - allowing through`);
       }
       
       const distance = extractDistance(event);
@@ -186,26 +253,32 @@ export const useLeagueLeaderboard = () => {
       });
     });
 
-    // Convert to leaderboard format and sort
+    // Convert to leaderboard format and sort - no fixed course total for Season 1
     const leaderboardData = Object.values(userStats)
       .map(user => ({
         ...user,
         totalMiles: Math.round(user.totalMiles * 100) / 100, // Round to 2 decimals
-        progressPercentage: Math.min(100, (user.totalMiles / COURSE_TOTAL_MILES) * 100),
-        isComplete: user.totalMiles >= COURSE_TOTAL_MILES
+        // Remove progressPercentage and isComplete - Season 1 is time-based, not distance-based
       }))
       .sort((a, b) => b.totalMiles - a.totalMiles) // Sort by distance descending
       .slice(0, 10) // Top 10 only
       .map((user, index) => ({ ...user, rank: index + 1 }));
 
     return leaderboardData;
-  }, [extractDistance, isDuplicateEvent, COURSE_TOTAL_MILES, activityMode]);
+  }, [extractDistance, isDuplicateEvent, activityMode, subscribers, isWithinSeason1, SEASON_1_IDENTIFIER]);
 
   /**
    * Fetch comprehensive leaderboard data with lazy loading
    */
   const fetchLeaderboard = useCallback(async (useCache = true) => {
-    console.log('[useLeagueLeaderboard] Starting fetch...');
+    console.log('[useLeagueLeaderboard] Starting Season 1 fetch...');
+    
+    // Ensure we have subscribers first
+    if (subscribers.size === 0 && !subscriptionsLoading) {
+      console.log('[useLeagueLeaderboard] No subscribers loaded, loading first...');
+      await loadSubscribers();
+      return; // Will trigger another fetch via useEffect when subscribers are loaded
+    }
     
     // Try cache first if requested
     if (useCache && loadCachedData()) {
@@ -220,32 +293,33 @@ export const useLeagueLeaderboard = () => {
         throw new Error('NDK not available');
       }
 
-      console.log('[useLeagueLeaderboard] Fetching all 1301 events...');
+      console.log(`[useLeagueLeaderboard] Fetching Season 1 events for ${subscribers.size} subscribers...`);
       
-      // Fetch ALL 1301 events from ALL users
+      // Fetch events from Season 1 date range
       const filter = {
         kinds: [1301],
         limit: MAX_EVENTS,
-        since: Math.floor(Date.now() / 1000) - (365 * 24 * 60 * 60) // Last year
+        since: SEASON_1_START,
+        until: SEASON_1_END
       };
 
       const eventSet = await fetchEvents(filter);
       const events = Array.from(eventSet).map(e => e.rawEvent ? e.rawEvent() : e);
       
-      console.log(`[useLeagueLeaderboard] Fetched ${events.length} events`);
+      console.log(`[useLeagueLeaderboard] Fetched ${events.length} events from Season 1 period`);
 
       // Process events
       const processedLeaderboard = processEvents(events);
       
-      console.log(`[useLeagueLeaderboard] Processed leaderboard with ${processedLeaderboard.length} users`);
+      console.log(`[useLeagueLeaderboard] Processed Season 1 leaderboard with ${processedLeaderboard.length} users`);
 
       // Update state and cache
       setLeaderboard(processedLeaderboard);
       saveToCache(processedLeaderboard);
 
     } catch (err) {
-      console.error('[useLeagueLeaderboard] Error fetching leaderboard:', err);
-      setError(err.message || 'Failed to fetch leaderboard data');
+      console.error('[useLeagueLeaderboard] Error fetching Season 1 leaderboard:', err);
+      setError(err.message || 'Failed to fetch Season 1 leaderboard data');
       
       // Try to use stale cache on error
       if (useCache) {
@@ -254,7 +328,7 @@ export const useLeagueLeaderboard = () => {
           if (cached) {
             const { data } = JSON.parse(cached);
             setLeaderboard(data);
-            console.log('[useLeagueLeaderboard] Using stale cache due to error');
+            console.log('[useLeagueLeaderboard] Using stale Season 1 cache due to error');
           }
         } catch (cacheErr) {
           console.error('[useLeagueLeaderboard] Cache fallback failed:', cacheErr);
@@ -263,20 +337,28 @@ export const useLeagueLeaderboard = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [ndk, loadCachedData, processEvents, saveToCache, CACHE_KEY]);
+  }, [ndk, loadCachedData, processEvents, saveToCache, CACHE_KEY, subscribers, subscriptionsLoading, loadSubscribers, SEASON_1_START, SEASON_1_END]);
 
   /**
    * Force refresh leaderboard (bypass cache)
    */
   const refresh = useCallback(async () => {
-    console.log('[useLeagueLeaderboard] Force refresh requested');
+    console.log('[useLeagueLeaderboard] Force refresh Season 1 leaderboard requested');
+    // Refresh subscribers first
+    await loadSubscribers();
+    // Then refresh leaderboard
     await fetchLeaderboard(false);
-  }, [fetchLeaderboard]);
+  }, [fetchLeaderboard, loadSubscribers]);
 
   /**
    * Background refresh (use cache first, then update in background)
    */
   const backgroundRefresh = useCallback(async () => {
+    // Load subscribers first if needed
+    if (subscribers.size === 0) {
+      await loadSubscribers();
+    }
+    
     // If we have cached data, use it first
     if (loadCachedData()) {
       // Then fetch fresh data in background
@@ -287,17 +369,30 @@ export const useLeagueLeaderboard = () => {
       // No cache, do normal fetch
       await fetchLeaderboard(false);
     }
-  }, [loadCachedData, fetchLeaderboard]);
+  }, [loadCachedData, fetchLeaderboard, subscribers.size, loadSubscribers]);
 
-  // Initial load on mount and when activity mode changes
+  // Load subscribers on mount and when NDK is ready
   useEffect(() => {
-    backgroundRefresh();
-  }, [backgroundRefresh, activityMode]);
+    if (ndk) {
+      loadSubscribers();
+      
+      // Refresh subscriber list every 5 minutes
+      const interval = setInterval(loadSubscribers, 5 * 60 * 1000);
+      return () => clearInterval(interval);
+    }
+  }, [ndk, loadSubscribers]);
+
+  // Initial load on mount and when activity mode or subscribers change
+  useEffect(() => {
+    if (subscribers.size > 0) {
+      backgroundRefresh();
+    }
+  }, [backgroundRefresh, activityMode, subscribers.size]);
 
   // Auto-refresh every 30 minutes
   useEffect(() => {
     const interval = setInterval(() => {
-      console.log('[useLeagueLeaderboard] Auto-refreshing leaderboard');
+      console.log('[useLeagueLeaderboard] Auto-refreshing Season 1 leaderboard');
       fetchLeaderboard(false); // Background refresh
     }, CACHE_DURATION_MS);
 
@@ -305,12 +400,12 @@ export const useLeagueLeaderboard = () => {
   }, [fetchLeaderboard]);
 
   return {
-    leaderboard,           // Top 10 users with comprehensive stats
+    leaderboard,           // Top 10 Season 1 participants with comprehensive stats
     isLoading,            // Loading state (false if using cache)
     error,                // Error message if fetch failed
     lastUpdated,          // Timestamp of last successful update
     refresh,              // Force refresh function
-    courseTotal: COURSE_TOTAL_MILES, // Total course distance for calculations
     activityMode,         // Current activity mode for UI display
+    // Remove courseTotal - Season 1 is time-based, not distance-based
   };
 }; 

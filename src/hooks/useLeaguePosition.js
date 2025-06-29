@@ -1,30 +1,43 @@
 import { useState, useEffect, useContext, useCallback } from 'react';
 import { NostrContext } from '../contexts/NostrContext';
 import { fetchEvents } from '../utils/nostr';
+import { REWARDS } from '../config/rewardsConfig';
 
 /**
  * Hook: useLeaguePosition
- * Fetches user's Kind 1301 workout records and calculates their position
- * on the League course (1000 miles total). ALL runs count toward progress.
+ * Fetches user's Kind 1301 workout records and calculates their Season 1 position
+ * Only includes workouts within Season 1 date range (July 4 - Oct 4, 2025)
+ * This is a time-based competition, not distance-based, so no completion percentage
  * 
- * @returns {Object} { totalDistance, mapPosition, qualifyingRuns, isLoading, error }
+ * @returns {Object} { totalDistance, qualifyingRuns, isLoading, error }
  */
 export const useLeaguePosition = () => {
   const { publicKey: userPubkey } = useContext(NostrContext);
   const [totalDistance, setTotalDistance] = useState(0); // in miles
-  const [mapPosition, setMapPosition] = useState(0); // percentage (0-100)
   const [qualifyingRuns, setQualifyingRuns] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [lastFetchTime, setLastFetchTime] = useState(0);
 
+  // Season 1 Configuration
+  const SEASON_1_START = new Date(REWARDS.SEASON_1.startDate).getTime() / 1000;
+  const SEASON_1_END = new Date(REWARDS.SEASON_1.endDate).getTime() / 1000;
+  const SEASON_1_IDENTIFIER = REWARDS.SEASON_1.identifier;
+
   // Constants
-  const COURSE_TOTAL_MILES = 500; // Updated to match league race distance
   const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes cache
 
   /**
-   * Calculate total distance from 1301 workout events
-   * ALL runs count - no minimum distance threshold
+   * Check if event is within Season 1 date range
+   */
+  const isWithinSeason1 = useCallback((event) => {
+    const eventTime = event.created_at;
+    return eventTime >= SEASON_1_START && eventTime <= SEASON_1_END;
+  }, [SEASON_1_START, SEASON_1_END]);
+
+  /**
+   * Calculate total distance from Season 1 workout events
+   * Only includes events within Season 1 date range with proper season tag
    */
   const calculateDistanceFromEvents = useCallback((events) => {
     if (!events || events.length === 0) {
@@ -35,6 +48,19 @@ export const useLeaguePosition = () => {
     const runs = [];
 
     events.forEach(event => {
+      // Filter 1: Only events within Season 1 date range
+      if (!isWithinSeason1(event)) {
+        console.log(`[useLeaguePosition] Filtering out event outside Season 1 dates: ${new Date(event.created_at * 1000).toISOString()}`);
+        return;
+      }
+
+      // Filter 2: Check for Season 1 tag (events should be tagged with season identifier)
+      const seasonTag = event.tags?.find(tag => tag[0] === 'season' && tag[1] === SEASON_1_IDENTIFIER);
+      if (!seasonTag) {
+        console.log(`[useLeaguePosition] Filtering out event without Season 1 tag: ${event.id}`);
+        return;
+      }
+
       // Extract distance tag: ["distance", "5.00", "km"] OR ["distance", "3.10", "mi"]
       const distanceTag = event.tags?.find(tag => tag[0] === 'distance');
       
@@ -64,18 +90,10 @@ export const useLeaguePosition = () => {
       totalMiles: Math.round(totalMiles * 100) / 100, // Round to 2 decimal places
       runs: runs.sort((a, b) => b.timestamp - a.timestamp) // Most recent first
     };
-  }, []);
+  }, [isWithinSeason1, SEASON_1_IDENTIFIER]);
 
   /**
-   * Convert total distance to map position percentage
-   */
-  const calculateMapPosition = useCallback((totalMiles) => {
-    const percentage = (totalMiles / COURSE_TOTAL_MILES) * 100;
-    return Math.min(100, Math.max(0, percentage)); // Clamp between 0-100
-  }, []);
-
-  /**
-   * Fetch and process 1301 workout events
+   * Fetch and process Season 1 workout events
    */
   const fetchLeaguePosition = useCallback(async () => {
     if (!userPubkey) {
@@ -93,35 +111,35 @@ export const useLeaguePosition = () => {
     setError(null);
 
     try {
-      // Fetch all 1301 workout events for the user
+      // Fetch Season 1 workout events for the user within date range
       const eventSet = await fetchEvents({ 
         kinds: [1301], 
         authors: [userPubkey], 
+        since: SEASON_1_START,
+        until: SEASON_1_END,
         limit: 1000 
       });
       
       // Convert Set to Array and extract raw events
       const events = Array.from(eventSet).map(e => e.rawEvent ? e.rawEvent() : e);
       
-      // Calculate distance and position
+      // Calculate distance from Season 1 events
       const { totalMiles, runs } = calculateDistanceFromEvents(events);
-      const position = calculateMapPosition(totalMiles);
       
       // Update state
       setTotalDistance(totalMiles);
-      setMapPosition(position);
       setQualifyingRuns(runs);
       setLastFetchTime(now);
       
-      console.log(`[useLeaguePosition] Total distance: ${totalMiles} miles, Position: ${position.toFixed(1)}%`);
+      console.log(`[useLeaguePosition] Season 1 total distance: ${totalMiles} miles from ${runs.length} qualifying runs`);
       
     } catch (err) {
-      console.error('[useLeaguePosition] Error fetching position:', err);
-      setError(err.message || 'Failed to fetch league position');
+      console.error('[useLeaguePosition] Error fetching Season 1 position:', err);
+      setError(err.message || 'Failed to fetch Season 1 position');
     } finally {
       setIsLoading(false);
     }
-  }, [userPubkey, calculateDistanceFromEvents, calculateMapPosition, lastFetchTime, totalDistance]);
+  }, [userPubkey, calculateDistanceFromEvents, lastFetchTime, totalDistance, SEASON_1_START, SEASON_1_END]);
 
   /**
    * Force refresh position data (bypass cache)
@@ -136,21 +154,10 @@ export const useLeaguePosition = () => {
     fetchLeaguePosition();
   }, [fetchLeaguePosition]);
 
-  // Calculate additional derived values
-  const milesRemaining = Math.max(0, COURSE_TOTAL_MILES - totalDistance);
-  const isComplete = totalDistance >= COURSE_TOTAL_MILES;
-  const progressPercentage = mapPosition;
-
   return {
     // Core data
-    totalDistance,        // Total miles accumulated from ALL runs
-    mapPosition,         // Position percentage on course (0-100)
-    qualifyingRuns,      // Array of run data that contributed to position
-    
-    // Derived values
-    milesRemaining,      // Miles left to complete the course
-    isComplete,          // Whether user has completed the 1000-mile course
-    progressPercentage,  // Same as mapPosition, for convenience
+    totalDistance,        // Total miles accumulated from Season 1 runs only
+    qualifyingRuns,      // Array of Season 1 run data that contributed to position
     
     // Meta
     isLoading,

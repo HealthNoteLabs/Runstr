@@ -9,6 +9,8 @@ import {
 } from '../../services/nostr/NostrTeamsService';
 import { createWorkoutEvent, createAndPublishEvent } from '../../utils/nostr';
 import { resolveTeamName, resolveChallengeNames, cacheTeamName } from '../../services/nameResolver';
+import { useSeasonSubscription } from '../../hooks/useSeasonSubscription';
+import { REWARDS } from '../../config/rewardsConfig';
 
 interface RunData {
   distance: number;
@@ -38,6 +40,7 @@ interface TeamAssociationOptions {
 
 const SaveRunModal: React.FC<SaveRunModalProps> = ({ runData, distanceUnit, onSaveAndPublish, onClose }) => {
   const { ndk, publicKey, ndkReady } = useNostr();
+  const subscription = useSeasonSubscription(publicKey);
   const [userTeams, setUserTeams] = useState<NostrTeamEvent[]>([]);
   const DEFAULT_KEY = 'runstr:defaultPostingTeamIdentifier';
   const [selectedTeamIdentifier, setSelectedTeamIdentifier] = useState<string>(
@@ -119,8 +122,23 @@ const SaveRunModal: React.FC<SaveRunModalProps> = ({ runData, distanceUnit, onSa
         // activityType, distance, duration, elevation, date are expected from runData prop
     };
 
+    // Prepare season subscription information if user is subscribed
+    let seasonSubscription = undefined;
+    if (subscription.phase === 'current' && subscription.tier) {
+      seasonSubscription = {
+        tier: subscription.tier,
+        identifier: REWARDS.SEASON_1.identifier
+      };
+    }
+
     // createWorkoutEvent expects options.teamAssociation to be of its defined type or undefined
-    const eventTemplate = createWorkoutEvent(finalRunDataForEvent, distanceUnit, { teamAssociation, challengeUUIDs, challengeNames, userPubkey: publicKey });
+    const eventTemplate = createWorkoutEvent(finalRunDataForEvent, distanceUnit, { 
+      teamAssociation, 
+      challengeUUIDs, 
+      challengeNames, 
+      userPubkey: publicKey,
+      seasonSubscription 
+    });
 
     if (!eventTemplate) {
       setError('Failed to prepare workout event details.');
