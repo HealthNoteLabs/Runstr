@@ -132,33 +132,34 @@ RUNSTR Season 1 is a 3-month competitive event (July 4 - October 4, 2025) that c
 - ✅ `src/config/rewardsConfig.ts` - Added openSatsNwcUri and appDevNwcUri
 - ✅ `src/pages/RunClub.jsx` - Added RewardsPoolDisplay component
 
-### **Phase 3: Season 1 Competition Modifications** (Priority: MEDIUM) ✅ **COMPLETE**
-**Goal**: Convert existing competition system to Season 1 with subscription filtering and time-based competition
-- [x] Update `LeagueMap.jsx` to show "RUNSTR Season 1" instead of "THE RUNSTR 500"
-- [x] Add subscription filtering to existing `useLeagueLeaderboard.js` hook
-- [x] Remove fixed 500-mile course concept for time-based Season 1 format
-- [x] Integrate subscriber-only filtering into existing leaderboard
-- [x] Add Season 1 branding and remove completion percentage displays
-- [x] Update race track visualization for Season 1 theme with dynamic markers
-- [x] Add Season 1 date range filtering (July 4 - Oct 4, 2025)
-- [x] Filter events by Season 1 subscription tags and date range
-- [x] Remove completion percentage calculations from position tracking
+### **Phase 3: Team Permission System ✅ **COMPLETE**
+**Goal**: Add subscription tier checks to team creation and joining
+- [x] **Team Creation Restrictions**: Only Captain tier subscribers can create teams
+- [x] **Team Joining Restrictions**: Only Member/Captain tier subscribers can join teams  
+- [x] **UI Updates**: Show subscription requirements and upgrade options
+- [x] **Captain Validation**: Added `useIsSeasonCaptain` hook to team creation forms
+- [x] **Member/Captain Validation**: Added `useIsSeasonSubscriber` hook to team joining logic
+- [x] **Subscription UI**: Integrated Season1SubscriptionCard for upgrade flows
+- [x] **Permission Gates**: Proper error handling and user feedback for non-subscribers
 
 **Implementation Details**:
-- ✅ `LeagueMap.jsx` updated with Season 1 branding and removed completion percentages
-- ✅ `useLeagueLeaderboard.js` completely refactored for Season 1 subscriber filtering
-- ✅ `useLeaguePosition.js` updated with Season 1 date filtering and season tag validation
-- ✅ Removed fixed course total and completion percentage concepts
-- ✅ Added comprehensive Season 1 subscriber and captain filtering
-- ✅ Integrated activity mode filtering with Season 1 constraints
-- ✅ Time-based competition (July 4 - Oct 4, 2025) instead of distance goal
-- ✅ Only shows Season 1 participants with active subscriptions
-- ✅ Maintains existing activity mode separation (run/walk/cycle)
+- ✅ `CreateTeamFormV2.tsx` updated with Captain subscription validation and subscription requirement UI
+- ✅ `TeamDetailPage.tsx` updated with subscription validation for team joining
+- ✅ Added subscription checks to `handleJoinTeam` function with clear error messaging
+- ✅ Early return patterns prevent non-subscribers from accessing team creation/joining flows
+- ✅ Integrated Season1SubscriptionCard component for subscription upgrade prompts
+- ✅ Added visual indicators for subscription status (Captain badges, subscriber status)
+- ✅ Maintains existing team functionality for subscribed users
 
 **Files Modified**:
-- ✅ `src/components/LeagueMap.jsx` - Season 1 branding and removed completion percentages
-- ✅ `src/hooks/useLeagueLeaderboard.js` - Added subscriber filtering and Season 1 date range
-- ✅ `src/hooks/useLeaguePosition.js` - Added Season 1 filtering and removed completion calculations
+- ✅ `src/components/teams/CreateTeamFormV2.tsx` - Added Captain subscription gates
+- ✅ `src/pages/TeamDetailPage.tsx` - Added Member/Captain subscription validation
+
+**User Experience**:
+- ✅ Non-subscribers see clear messaging about subscription requirements
+- ✅ Subscription upgrade flows are seamlessly integrated into team workflows
+- ✅ Subscribers see confirmation of their access permissions
+- ✅ Captain users get special visual indicators and additional privileges
 
 ### **Phase 4: Team Integration** (Priority: LOW)
 **Goal**: Connect team functionality with subscription tiers

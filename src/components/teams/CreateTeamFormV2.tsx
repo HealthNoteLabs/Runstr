@@ -12,6 +12,8 @@ import {
   prepareTeamSubscriptionReceiptEvent
 } from '../../services/nostr/NostrTeamsService';
 import { createAndPublishEvent } from '../../utils/nostr';
+import { useIsSeasonCaptain } from '../../hooks/useSeasonSubscription';
+import { Season1SubscriptionCard } from '../Season1SubscriptionCard';
 
 // This is a new, simplified form component built from scratch
 // It uses the same robust createAndPublishEvent helper as other working parts of the app.
@@ -28,6 +30,9 @@ const CreateTeamFormV2: React.FC = () => {
   const { wallet } = useAuth();
   const navigate = useNavigate();
 
+  // Check if user is a Season 1 Captain
+  const isSeasonCaptain = useIsSeasonCaptain(publicKey);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -42,6 +47,13 @@ const CreateTeamFormV2: React.FC = () => {
         setIsLoading(false);
         return;
       }
+    }
+
+    // Check Captain subscription requirement
+    if (!isSeasonCaptain) {
+      setError('Only Season 1 Captains can create teams. Please upgrade your subscription.');
+      setIsLoading(false);
+      return;
     }
 
     if (!teamName.trim()) {
@@ -93,9 +105,70 @@ const CreateTeamFormV2: React.FC = () => {
     }
   };
 
+  // If user is not connected, show normal form with disabled state
+  if (!publicKey) {
+    return (
+      <div className="p-4 max-w-md mx-auto bg-gray-800 text-white rounded-lg shadow-lg mt-5">
+        <h2 className="text-2xl font-bold mb-6 text-center">Create New Team</h2>
+        
+        <div className="mb-6 p-4 bg-blue-900/50 border border-blue-500 rounded-lg text-center">
+          <p className="text-blue-200 mb-4">Please connect your Nostr account to create a team.</p>
+          <button
+            onClick={() => navigate('/teams')}
+            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+          >
+            Back to Teams
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // If user is not a Season 1 Captain, show subscription requirement
+  if (!isSeasonCaptain) {
+    return (
+      <div className="p-4 max-w-md mx-auto bg-gray-800 text-white rounded-lg shadow-lg mt-5">
+        <h2 className="text-2xl font-bold mb-6 text-center">Create New Team</h2>
+        
+        <div className="mb-6 p-4 bg-yellow-900/50 border border-yellow-500 rounded-lg">
+          <div className="flex items-center mb-2">
+            <span className="text-yellow-400 mr-2">👑</span>
+            <h3 className="font-semibold text-yellow-200">Captain Subscription Required</h3>
+          </div>
+          <p className="text-yellow-100 text-sm mb-4">
+            Only Season 1 Captains can create teams. This premium feature includes team management, 
+            challenge creation, and exclusive captain badges.
+          </p>
+          <div className="text-center">
+            <Season1SubscriptionCard className="inline-block" />
+          </div>
+        </div>
+        
+        <div className="text-center">
+          <button
+            onClick={() => navigate('/teams')}
+            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+          >
+            Back to Teams
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 max-w-md mx-auto bg-gray-800 text-white rounded-lg shadow-lg mt-5">
       <h2 className="text-2xl font-bold mb-6 text-center">Create New Team</h2>
+      
+      {/* Captain Status Indicator */}
+      <div className="mb-4 p-3 bg-green-800/50 border border-green-600 rounded-lg">
+        <div className="flex items-center">
+          <span className="text-green-400 mr-2">👑</span>
+          <span className="text-green-200 font-semibold">Season 1 Captain</span>
+        </div>
+        <p className="text-green-100 text-sm mt-1">You can create and manage teams</p>
+      </div>
+      
       <form onSubmit={handleSubmit}>
         <div className="mb-4">
           <label htmlFor="teamName" className="block text-sm font-medium text-gray-300 mb-1">

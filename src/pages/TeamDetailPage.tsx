@@ -34,6 +34,8 @@ import LocalTeamChat from '../components/teams/LocalTeamChat';
 import { DisplayName } from '../components/shared/DisplayName';
 import { useTeamRoles } from '../hooks/useTeamRoles';
 import toast from 'react-hot-toast';
+import { useIsSeasonSubscriber } from '../hooks/useSeasonSubscription';
+import { Season1SubscriptionCard } from '../components/Season1SubscriptionCard';
 import ManageTeamModal from '../components/teams/ManageTeamModal';
 import TeamStatsWidget from '../components/teams/TeamStatsWidget';
 import { useTeamActivity } from '../hooks/useTeamActivity';
@@ -315,6 +317,12 @@ const TeamDetailPage: React.FC = () => {
       return;
     }
 
+    // Check Season 1 subscription requirement
+    if (!isSeasonSubscriber) {
+      toast.error('Only Season 1 subscribers can join teams. Please subscribe first.');
+      return;
+    }
+
     // Additional check: Ensure user isn't already a member
     if (isCurrentUserMember) {
       console.log('Join team skipped: User is already a member');
@@ -437,6 +445,9 @@ const TeamDetailPage: React.FC = () => {
     isCaptain: isCurrentUserCaptain,
     isMember: isCurrentUserMember,
   } = useTeamRoles(team, teamAIdentifierForChat);
+
+  // Check if user has Season 1 subscription (Member or Captain tier)
+  const isSeasonSubscriber = useIsSeasonSubscriber(currentUserPubkey);
 
   const renderTabs = () => {
     return (

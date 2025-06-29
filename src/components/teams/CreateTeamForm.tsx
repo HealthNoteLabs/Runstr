@@ -11,6 +11,8 @@ import {
   getTeamCaptain
 } from '../../services/nostr/NostrTeamsService'; // Added imports
 import { createAndPublishEvent } from '../../utils/nostr';
+import { useIsSeasonCaptain } from '../../hooks/useSeasonSubscription';
+import { Season1SubscriptionCard } from '../Season1SubscriptionCard';
 
 // Define an interface for the Nostr context values
 interface NostrContextValues {
@@ -45,6 +47,9 @@ const CreateTeamForm: React.FC = () => {
   } = useNostr() as NostrContextValues; // Type assertion
   const navigate = useNavigate();
 
+  // Check if user is a Season 1 Captain
+  const isSeasonCaptain = useIsSeasonCaptain(publicKey);
+
   // Determine signer status for debug UI using the new state
   const debugSignerStatus = signerAvailable ? 'Signer Available' : 'Signer NOT Available';
 
@@ -70,6 +75,13 @@ const CreateTeamForm: React.FC = () => {
         setIsLoading(false);
         return;
       }
+    }
+
+    // Check Captain subscription requirement
+    if (!isSeasonCaptain) {
+      setError('Only Season 1 Captains can create teams. Please upgrade your subscription.');
+      setIsLoading(false);
+      return;
     }
 
     if (!teamName.trim()) {
@@ -108,6 +120,57 @@ const CreateTeamForm: React.FC = () => {
     }
   };
 
+  // If user is not connected, show normal form with disabled state
+  if (!publicKey) {
+    return (
+      <div className="p-4 max-w-md mx-auto bg-gray-800 text-white rounded-lg shadow-lg mt-5">
+        <h2 className="text-2xl font-bold mb-6 text-center">Create New Team</h2>
+        
+        <div className="mb-6 p-4 bg-blue-900/50 border border-blue-500 rounded-lg text-center">
+          <p className="text-blue-200 mb-4">Please connect your Nostr account to create a team.</p>
+          <button
+            onClick={() => navigate('/teams')}
+            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+          >
+            Back to Teams
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // If user is not a Season 1 Captain, show subscription requirement
+  if (!isSeasonCaptain) {
+    return (
+      <div className="p-4 max-w-md mx-auto bg-gray-800 text-white rounded-lg shadow-lg mt-5">
+        <h2 className="text-2xl font-bold mb-6 text-center">Create New Team</h2>
+        
+        <div className="mb-6 p-4 bg-yellow-900/50 border border-yellow-500 rounded-lg">
+          <div className="flex items-center mb-2">
+            <span className="text-yellow-400 mr-2">👑</span>
+            <h3 className="font-semibold text-yellow-200">Captain Subscription Required</h3>
+          </div>
+          <p className="text-yellow-100 text-sm mb-4">
+            Only Season 1 Captains can create teams. This premium feature includes team management, 
+            challenge creation, and exclusive captain badges.
+          </p>
+          <div className="text-center">
+            <Season1SubscriptionCard className="inline-block" />
+          </div>
+        </div>
+        
+        <div className="text-center">
+          <button
+            onClick={() => navigate('/teams')}
+            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+          >
+            Back to Teams
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 max-w-md mx-auto bg-gray-800 text-white rounded-lg shadow-lg mt-5">
       {/* Debug Display Section */}
@@ -117,13 +180,23 @@ const CreateTeamForm: React.FC = () => {
         <p style={{ fontSize: '0.875rem', color: '#E5E7EB' }}>Public Key (from useNostr context): <span style={{ fontWeight: 'bold' }}>{publicKey || 'Not available'}</span></p>
         <p style={{ fontSize: '0.875rem', color: '#E5E7EB' }}>NDK Signer Status (from Context State): <span style={{ fontWeight: 'bold' }}>{debugSignerStatus}</span></p>
         <p style={{ fontSize: '0.875rem', color: '#E5E7EB' }}>Relay Count (from Context): <span style={{ fontWeight: 'bold' }}>{relayCount}</span></p>
-        {/* ndkErrorFromContext is not directly available from useNostr, it's part of NostrContext but useNostr() might not expose it directly */}
         <p style={{ fontSize: '0.875rem', color: '#E5E7EB' }}>NDK Init Error (from Context): <span style={{ fontWeight: 'bold' }}>{ndkErrorFromContext || 'None'}</span></p>
+        <p style={{ fontSize: '0.875rem', color: '#E5E7EB' }}>Is Season Captain: <span style={{ fontWeight: 'bold', color: isSeasonCaptain ? '#10B981' : '#EF4444' }}>{isSeasonCaptain ? 'YES' : 'NO'}</span></p>
         <p style={{ fontSize: '0.875rem', color: '#FCA5A5' }}>Current Form Error: <span style={{ fontWeight: 'bold' }}>{error || 'None'}</span></p>
       </div>
       {/* End Debug Display Section */}
 
       <h2 className="text-2xl font-bold mb-6 text-center">Create New Team</h2>
+      
+      {/* Captain Status Indicator */}
+      <div className="mb-4 p-3 bg-green-800/50 border border-green-600 rounded-lg">
+        <div className="flex items-center">
+          <span className="text-green-400 mr-2">👑</span>
+          <span className="text-green-200 font-semibold">Season 1 Captain</span>
+        </div>
+        <p className="text-green-100 text-sm mt-1">You can create and manage teams</p>
+      </div>
+      
       <form onSubmit={handleSubmit}>
         <div className="mb-4">
           <label htmlFor="teamName" className="block text-sm font-medium text-gray-300 mb-1">
@@ -191,14 +264,13 @@ const CreateTeamForm: React.FC = () => {
         >
           {isLoading ? (
             <div className="flex items-center justify-center">
-              <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> {/* Using RefreshCw here */}
+              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
               Creating Team...
             </div>
           ) : (
             'Create Team'
           )}
         </button>
-        {/* Updated conditional message based on more specific checks */}
         {!isLoading && (!ndkReadyFromContext) && (
             <p className="text-xs text-yellow-400 mt-2 text-center">
                 {!ndkReadyFromContext ? "Nostr connection not ready... " : ""}
