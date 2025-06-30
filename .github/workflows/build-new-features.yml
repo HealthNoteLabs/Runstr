@@ -74,25 +74,15 @@ jobs:
       - name: Build Debug APK
         run: cd android && ./gradlew assembleDebug
 
-      # Create a Release
+      # Create Release with APK
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+          name: 'New-Features ${{ env.RELEASE_TAG }}'
           tag_name: ${{ env.RELEASE_TAG }}
-          release_name: 'New-Features ${{ env.RELEASE_TAG }}'
           draft: false
           prerelease: true
-
-      # Upload Debug APK to Release
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: android/app/build/outputs/apk/debug/app-debug.apk
-          asset_name: app-debug.apk
-          asset_content_type: application/vnd.android.package-archive 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
