@@ -8,6 +8,7 @@ on:
       - rewards-fix
       - nostr-stats
       - bugfixes2
+      - RUNSTR_SEASON_1
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
