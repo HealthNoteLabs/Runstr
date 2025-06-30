@@ -19,8 +19,7 @@ export const useLeagueLeaderboard = () => {
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  // Constants
-  const COURSE_TOTAL_MILES = 500; // Updated to 500 miles
+  // Constants  
   const CACHE_DURATION_MS = 30 * 60 * 1000; // 30 minutes cache
   const CACHE_KEY = `runstr_league_leaderboard_${activityMode}`; // Activity-specific cache
   const MAX_EVENTS = 5000; // Limit to prevent overwhelming queries
@@ -191,15 +190,13 @@ export const useLeagueLeaderboard = () => {
       .map(user => ({
         ...user,
         totalMiles: Math.round(user.totalMiles * 100) / 100, // Round to 2 decimals
-        progressPercentage: Math.min(100, (user.totalMiles / COURSE_TOTAL_MILES) * 100),
-        isComplete: user.totalMiles >= COURSE_TOTAL_MILES
       }))
       .sort((a, b) => b.totalMiles - a.totalMiles) // Sort by distance descending
       .slice(0, 10) // Top 10 only
       .map((user, index) => ({ ...user, rank: index + 1 }));
 
     return leaderboardData;
-  }, [extractDistance, isDuplicateEvent, COURSE_TOTAL_MILES, activityMode]);
+  }, [extractDistance, isDuplicateEvent, activityMode]);
 
   /**
    * Fetch comprehensive leaderboard data with lazy loading
@@ -310,7 +307,6 @@ export const useLeagueLeaderboard = () => {
     error,                // Error message if fetch failed
     lastUpdated,          // Timestamp of last successful update
     refresh,              // Force refresh function
-    courseTotal: COURSE_TOTAL_MILES, // Total course distance for calculations
     activityMode,         // Current activity mode for UI display
   };
 }; 

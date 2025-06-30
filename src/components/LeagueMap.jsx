@@ -3,6 +3,7 @@ import { useLeaguePosition } from '../hooks/useLeaguePosition';
 import { useLeagueLeaderboard } from '../hooks/useLeagueLeaderboard';
 import { useProfiles } from '../hooks/useProfiles';
 import { useNostr } from '../hooks/useNostr';
+import { getSeasonTitle, getActivityText } from '../config/seasonConfig';
 
 export const LeagueMap = ({ feedPosts = [], feedLoading = false, feedError = null }) => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -16,7 +17,6 @@ export const LeagueMap = ({ feedPosts = [], feedLoading = false, feedError = nul
     error: leaderboardError,
     lastUpdated,
     refresh: refreshLeaderboard,
-    courseTotal,
     activityMode
   } = useLeagueLeaderboard();
 
@@ -45,49 +45,12 @@ export const LeagueMap = ({ feedPosts = [], feedLoading = false, feedError = nul
     return () => clearTimeout(timer);
   }, []);
 
-  // Generate dynamic league title based on activity mode
-  const getLeagueTitle = () => {
-    if (!activityMode) return 'THE RUNSTR 500'; // Fallback for loading state
-    
-    switch (activityMode) {
-      case 'run':
-        return 'THE RUNSTR 500';
-      case 'walk':
-        return 'THE WALKSTR 500';
-      case 'cycle':
-        return 'THE CYCLESTR 500';
-      default:
-        return 'THE RUNSTR 500';
-    }
-  };
-
-  // Generate dynamic activity text based on activity mode
-  const getActivityText = (count) => {
-    if (!activityMode) return `${count} run${count !== 1 ? 's' : ''}`; // Fallback
-    
-    switch (activityMode) {
-      case 'run':
-        return `${count} run${count !== 1 ? 's' : ''}`;
-      case 'walk':
-        return `${count} walk${count !== 1 ? 's' : ''}`;
-      case 'cycle':
-        return `${count} ride${count !== 1 ? 's' : ''}`;
-      default:
-        return `${count} run${count !== 1 ? 's' : ''}`;
-    }
-  };
-
-  // Calculate position along race track (0-100%)
-  const calculateTrackPosition = (totalMiles) => {
-    return Math.min(100, (totalMiles / courseTotal) * 100);
-  };
-
   // Format distance to 1 decimal place
   const formatDistance = (distance) => {
     return Number(distance || 0).toFixed(1);
   };
 
-  // Calculate distributed positions to prevent overlapping
+  // Calculate distributed positions for distance ranking (no completion-based positioning)
   const calculateDistributedPositions = (users) => {
     if (users.length === 0) return [];
     
@@ -99,12 +62,29 @@ export const LeagueMap = ({ feedPosts = [], feedLoading = false, feedError = nul
     // Sort users by distance (maintaining ranking order)
     const sortedUsers = [...users].sort((a, b) => b.totalMiles - a.totalMiles);
     
-    // Calculate ideal positions based on actual progress
-    let positions = sortedUsers.map(user => ({
-      ...user,
-      idealX: TRACK_START + (calculateTrackPosition(user.totalMiles) / 100 * TRACK_WIDTH),
-      adjustedX: TRACK_START + (calculateTrackPosition(user.totalMiles) / 100 * TRACK_WIDTH)
-    }));
+    // Calculate positions based on relative distance spread (not completion percentage)
+    const maxDistance = sortedUsers[0]?.totalMiles || 0;
+    const minDistance = sortedUsers[sortedUsers.length - 1]?.totalMiles || 0;
+    const distanceRange = maxDistance - minDistance;
+    
+    // Calculate ideal positions based on distance ranking
+    let positions = sortedUsers.map((user, index) => {
+      let positionX;
+      if (distanceRange === 0 || sortedUsers.length === 1) {
+        // All users have same distance or single user
+        positionX = TRACK_START + (TRACK_WIDTH * 0.8); // Place near end
+      } else {
+        // Spread users across track based on their relative distances
+        const relativePosition = (user.totalMiles - minDistance) / distanceRange;
+        positionX = TRACK_START + (relativePosition * TRACK_WIDTH * 0.8); // Use 80% of track
+      }
+      
+      return {
+        ...user,
+        idealX: positionX,
+        adjustedX: positionX
+      };
+    });
     
     // Multi-pass algorithm to resolve all conflicts
     let hasConflicts = true;
@@ -161,7 +141,7 @@ export const LeagueMap = ({ feedPosts = [], feedLoading = false, feedError = nul
   const racePositions = useMemo(() => {
     const topUsers = enhancedLeaderboard.slice(0, 10);
     return calculateDistributedPositions(topUsers);
-  }, [enhancedLeaderboard, courseTotal]);
+  }, [enhancedLeaderboard]);
 
   // Loading state with lazy loading support
   const isLoading = isInitialLoad || (leaderboardLoading && leaderboard.length === 0);
@@ -199,10 +179,10 @@ export const LeagueMap = ({ feedPosts = [], feedLoading = false, feedError = nul
 
   return (
     <div className="space-y-4 mb-4">
-      {/* Linear Race Track */}
+      {/* Distance Competition Track */}
       <div className="bg-bg-secondary rounded-lg border border-border-secondary p-4">
         <div className="flex justify-between items-center mb-3">
-          <h3 className="text-lg font-semibold text-text-primary">{getLeagueTitle()}</h3>
+          <h3 className="text-lg font-semibold text-text-primary">{getSeasonTitle(activityMode)}</h3>
           <div className="text-xs text-text-secondary">
             {lastUpdated && `Updated ${new Date(lastUpdated).toLocaleTimeString()}`}
           </div>
@@ -233,33 +213,10 @@ export const LeagueMap = ({ feedPosts = [], feedLoading = false, feedError = nul
             />
             <text x="40" y="45" fontSize="10" textAnchor="middle" fill="currentColor" className="text-text-secondary">START</text>
             
-            {/* Finish line */}
-            <line 
-              x1="360" y1="50" x2="360" y2="70" 
-              stroke="currentColor" 
-              strokeWidth="3" 
-              strokeLinecap="round"
-              className="text-text-primary"
-            />
-            <text x="325" y="45" fontSize="10" fill="currentColor" className="text-text-secondary">500mi</text>
-            
-            {/* Mile markers */}
-            {[100, 200, 300, 400].map(mile => {
-              const x = 40 + ((mile / 500) * 320);
-              return (
-                <g key={mile}>
-                  <line 
-                    x1={x} y1="55" x2={x} y2="65" 
-                    stroke="currentColor" 
-                    strokeWidth="1" 
-                    className="text-text-muted"
-                  />
-                  <text x={x} y="80" fontSize="8" textAnchor="middle" fill="currentColor" className="text-text-muted">
-                    {mile}
-                  </text>
-                </g>
-              );
-            })}
+            {/* Season Progress Text (no finish line for distance competition) */}
+            <text x="360" y="45" fontSize="10" textAnchor="middle" fill="currentColor" className="text-text-secondary">
+              SEASON
+            </text>
             
             {/* Position runners on track */}
             {racePositions.map((user, index) => {
@@ -302,10 +259,10 @@ export const LeagueMap = ({ feedPosts = [], feedLoading = false, feedError = nul
         </div>
       </div>
 
-      {/* Workout-Card-Styled Leaderboard */}
+      {/* Distance-Based Leaderboard */}
       <div className="bg-bg-secondary rounded-lg border border-border-secondary overflow-hidden">
         <div className="flex justify-between items-center p-4 border-b border-border-secondary bg-bg-tertiary">
-          <h3 className="text-lg font-semibold text-text-primary">🏆 League Standings</h3>
+          <h3 className="text-lg font-semibold text-text-primary">🏆 Season Rankings</h3>
           {leaderboardLoading && (
             <div className="flex items-center">
               <div className="flex space-x-1">
@@ -357,25 +314,18 @@ export const LeagueMap = ({ feedPosts = [], feedLoading = false, feedError = nul
                       )}
                     </div>
                     <div className="text-xs text-text-secondary">
-                      {getActivityText(user.runCount)}
+                      {getActivityText(user.runCount, activityMode)}
                     </div>
                   </div>
                 </div>
                 
-                {/* Stats */}
+                {/* Distance Stats (no completion percentage) */}
                 <div className="text-right">
                   <div className="font-semibold text-text-primary">
                     {formatDistance(user.totalMiles)} mi
                   </div>
                   <div className="text-xs text-text-secondary">
-                    {user.progressPercentage.toFixed(1)}% complete
-                  </div>
-                  {/* Mini progress bar */}
-                  <div className="w-16 h-1 bg-bg-tertiary rounded-full mt-1">
-                    <div 
-                      className="h-full bg-primary rounded-full"
-                      style={{ width: `${Math.min(100, user.progressPercentage)}%` }}
-                    />
+                    Total distance
                   </div>
                 </div>
               </div>

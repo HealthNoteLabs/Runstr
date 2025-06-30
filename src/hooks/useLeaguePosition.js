@@ -4,22 +4,20 @@ import { fetchEvents } from '../utils/nostr';
 
 /**
  * Hook: useLeaguePosition
- * Fetches user's Kind 1301 workout records and calculates their position
- * on the League course (1000 miles total). ALL runs count toward progress.
+ * Fetches user's Kind 1301 workout records and calculates total distance.
+ * Used for RUNSTR Season 1 distance competition. ALL runs count toward total.
  * 
- * @returns {Object} { totalDistance, mapPosition, qualifyingRuns, isLoading, error }
+ * @returns {Object} { totalDistance, qualifyingRuns, isLoading, error }
  */
 export const useLeaguePosition = () => {
   const { publicKey: userPubkey } = useContext(NostrContext);
   const [totalDistance, setTotalDistance] = useState(0); // in miles
-  const [mapPosition, setMapPosition] = useState(0); // percentage (0-100)
   const [qualifyingRuns, setQualifyingRuns] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [lastFetchTime, setLastFetchTime] = useState(0);
 
   // Constants
-  const COURSE_TOTAL_MILES = 500; // Updated to match league race distance
   const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes cache
 
   /**
@@ -66,13 +64,7 @@ export const useLeaguePosition = () => {
     };
   }, []);
 
-  /**
-   * Convert total distance to map position percentage
-   */
-  const calculateMapPosition = useCallback((totalMiles) => {
-    const percentage = (totalMiles / COURSE_TOTAL_MILES) * 100;
-    return Math.min(100, Math.max(0, percentage)); // Clamp between 0-100
-  }, []);
+
 
   /**
    * Fetch and process 1301 workout events
@@ -103,17 +95,15 @@ export const useLeaguePosition = () => {
       // Convert Set to Array and extract raw events
       const events = Array.from(eventSet).map(e => e.rawEvent ? e.rawEvent() : e);
       
-      // Calculate distance and position
+      // Calculate distance
       const { totalMiles, runs } = calculateDistanceFromEvents(events);
-      const position = calculateMapPosition(totalMiles);
       
       // Update state
       setTotalDistance(totalMiles);
-      setMapPosition(position);
       setQualifyingRuns(runs);
       setLastFetchTime(now);
       
-      console.log(`[useLeaguePosition] Total distance: ${totalMiles} miles, Position: ${position.toFixed(1)}%`);
+      console.log(`[useLeaguePosition] Total distance: ${totalMiles} miles`);
       
     } catch (err) {
       console.error('[useLeaguePosition] Error fetching position:', err);
@@ -121,7 +111,7 @@ export const useLeaguePosition = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [userPubkey, calculateDistanceFromEvents, calculateMapPosition, lastFetchTime, totalDistance]);
+  }, [userPubkey, calculateDistanceFromEvents, lastFetchTime, totalDistance]);
 
   /**
    * Force refresh position data (bypass cache)
@@ -136,21 +126,10 @@ export const useLeaguePosition = () => {
     fetchLeaguePosition();
   }, [fetchLeaguePosition]);
 
-  // Calculate additional derived values
-  const milesRemaining = Math.max(0, COURSE_TOTAL_MILES - totalDistance);
-  const isComplete = totalDistance >= COURSE_TOTAL_MILES;
-  const progressPercentage = mapPosition;
-
   return {
     // Core data
     totalDistance,        // Total miles accumulated from ALL runs
-    mapPosition,         // Position percentage on course (0-100)
-    qualifyingRuns,      // Array of run data that contributed to position
-    
-    // Derived values
-    milesRemaining,      // Miles left to complete the course
-    isComplete,          // Whether user has completed the 1000-mile course
-    progressPercentage,  // Same as mapPosition, for convenience
+    qualifyingRuns,      // Array of run data that contributed to total
     
     // Meta
     isLoading,
