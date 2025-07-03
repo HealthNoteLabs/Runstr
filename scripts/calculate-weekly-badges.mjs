@@ -11,7 +11,7 @@
  * 5. Identifies users who have achieved new level milestones
  * 6. Outputs badge recommendations
  * 
- * Usage: node scripts/calculate-weekly-badges.mjs [--dry-run] [--since=YYYY-MM-DD]
+ * Usage: node scripts/calculate-weekly-badges.mjs [--dry-run] [--since=YYYY-MM-DD] [--catchup]
  */
 
 import 'dotenv/config';
@@ -52,15 +52,29 @@ const LEVEL_SYSTEM = {
   }
 };
 
-// Badge tier definitions - you can customize these
+// Badge tier definitions - Level 1-21 badges
 const BADGE_TIERS = {
-  5: { name: "Bronze Runner", description: "Reached Level 5" },
-  10: { name: "Silver Athlete", description: "Reached Level 10" }, 
-  15: { name: "Gold Champion", description: "Reached Level 15" },
-  20: { name: "Platinum Legend", description: "Reached Level 20" },
-  25: { name: "Diamond Elite", description: "Reached Level 25" },
-  30: { name: "Master Runner", description: "Reached Level 30" },
-  // Add more tiers as needed
+  1: { name: "First Steps", description: "Reached Level 1 - Your fitness journey begins!" },
+  2: { name: "Getting Started", description: "Reached Level 2 - Building momentum" },
+  3: { name: "Early Achiever", description: "Reached Level 3 - Consistency pays off" },
+  4: { name: "Steady Runner", description: "Reached Level 4 - Finding your rhythm" },
+  5: { name: "Bronze Runner", description: "Reached Level 5 - First major milestone!" },
+  6: { name: "Committed Athlete", description: "Reached Level 6 - Dedication showing" },
+  7: { name: "Weekly Warrior", description: "Reached Level 7 - Regular training habit" },
+  8: { name: "Distance Destroyer", description: "Reached Level 8 - Crushing those miles" },
+  9: { name: "Almost Elite", description: "Reached Level 9 - Approaching greatness" },
+  10: { name: "Silver Athlete", description: "Reached Level 10 - Elite achievement unlocked!" },
+  11: { name: "Double Digits", description: "Reached Level 11 - Into elite territory" },
+  12: { name: "Dozen Master", description: "Reached Level 12 - A full year of dedication" },
+  13: { name: "Lucky Thirteen", description: "Reached Level 13 - Pushing boundaries" },
+  14: { name: "Fortnight Fighter", description: "Reached Level 14 - Unstoppable force" },
+  15: { name: "Gold Champion", description: "Reached Level 15 - Championship caliber!" },
+  16: { name: "Sweet Sixteen", description: "Reached Level 16 - Peak performance zone" },
+  17: { name: "Magnificent Seventeen", description: "Reached Level 17 - Legendary status" },
+  18: { name: "Endurance Expert", description: "Reached Level 18 - Master of distance" },
+  19: { name: "Penultimate Power", description: "Reached Level 19 - Almost at the peak" },
+  20: { name: "Platinum Legend", description: "Reached Level 20 - Ultimate achievement!" },
+  21: { name: "Beyond Limits", description: "Reached Level 21 - Transcendent runner!" }
 };
 
 // Default relays to fetch from
@@ -181,23 +195,39 @@ function groupEventsByAuthor(events) {
   return userEvents;
 }
 
-function findNewBadgeRecipients(currentData, previousData) {
+function findNewBadgeRecipients(currentData, previousData, isCatchupMode = false) {
   const badgeRecipients = [];
   
   for (const [npub, userData] of Object.entries(currentData)) {
     const previousLevel = previousData[npub]?.currentLevel || 0;
     const currentLevel = userData.currentLevel;
     
-    // Check if user crossed any badge tier thresholds
-    const earnedBadges = [];
+    // Skip users with no qualifying workouts
+    if (currentLevel === 0) continue;
     
-    for (const [levelThreshold, badgeInfo] of Object.entries(BADGE_TIERS)) {
-      const threshold = parseInt(levelThreshold);
-      if (currentLevel >= threshold && previousLevel < threshold) {
-        earnedBadges.push({
-          threshold,
-          ...badgeInfo
-        });
+    let earnedBadges = [];
+    
+    if (isCatchupMode) {
+      // Catchup mode: Award all badges from level 1 to current level
+      for (const [levelThreshold, badgeInfo] of Object.entries(BADGE_TIERS)) {
+        const threshold = parseInt(levelThreshold);
+        if (currentLevel >= threshold) {
+          earnedBadges.push({
+            threshold,
+            ...badgeInfo
+          });
+        }
+      }
+    } else {
+      // Normal mode: Only award badges for newly reached levels
+      for (const [levelThreshold, badgeInfo] of Object.entries(BADGE_TIERS)) {
+        const threshold = parseInt(levelThreshold);
+        if (currentLevel >= threshold && previousLevel < threshold) {
+          earnedBadges.push({
+            threshold,
+            ...badgeInfo
+          });
+        }
       }
     }
     
@@ -216,9 +246,10 @@ function findNewBadgeRecipients(currentData, previousData) {
   return badgeRecipients.sort((a, b) => b.currentLevel - a.currentLevel);
 }
 
-function displayResults(badgeRecipients, isDryRun = false) {
+function displayResults(badgeRecipients, isDryRun = false, isCatchupMode = false) {
   console.log('\n' + '='.repeat(60));
-  console.log(`${isDryRun ? 'DRY RUN - ' : ''}WEEKLY BADGE RECOMMENDATIONS`);
+  const modeText = isCatchupMode ? 'RETROACTIVE BADGE CATCHUP' : 'WEEKLY BADGE RECOMMENDATIONS';
+  console.log(`${isDryRun ? 'DRY RUN - ' : ''}${modeText}`);
   console.log('='.repeat(60));
   
   if (badgeRecipients.length === 0) {
@@ -233,11 +264,18 @@ function displayResults(badgeRecipients, isDryRun = false) {
     console.log(`   Level Progress: ${recipient.previousLevel} → ${recipient.currentLevel}`);
     console.log(`   Total XP: ${recipient.totalXP}`);
     console.log(`   Qualifying Workouts: ${recipient.qualifyingWorkouts}`);
-    console.log(`   New Badges:`);
     
-    recipient.badges.forEach(badge => {
-      console.log(`     🏆 ${badge.name} (Level ${badge.threshold}): ${badge.description}`);
-    });
+    if (isCatchupMode && recipient.badges.length > 5) {
+      // Show summary for catchup mode with many badges
+      console.log(`   Badges to Award: ${recipient.badges.length} badges (Levels 1-${recipient.currentLevel})`);
+      console.log(`   Highest Badge: 🏆 ${recipient.badges[recipient.badges.length - 1].name} (Level ${recipient.currentLevel})`);
+    } else {
+      // Show individual badges for normal mode or few badges
+      console.log(`   ${isCatchupMode ? 'Badges to Award:' : 'New Badges:'}`);
+      recipient.badges.forEach(badge => {
+        console.log(`     🏆 ${badge.name} (Level ${badge.threshold}): ${badge.description}`);
+      });
+    }
     console.log('');
   });
   
@@ -250,16 +288,23 @@ function displayResults(badgeRecipients, isDryRun = false) {
 async function main() {
   const args = process.argv.slice(2);
   const isDryRun = args.includes('--dry-run');
+  const isCatchupMode = args.includes('--catchup');
   const sinceArg = args.find(arg => arg.startsWith('--since='));
   const sinceDate = sinceArg ? sinceArg.split('=')[1] : null;
 
   try {
-    console.log('🏃‍♂️ RUNSTR Weekly Badge Calculator Starting...\n');
+    const modeText = isCatchupMode ? 'Retroactive Badge Catchup' : 'Weekly Badge Calculator';
+    console.log(`🏃‍♂️ RUNSTR ${modeText} Starting...\n`);
     
     // Load previous badge tracking data
     const badgeData = await loadBadgeTrackingData();
     console.log(`Previous run: ${badgeData.lastRun || 'Never'}`);
     console.log(`Tracking ${Object.keys(badgeData.users).length} users\n`);
+    
+    if (isCatchupMode) {
+      console.log('🔄 CATCHUP MODE: Will award ALL badges from Level 1 to current level for each user');
+      console.log('   This is typically used once to award retroactive badges to existing users.\n');
+    }
     
     // Fetch all workout events
     const events = await fetchAllWorkoutEvents(sinceDate);
@@ -281,10 +326,10 @@ async function main() {
     console.log(`Processed ${Object.keys(currentUserData).length} unique users\n`);
     
     // Find users who earned new badges
-    const badgeRecipients = findNewBadgeRecipients(currentUserData, badgeData.users);
+    const badgeRecipients = findNewBadgeRecipients(currentUserData, badgeData.users, isCatchupMode);
     
     // Display results
-    displayResults(badgeRecipients, isDryRun);
+    displayResults(badgeRecipients, isDryRun, isCatchupMode);
     
     // Save updated tracking data (unless dry run)
     if (!isDryRun) {
@@ -298,7 +343,8 @@ async function main() {
     
     // Export badge recipients for external processing if needed
     if (badgeRecipients.length > 0 && !isDryRun) {
-      const outputFile = join(__dirname, `badge-recipients-${new Date().toISOString().split('T')[0]}.json`);
+      const filePrefix = isCatchupMode ? 'badge-catchup' : 'badge-recipients';
+      const outputFile = join(__dirname, `${filePrefix}-${new Date().toISOString().split('T')[0]}.json`);
       writeFileSync(outputFile, JSON.stringify(badgeRecipients, null, 2));
       console.log(`\n📄 Badge recipients exported to: ${outputFile}`);
     }

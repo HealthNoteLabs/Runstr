@@ -24,19 +24,34 @@ This system automatically identifies users who have achieved new level milestone
 - **Levels 1-10**: 100 XP per level (100, 200, 300, etc.)
 - **Level 11+**: Complex progression with increasing requirements
 
-### Badge Tiers (Default)
-- **Level 5**: Bronze Runner
-- **Level 10**: Silver Athlete  
-- **Level 15**: Gold Champion
-- **Level 20**: Platinum Legend
-- **Level 25**: Diamond Elite
-- **Level 30**: Master Runner
+### Badge Tiers (Level 1-21)
+- **Level 1**: First Steps - Your fitness journey begins!
+- **Level 2**: Getting Started - Building momentum
+- **Level 3**: Early Achiever - Consistency pays off
+- **Level 4**: Steady Runner - Finding your rhythm
+- **Level 5**: Bronze Runner - First major milestone!
+- **Level 6**: Committed Athlete - Dedication showing
+- **Level 7**: Weekly Warrior - Regular training habit
+- **Level 8**: Distance Destroyer - Crushing those miles
+- **Level 9**: Almost Elite - Approaching greatness
+- **Level 10**: Silver Athlete - Elite achievement unlocked!
+- **Level 11**: Double Digits - Into elite territory
+- **Level 12**: Dozen Master - A full year of dedication
+- **Level 13**: Lucky Thirteen - Pushing boundaries
+- **Level 14**: Fortnight Fighter - Unstoppable force
+- **Level 15**: Gold Champion - Championship caliber!
+- **Level 16**: Sweet Sixteen - Peak performance zone
+- **Level 17**: Magnificent Seventeen - Legendary status
+- **Level 18**: Endurance Expert - Master of distance
+- **Level 19**: Penultimate Power - Almost at the peak
+- **Level 20**: Platinum Legend - Ultimate achievement!
+- **Level 21**: Beyond Limits - Transcendent runner!
 
 ## Usage
 
 ### Basic Usage
 ```bash
-# Run the script (real mode - updates tracking data)
+# Weekly badge calculation (finds new level progressions)
 node scripts/calculate-weekly-badges.mjs
 
 # Dry run (preview only - no data changes)
@@ -44,7 +59,22 @@ node scripts/calculate-weekly-badges.mjs --dry-run
 
 # Only check events since a specific date
 node scripts/calculate-weekly-badges.mjs --since=2024-01-01
+
+# RETROACTIVE CATCHUP - Award existing users all their badges (Level 1 to current)
+node scripts/calculate-weekly-badges.mjs --catchup
+
+# Preview catchup awards
+node scripts/calculate-weekly-badges.mjs --catchup --dry-run
 ```
+
+### Retroactive Badge Catchup
+Use the `--catchup` flag to award ALL existing users their badges from Level 1 up to their current level. This is perfect for:
+
+- **Initial badge deployment**: Award all existing users their earned badges
+- **New badge system**: If you've updated badge tiers or descriptions
+- **Data recovery**: If badge tracking data was lost
+
+**Important**: Catchup mode awards EVERY badge from Level 1 to current level for each user. A Level 10 user would receive 10 badges (Levels 1-10). Only run this when you intend to award retroactive badges.
 
 ### Setting Up Cron Job (Weekly)
 ```bash
@@ -57,16 +87,35 @@ crontab -e
 
 ### Manual Badge Distribution Process
 
-1. **Run the script**:
+#### For Initial Setup (Retroactive Badges)
+1. **Test catchup mode first**:
+   ```bash
+   node scripts/calculate-weekly-badges.mjs --catchup --dry-run
+   ```
+
+2. **Run catchup to award existing users**:
+   ```bash
+   node scripts/calculate-weekly-badges.mjs --catchup
+   ```
+
+3. **Review the catchup file**:
+   ```bash
+   cat scripts/badge-catchup-YYYY-MM-DD.json
+   ```
+
+#### For Weekly Badge Awards
+1. **Test weekly run**:
+   ```bash
+   node scripts/calculate-weekly-badges.mjs --dry-run
+   ```
+
+2. **Run weekly calculation**:
    ```bash
    node scripts/calculate-weekly-badges.mjs
    ```
 
-2. **Review the output** for badge recipients
-
-3. **Check the generated file**:
+3. **Review the weekly file**:
    ```bash
-   # View the detailed JSON output
    cat scripts/badge-recipients-YYYY-MM-DD.json
    ```
 

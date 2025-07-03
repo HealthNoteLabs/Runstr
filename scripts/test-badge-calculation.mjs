@@ -83,16 +83,18 @@ function testBadgeCalculation() {
     console.log(`   Total XP: ${stats.totalXP}`);
     console.log(`   Current Level: ${stats.currentLevel}`);
     
-    // Check which badges this user would earn
+    // Check which badges this user would earn (show highest badge only for readability)
     const earnedBadges = [];
     for (const [threshold, badgeInfo] of Object.entries(BADGE_TIERS)) {
       if (stats.currentLevel >= parseInt(threshold)) {
-        earnedBadges.push(`Level ${threshold}: ${badgeInfo.name}`);
+        earnedBadges.push({ level: parseInt(threshold), name: badgeInfo.name });
       }
     }
     
     if (earnedBadges.length > 0) {
-      console.log(`   Eligible Badges: ${earnedBadges.join(', ')}`);
+      const highestBadge = earnedBadges[earnedBadges.length - 1];
+      console.log(`   Eligible Badges: ${earnedBadges.length} badges (Level 1-${stats.currentLevel})`);
+      console.log(`   Highest Badge: Level ${highestBadge.level}: ${highestBadge.name}`);
     } else {
       console.log(`   Eligible Badges: None yet`);
     }
@@ -160,8 +162,10 @@ function testBadgeCalculation() {
   console.log('\n🎉 Badge calculation testing completed!');
   console.log('\nNext steps:');
   console.log('1. Review the test results above');
-  console.log('2. If everything looks correct, run: node scripts/calculate-weekly-badges.mjs --dry-run');
-  console.log('3. Test with real data using the dry-run flag first');
+  console.log('2. Preview current user levels: node scripts/show-current-levels.mjs --top=10');
+  console.log('3. Test catchup mode: node scripts/calculate-weekly-badges.mjs --catchup --dry-run');
+  console.log('4. Award retroactive badges: node scripts/calculate-weekly-badges.mjs --catchup');
+  console.log('5. Future weekly runs: node scripts/calculate-weekly-badges.mjs');
 }
 
 // Run tests
