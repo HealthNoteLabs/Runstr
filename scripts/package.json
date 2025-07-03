@@ -8,7 +8,8 @@
     "check-membership": "node check-group-membership.js"
   },
   "dependencies": {
+    "dotenv": "^17.0.1",
     "nostr-tools": "^1.14.0",
     "ws": "^8.14.2"
   }
-} 
+}
