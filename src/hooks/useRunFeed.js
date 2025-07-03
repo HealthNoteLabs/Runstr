@@ -13,6 +13,7 @@ import { useProfileCache } from '../hooks/useProfileCache.js';
 import { ensureRelays } from '../utils/relays.js';
 import { useActivityMode } from '../contexts/ActivityModeContext';
 import seasonPassService from '../services/seasonPassService';
+import { REWARDS } from '../config/rewardsConfig';
 
 // Global state for caching posts across component instances
 const globalState = {

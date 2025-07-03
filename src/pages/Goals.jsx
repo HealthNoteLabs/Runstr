@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { convertDistance } from '../utils/formatters';
 import { Button } from "@/components/ui/button";
+import runDataService from '../services/RunDataService';
 
 export const Goals = () => {
   // Goal state
@@ -47,8 +48,22 @@ export const Goals = () => {
     const interval = setInterval(() => {
       loadRunHistory();
     }, 3600000); // Refresh every hour
+
+    // Listen for run data updates to keep goals in sync
+    const handleRunUpdate = () => {
+      loadRunHistory();
+    };
+
+    document.addEventListener('runCompleted', handleRunUpdate);
+    document.addEventListener('runHistoryUpdated', handleRunUpdate);
+    document.addEventListener('runDeleted', handleRunUpdate);
     
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('runCompleted', handleRunUpdate);
+      document.removeEventListener('runHistoryUpdated', handleRunUpdate);
+      document.removeEventListener('runDeleted', handleRunUpdate);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   
@@ -64,10 +79,8 @@ export const Goals = () => {
   
   const loadRunHistory = () => {
     try {
-      const storedHistory = localStorage.getItem('runHistory');
-      if (!storedHistory) return;
-      
-      const runHistory = JSON.parse(storedHistory);
+      // Use RunDataService instead of direct localStorage access
+      const runHistory = runDataService.getAllRuns();
       
       // Skip calculations if no runs
       if (!runHistory || runHistory.length === 0) {

@@ -1,0 +1,42 @@
+🏃‍♂️ RUNSTR Weekly Update #27 🏃‍♀️
+
+"Every mile begins with a single step. Every PR begins with showing up." 💪
+
+🏃‍♂️💰 WEEKLY REWARDS RECAP
+════════════════════════════════
+💸 Total payout: 0 sats
+👥 Active runners: 0
+📊 Community: 0 workouts completed this week
+📅 Week: 6/26/2025 to 7/3/2025
+
+💡 Tag your runs with RUNSTR to earn weekly rewards!
+
+🏆 WEEKLY LEVEL ACHIEVEMENTS
+═══════════════════════════════
+🎉 5 runners leveled up this week!
+
+🎖️ npub1amr2kkg...: Level 3 → 8 (+5)
+🎖️ npub1ct0dc46...: Level 1 → 2 (+1)
+🎖️ npub1kxr0kw6...: Level 1 → 2 (+1)
+🎖️ npub1vgldyxx...: Level 1 → 2 (+1)
+🎖️ npub125f8lj0...: Level 5 → 6 (+1)
+
+📢 PROJECT UPDATE
+═════════════════
+RUNSTR continues to grow as the premier Bitcoin-native fitness app! We're building the future of decentralized fitness tracking with Nostr integration, Lightning rewards, and a thriving community of runners. Our open-source approach ensures your data stays yours while connecting you with like-minded athletes worldwide. 🌍⚡
+
+📱 GET THE APP
+══════════════
+Download RUNSTR for Android/CalyxOS/GrapheneOS:
+🏪 Zap.Store (recommended)
+💻 GitHub Releases
+📖 Visit runstr.club for the latest blog updates
+
+❤️ SUPPORT RUNSTR
+═════════════════
+Help us build the future of Bitcoin fitness!
+💰 Donate: https://geyser.fund/project/runstr?hero=runstr
+🔗 Share: Tell your running friends about RUNSTR
+🧪 Test: Try new features and report bugs
+
+#RUNSTR #cyclestr #walkstr #Bitcoin #Lightning #Nostr #Fitness #Running #OpenSource #Decentralized

@@ -62,38 +62,40 @@ export const RunTracker = () => {
   // Load the most recent run
   useEffect(() => {
     const loadRecentRun = () => {
-      const storedRuns = localStorage.getItem('runHistory');
-      if (storedRuns) {
-        try {
-          const parsedRuns = JSON.parse(storedRuns);
-          if (parsedRuns.length > 0) {
-            // Sort runs by date (most recent first)
-            const sortedRuns = [...parsedRuns].sort((a, b) => new Date(b.date) - new Date(a.date));
-            setRecentRun(sortedRuns[0]);
+      try {
+        // Use RunDataService instead of direct localStorage access
+        const parsedRuns = runDataService.getAllRuns();
+        if (parsedRuns.length > 0) {
+          // Sort runs by date (most recent first)
+          const sortedRuns = [...parsedRuns].sort((a, b) => new Date(b.date) - new Date(a.date));
+          setRecentRun(sortedRuns[0]);
+          
+          // Check if the most recent run qualifies for any events
+          const userPubkey = localStorage.getItem('nostrPublicKey');
+          if (userPubkey && sortedRuns[0]) {
+            const qualifyingEvents = validateEventRun(sortedRuns[0], userPubkey);
             
-            // Check if the most recent run qualifies for any events
-            const userPubkey = localStorage.getItem('nostrPublicKey');
-            if (userPubkey && sortedRuns[0]) {
-              const qualifyingEvents = validateEventRun(sortedRuns[0], userPubkey);
+            // Notify user if their run qualified for an event
+            if (qualifyingEvents && qualifyingEvents.length > 0) {
+              const eventNames = qualifyingEvents.map(e => e.title).join(', ');
+              const message = `Your run qualified for: ${eventNames}!`;
               
-              // Notify user if their run qualified for an event
-              if (qualifyingEvents && qualifyingEvents.length > 0) {
-                const eventNames = qualifyingEvents.map(e => e.title).join(', ');
-                const message = `Your run qualified for: ${eventNames}!`;
-                
-                if (window.Android && window.Android.showToast) {
-                  window.Android.showToast(message);
-                } else {
-                  // Use a less intrusive way to notify
-                  console.log(message);
-                  // Could use a toast or notification component here
-                }
+              if (window.Android && window.Android.showToast) {
+                window.Android.showToast(message);
+              } else {
+                // Use a less intrusive way to notify
+                console.log(message);
+                // Could use a toast or notification component here
               }
             }
           }
-        } catch (error) {
-          console.error('Error loading recent run:', error);
+        } else {
+          // No runs available
+          setRecentRun(null);
         }
+      } catch (error) {
+        console.error('Error loading recent run:', error);
+        setRecentRun(null);
       }
     };
     
@@ -433,29 +435,28 @@ ${additionalContent ? `\n${additionalContent}` : ''}
     setIsDeleting(true);
     
     try {
-      // Get current run history
-      const runHistory = JSON.parse(localStorage.getItem('runHistory') || '[]');
+      // Use RunDataService instead of direct localStorage manipulation
+      const deleteSuccess = runDataService.deleteRun(recentRun.id);
       
-      // Filter out the run to delete
-      const updatedRunHistory = runHistory.filter(run => run.id !== recentRun.id);
-      
-      // Save updated history back to localStorage
-      localStorage.setItem('runHistory', JSON.stringify(updatedRunHistory));
-      
-      // Show success message
-      if (window.Android && window.Android.showToast) {
-        window.Android.showToast('Run deleted successfully');
+      if (deleteSuccess) {
+        // Show success message
+        if (window.Android && window.Android.showToast) {
+          window.Android.showToast('Run deleted successfully');
+        } else {
+          appToast.success('Run deleted successfully');
+        }
+        
+        // Get the updated run list and set the most recent run
+        const updatedRuns = runDataService.getAllRuns();
+        if (updatedRuns.length > 0) {
+          const sortedRuns = [...updatedRuns].sort((a, b) => new Date(b.date) - new Date(a.date));
+          setRecentRun(sortedRuns[0]);
+        } else {
+          // No more runs
+          setRecentRun(null);
+        }
       } else {
-        appToast.success('Run deleted successfully');
-      }
-      
-      // If there are other runs, load the next most recent run
-      if (updatedRunHistory.length > 0) {
-        const sortedRuns = [...updatedRunHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
-        setRecentRun(sortedRuns[0]);
-      } else {
-        // No more runs
-        setRecentRun(null);
+        throw new Error('Failed to delete run');
       }
     } catch (error) {
       console.error('Error deleting run:', error);

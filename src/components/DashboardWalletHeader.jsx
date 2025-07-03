@@ -1,10 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useNip60 } from '../contexts/WalletContext';
+import { useNWC } from '../contexts/NWCWalletContext';
 import { NostrContext } from '../contexts/NostrContext';
-import { NDKCashuWallet, NDKNutzapMonitor } from '@nostr-dev-kit/ndk-wallet';
-import { createTokenEvent, sendTokenViaDM, extractCashuToken } from '../utils/nip60Events';
-import { getOrCreateWallet } from '../utils/ndkWalletUtils';
 
 export const DashboardWalletHeader = () => {
   const navigate = useNavigate();
@@ -18,23 +15,22 @@ export const DashboardWalletHeader = () => {
     tokenEvents: transactions,
     SUPPORTED_MINTS,
     currentMint,
-    refreshWallet
-  } = useNip60();
+    refreshWallet,
+    sendPayment,
+    generateInvoice
+  } = useNWC();
 
   // Add debugging
-  console.log('[DashboardWalletHeader] Wallet State:', {
+  console.log('[DashboardWalletHeader] Lightning Wallet State:', {
     hasWallet: isConnected,
     balance,
     loading,
     isInitialized,
-    currentMint: currentMint?.name,
-    tokenCount: transactions?.length || 0,
-    walletEvent: !!hasWallet,
+    transactionCount: transactions?.length || 0,
     error: error
   });
 
   // Auto-refresh if we're initialized but don't have a wallet
-  // This handles cases where different hook instances get different results
   useEffect(() => {
     if (isInitialized && !isConnected && !loading && !error) {
       console.log('[DashboardWalletHeader] Wallet state seems inconsistent, refreshing...');
@@ -53,18 +49,15 @@ export const DashboardWalletHeader = () => {
 
   // Receive Modal State
   const [showReceiveModal, setShowReceiveModal] = useState(false);
-  const [receiveMethod, setReceiveMethod] = useState('lightning'); // 'lightning' or 'token'
   const [receiveAmount, setReceiveAmount] = useState('');
-  const [receiveToken, setReceiveToken] = useState('');
   const [receiveInvoice, setReceiveInvoice] = useState('');
-  const [receiveQuote, setReceiveQuote] = useState('');
   const [isReceiving, setIsReceiving] = useState(false);
   const [receiveError, setReceiveError] = useState('');
   const [receiveSuccess, setReceiveSuccess] = useState('');
 
   const handleSend = () => {
     if (!isConnected) {
-      navigate('/ecash');
+      navigate('/nwc');
       return;
     }
     setShowSendModal(true);
@@ -72,41 +65,18 @@ export const DashboardWalletHeader = () => {
 
   const handleReceive = () => {
     if (!isConnected) {
-      navigate('/ecash');
+      navigate('/nwc');
       return;
     }
     setShowReceiveModal(true);
   };
 
   const handleHistory = () => {
-    navigate('/ecash');
+    navigate('/nwc');
   };
 
-  // Debug function to test error handling
-  const handleDebugError = () => {
-    try {
-      // Test different types of errors
-      const errorType = Math.random();
-      if (errorType < 0.33) {
-        // Test undefined error
-        const undefinedError = undefined;
-        undefinedError.replace('test', 'fail');
-      } else if (errorType < 0.66) {
-        // Test null error message
-        const nullError = { message: null };
-        throw nullError;
-      } else {
-        // Test non-string error
-        const objectError = { someProperty: 'value', replace: 'not a function' };
-        throw objectError;
-      }
-    } catch (error) {
-      setReceiveError('DEBUG TEST ERROR - This should show detailed debug info in mobile-friendly format');
-    }
-  };
-
-  // Handle sending tokens via NIP-61 nutzaps
-  const handleSendTokens = async () => {
+  // Handle sending Lightning payments
+  const handleSendPayment = async () => {
     if (!sendAmount || !sendRecipient) {
       setSendError('Please fill in amount and recipient');
       return;
@@ -123,27 +93,18 @@ export const DashboardWalletHeader = () => {
       return;
     }
 
-    if (!currentMint?.url) {
-      setSendError('No mint available');
-      return;
-    }
-
     setIsSending(true);
     setSendError('');
     setSendSuccess('');
 
     try {
-      console.log('[DashboardWalletHeader] Getting initialized wallet for sending nutzap...');
+      console.log('[DashboardWalletHeader] Sending Lightning payment...');
 
-      // Get properly initialized wallet instance
-      const wallet = await getOrCreateWallet(ndk, currentMint.url);
-
-      // Send nutzap (NIP-61) instead of manual token creation
-      // This will create and publish the proper nutzap event
-      const nutzapResult = await wallet.sendNutzap(sendRecipient, amount, sendMemo || 'Payment from RUNSTR');
+      // Send Lightning payment using NWC
+      const result = await sendPayment(sendRecipient, amount, sendMemo);
       
-      if (nutzapResult) {
-        setSendSuccess(`Successfully sent ${amount} sats via nutzap!`);
+      if (result) {
+        setSendSuccess(`Successfully sent ${amount} sats via Lightning!`);
         
         // Refresh wallet after sending
         setTimeout(() => {
@@ -155,7 +116,7 @@ export const DashboardWalletHeader = () => {
           setSendSuccess('');
         }, 2000);
       } else {
-        throw new Error('Nutzap sending failed');
+        throw new Error('Lightning payment failed');
       }
 
     } catch (error) {
@@ -176,24 +137,23 @@ export const DashboardWalletHeader = () => {
       }
       
       const debugInfo = `
-NUTZAP SEND ERROR:
+LIGHTNING PAYMENT ERROR:
 Message: ${error?.message || 'No message'}
 Type: ${typeof error}
 Amount: ${amount || 'none'}
-Recipient: ${sendRecipient?.substring(0, 16) || 'none'}...
+Recipient: ${sendRecipient?.substring(0, 50) || 'none'}...
 Balance: ${balance || 0}
-Current Mint: ${currentMint?.url || 'none'}
-NDK Available: ${!!ndk}
+Connected: ${isConnected}
 `;
       
-      setSendError(`Failed to send nutzap: ${safeErrorMessage}\n\n${debugInfo}`);
+      setSendError(`Failed to send Lightning payment: ${safeErrorMessage}\n\n${debugInfo}`);
     } finally {
       setIsSending(false);
     }
   };
 
-  // Handle receiving tokens via Lightning invoice using NDK wallet
-  const handleRequestInvoice = async () => {
+  // Handle generating Lightning invoice for receiving
+  const handleGenerateInvoice = async () => {
     if (!receiveAmount) {
       setReceiveError('Please enter an amount');
       return;
@@ -205,37 +165,21 @@ NDK Available: ${!!ndk}
       return;
     }
 
-    if (!currentMint?.url) {
-      setReceiveError('No mint available');
-      return;
-    }
-
     setIsReceiving(true);
     setReceiveError('');
 
     try {
-      console.log('[DashboardWalletHeader] Getting initialized wallet for generating deposit invoice...');
+      console.log('[DashboardWalletHeader] Generating Lightning invoice...');
 
-      // Get properly initialized wallet instance
-      const wallet = await getOrCreateWallet(ndk, currentMint.url);
-
-      // Use wallet.deposit() method instead of direct mint operations
-      const deposit = wallet.deposit(amount, currentMint.url);
-      const bolt11 = await deposit.start(); // Get Lightning invoice
+      // Generate Lightning invoice using NWC
+      const invoice = await generateInvoice(amount, `RUNSTR payment request for ${amount} sats`);
       
-      if (!bolt11) {
+      if (invoice) {
+        setReceiveInvoice(invoice);
+        setReceiveSuccess(`Invoice created for ${amount} sats`);
+      } else {
         throw new Error('Failed to generate Lightning invoice');
       }
-
-      setReceiveInvoice(bolt11);
-      setReceiveSuccess(`Invoice created for ${amount} sats`);
-
-      // Listen for successful payment
-      deposit.on("success", () => {
-        console.log("[DashboardWalletHeader] Payment received!", wallet.balance);
-        setReceiveSuccess(`Payment received! ${amount} sats added to wallet.`);
-        refreshWallet(); // Update wallet state
-      });
 
     } catch (error) {
       console.error('[DashboardWalletHeader] Invoice error:', error);
@@ -246,8 +190,7 @@ NDK Available: ${!!ndk}
         type: typeof error,
         isError: error instanceof Error,
         keys: error ? Object.keys(error) : [],
-        string: error?.toString?.() || 'Cannot convert to string',
-        stack: error?.stack || 'No stack trace'
+        string: error?.toString?.() || 'Cannot convert to string'
       };
       
       // Safe error message construction
@@ -266,89 +209,19 @@ NDK Available: ${!!ndk}
       
       // Create comprehensive debug message for UI
       const debugInfo = `
-ERROR DETAILS:
+INVOICE GENERATION ERROR:
 Message: ${errorDetails.message}
 Type: ${errorDetails.type}
 Is Error Object: ${errorDetails.isError}
 Object Keys: ${errorDetails.keys.join(', ')}
 String Conversion: ${errorDetails.string}
-Stack (first 200 chars): ${errorDetails.stack.substring(0, 200)}
 
 CONTEXT:
 Amount: ${amount}
-Current Mint: ${currentMint?.url || 'none'}
-NDK Available: ${!!ndk}
-NDK Connected: ${ndk?.pool?.connectedRelays?.length || 0} relays
+Connected: ${isConnected}
 `;
       
       setReceiveError(`Failed to create invoice: ${safeErrorMessage}\n\n${debugInfo}`);
-    } finally {
-      setIsReceiving(false);
-    }
-  };
-
-  // Handle receiving tokens via NDK wallet
-  const handleReceiveToken = async () => {
-    if (!receiveToken) {
-      setReceiveError('Please paste a token');
-      return;
-    }
-
-    setIsReceiving(true);
-    setReceiveError('');
-
-    try {
-      console.log('[DashboardWalletHeader] Getting initialized wallet for receiving token...');
-
-      // Get properly initialized wallet instance
-      const wallet = await getOrCreateWallet(ndk, currentMint.url);
-
-      // Use wallet.receiveToken() method instead of manual parsing
-      const tokenEvent = await wallet.receiveToken(receiveToken);
-      
-      if (tokenEvent) {
-        // Get the amount from the token event
-        const amount = tokenEvent.amount || 0;
-        setReceiveSuccess(`Successfully received ${amount} sats!`);
-        
-        // Refresh wallet after receiving
-        setTimeout(() => {
-          refreshWallet();
-          setShowReceiveModal(false);
-          setReceiveToken('');
-          setReceiveSuccess('');
-        }, 2000);
-      } else {
-        throw new Error('Token reception failed');
-      }
-
-    } catch (error) {
-      console.error('[DashboardWalletHeader] Receive error:', error);
-      
-      // Safe error message construction for token receive
-      let safeErrorMessage;
-      try {
-        if (error && typeof error === 'object') {
-          safeErrorMessage = error.message || error.toString() || JSON.stringify(error);
-        } else if (error) {
-          safeErrorMessage = String(error);
-        } else {
-          safeErrorMessage = 'Unknown error occurred';
-        }
-      } catch (stringError) {
-        safeErrorMessage = 'Error occurred but cannot be displayed';
-      }
-      
-      const debugInfo = `
-TOKEN RECEIVE ERROR:
-Message: ${error?.message || 'No message'}
-Type: ${typeof error}
-Token Length: ${receiveToken?.length || 0}
-Token Preview: ${receiveToken?.substring(0, 50) || 'empty'}...
-Current Mint: ${currentMint?.url || 'none'}
-`;
-      
-      setReceiveError(`Failed to receive token: ${safeErrorMessage}\n\n${debugInfo}`);
     } finally {
       setIsReceiving(false);
     }
@@ -367,16 +240,16 @@ Current Mint: ${currentMint?.url || 'none'}
         <div className="wallet-card disconnected">
           <div className="wallet-status">
             <span className="status-text">
-              {loading ? 'Checking for wallet...' : 
-               'Wallet Not Initialized'}
+              {loading ? 'Checking Lightning wallet...' : 
+               'Lightning Wallet Not Connected'}
             </span>
           </div>
           <button 
             className="connect-button"
-            onClick={() => navigate('/ecash')}
+            onClick={() => navigate('/nwc')}
             disabled={loading}
           >
-            {loading ? '...' : 'Initialize Wallet'}
+            {loading ? '...' : 'Connect Lightning Wallet'}
           </button>
         </div>
       </div>
@@ -410,18 +283,6 @@ Current Mint: ${currentMint?.url || 'none'}
                 <span></span>
               </span>
             </button>
-            <button 
-              className="action-button debug-button" 
-              onClick={handleDebugError}
-              style={{
-                background: '#ff9800',
-                fontSize: '0.7rem',
-                minWidth: '45px'
-              }}
-              title="Test error handling"
-            >
-              🐛
-            </button>
           </div>
         </div>
       </div>
@@ -430,7 +291,7 @@ Current Mint: ${currentMint?.url || 'none'}
       {showSendModal && (
         <div className="modal-overlay" onClick={() => setShowSendModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Send Sats</h3>
+            <h3>Send Lightning Payment</h3>
             <p><strong>Available Balance:</strong> {balance.toLocaleString()} sats</p>
             
             {sendError && (
@@ -465,13 +326,13 @@ Current Mint: ${currentMint?.url || 'none'}
 
             <div className="form-group" style={{ marginBottom: '12px' }}>
               <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.9rem' }}>
-                Recipient (Nostr pubkey):
+                Recipient (Lightning invoice):
               </label>
               <input
                 type="text"
                 value={sendRecipient}
                 onChange={(e) => setSendRecipient(e.target.value)}
-                placeholder="npub... or hex pubkey"
+                placeholder="lnbc... (Lightning invoice)"
                 disabled={isSending}
                 style={{
                   width: '100%',
@@ -509,7 +370,7 @@ Current Mint: ${currentMint?.url || 'none'}
               />
             </div>
 
-            <div className="form-group" style={{ marginBottom: '16px' }}>
+            <div className="form-group" style={{ marginBottom: '12px' }}>
               <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.9rem' }}>
                 Memo (optional):
               </label>
@@ -517,7 +378,7 @@ Current Mint: ${currentMint?.url || 'none'}
                 type="text"
                 value={sendMemo}
                 onChange={(e) => setSendMemo(e.target.value)}
-                placeholder="Payment description"
+                placeholder="Payment description..."
                 disabled={isSending}
                 style={{
                   width: '100%',
@@ -530,28 +391,36 @@ Current Mint: ${currentMint?.url || 'none'}
                 }}
               />
             </div>
-            
-            <div className="modal-buttons">
+
+            <div className="modal-actions">
               <button 
-                onClick={() => {
-                  setShowSendModal(false);
-                  setSendError('');
-                  setSendSuccess('');
-                }}
-                className="cancel-button"
+                onClick={() => setShowSendModal(false)}
                 disabled={isSending}
+                style={{
+                  padding: '8px 16px',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '4px',
+                  backgroundColor: 'var(--background-secondary)',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  marginRight: '8px'
+                }}
               >
                 Cancel
               </button>
               <button 
-                onClick={handleSendTokens}
-                className="send-confirm-button"
+                onClick={handleSendPayment}
                 disabled={isSending || !sendAmount || !sendRecipient}
                 style={{
-                  opacity: (isSending || !sendAmount || !sendRecipient) ? 0.6 : 1
+                  padding: '8px 16px',
+                  border: 'none',
+                  borderRadius: '4px',
+                  backgroundColor: isSending ? '#666' : '#ff6b35',
+                  color: 'white',
+                  cursor: isSending ? 'not-allowed' : 'pointer'
                 }}
               >
-                {isSending ? 'Sending...' : 'Send Tokens'}
+                {isSending ? 'Sending...' : 'Send Payment'}
               </button>
             </div>
           </div>
@@ -562,7 +431,7 @@ Current Mint: ${currentMint?.url || 'none'}
       {showReceiveModal && (
         <div className="modal-overlay" onClick={() => setShowReceiveModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Receive Sats</h3>
+            <h3>Generate Lightning Invoice</h3>
             
             {receiveError && (
               <div className="error-message" style={{ 
@@ -594,43 +463,7 @@ Current Mint: ${currentMint?.url || 'none'}
               </div>
             )}
 
-            {/* Method Selection */}
-            <div className="receive-method-tabs" style={{ 
-              display: 'flex', 
-              marginBottom: '16px', 
-              borderBottom: '1px solid var(--border-color)' 
-            }}>
-              <button
-                onClick={() => setReceiveMethod('lightning')}
-                style={{
-                  flex: 1,
-                  padding: '8px',
-                  border: 'none',
-                  background: receiveMethod === 'lightning' ? 'var(--primary)' : 'transparent',
-                  color: receiveMethod === 'lightning' ? 'white' : 'var(--text-primary)',
-                  borderRadius: '4px 4px 0 0',
-                  cursor: 'pointer'
-                }}
-              >
-                ⚡ Lightning Invoice
-              </button>
-              <button
-                onClick={() => setReceiveMethod('token')}
-                style={{
-                  flex: 1,
-                  padding: '8px',
-                  border: 'none',
-                  background: receiveMethod === 'token' ? 'var(--primary)' : 'transparent',
-                  color: receiveMethod === 'token' ? 'white' : 'var(--text-primary)',
-                  borderRadius: '4px 4px 0 0',
-                  cursor: 'pointer'
-                }}
-              >
-                🎫 Paste Token
-              </button>
-            </div>
-
-            {receiveMethod === 'lightning' ? (
+            {!receiveInvoice ? (
               <>
                 <div className="form-group" style={{ marginBottom: '12px' }}>
                   <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.9rem' }}>
@@ -655,139 +488,87 @@ Current Mint: ${currentMint?.url || 'none'}
                   />
                 </div>
 
-                {receiveInvoice && (
-                  <div className="invoice-display" style={{ 
-                    marginBottom: '12px',
-                    padding: '12px',
-                    background: 'var(--background-secondary)',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)'
-                  }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', fontWeight: 'bold' }}>
-                      Lightning Invoice:
-                    </label>
-                    <textarea
-                      value={receiveInvoice}
-                      readOnly
-                      style={{
-                        width: '100%',
-                        height: '80px',
-                        padding: '8px',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '4px',
-                        backgroundColor: 'var(--background-primary)',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.8rem',
-                        fontFamily: 'monospace',
-                        resize: 'none'
-                      }}
-                    />
-                    <div style={{ 
-                      marginTop: '8px', 
-                      display: 'flex', 
-                      gap: '8px' 
-                    }}>
-                      <button
-                        onClick={() => navigator.clipboard.writeText(receiveInvoice)}
-                        style={{
-                          padding: '4px 8px',
-                          fontSize: '0.8rem',
-                          background: 'var(--primary)',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Copy
-                      </button>
-                      <small style={{ color: 'var(--text-secondary)', alignSelf: 'center' }}>
-                        Share this invoice to receive {receiveAmount} sats
-                      </small>
-                    </div>
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="modal-actions">
                   <button 
-                    onClick={() => {
-                      setShowReceiveModal(false);
-                      setReceiveError('');
-                      setReceiveSuccess('');
-                      setReceiveInvoice('');
-                    }}
-                    className="cancel-button"
+                    onClick={() => setShowReceiveModal(false)}
                     disabled={isReceiving}
-                    style={{ flex: 1 }}
+                    style={{
+                      padding: '8px 16px',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '4px',
+                      backgroundColor: 'var(--background-secondary)',
+                      color: 'var(--text-primary)',
+                      cursor: 'pointer',
+                      marginRight: '8px'
+                    }}
                   >
                     Cancel
                   </button>
                   <button 
-                    onClick={handleRequestInvoice}
-                    className="receive-confirm-button"
+                    onClick={handleGenerateInvoice}
                     disabled={isReceiving || !receiveAmount}
                     style={{
-                      flex: 1,
-                      opacity: (isReceiving || !receiveAmount) ? 0.6 : 1
+                      padding: '8px 16px',
+                      border: 'none',
+                      borderRadius: '4px',
+                      backgroundColor: isReceiving ? '#666' : '#28a745',
+                      color: 'white',
+                      cursor: isReceiving ? 'not-allowed' : 'pointer'
                     }}
                   >
-                    {isReceiving ? 'Creating...' : 'Create Invoice'}
+                    {isReceiving ? 'Generating...' : 'Generate Invoice'}
                   </button>
                 </div>
               </>
             ) : (
               <>
-                <div className="form-group" style={{ marginBottom: '16px' }}>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.9rem' }}>
-                    Paste Ecash Token:
-                  </label>
-                  <textarea
-                    value={receiveToken}
-                    onChange={(e) => setReceiveToken(e.target.value)}
-                    placeholder="cashu... (paste the token you received)"
-                    disabled={isReceiving}
+                <div className="invoice-display" style={{ 
+                  background: 'var(--background-secondary)', 
+                  padding: '12px', 
+                  borderRadius: '6px', 
+                  marginBottom: '12px',
+                  wordBreak: 'break-all',
+                  fontSize: '0.8rem',
+                  fontFamily: 'monospace'
+                }}>
+                  {receiveInvoice}
+                </div>
+                
+                <div className="modal-actions">
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(receiveInvoice);
+                      setReceiveSuccess('Invoice copied to clipboard!');
+                    }}
                     style={{
-                      width: '100%',
-                      height: '80px',
-                      padding: '8px',
+                      padding: '8px 16px',
+                      border: 'none',
+                      borderRadius: '4px',
+                      backgroundColor: '#007bff',
+                      color: 'white',
+                      cursor: 'pointer',
+                      marginRight: '8px'
+                    }}
+                  >
+                    Copy Invoice
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setShowReceiveModal(false);
+                      setReceiveInvoice('');
+                      setReceiveAmount('');
+                      setReceiveSuccess('');
+                    }}
+                    style={{
+                      padding: '8px 16px',
                       border: '1px solid var(--border-color)',
                       borderRadius: '4px',
                       backgroundColor: 'var(--background-secondary)',
                       color: 'var(--text-primary)',
-                      fontSize: '0.9rem',
-                      fontFamily: 'monospace',
-                      resize: 'none'
-                    }}
-                  />
-                  <small style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                    Paste a cashu token that someone sent you via DM or QR code
-                  </small>
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button 
-                    onClick={() => {
-                      setShowReceiveModal(false);
-                      setReceiveError('');
-                      setReceiveSuccess('');
-                      setReceiveToken('');
-                    }}
-                    className="cancel-button"
-                    disabled={isReceiving}
-                    style={{ flex: 1 }}
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    onClick={handleReceiveToken}
-                    className="receive-confirm-button"
-                    disabled={isReceiving || !receiveToken}
-                    style={{
-                      flex: 1,
-                      opacity: (isReceiving || !receiveToken) ? 0.6 : 1
+                      cursor: 'pointer'
                     }}
                   >
-                    {isReceiving ? 'Receiving...' : 'Receive Token'}
+                    Close
                   </button>
                 </div>
               </>

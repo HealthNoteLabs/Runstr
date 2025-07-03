@@ -126,56 +126,57 @@ const isAmberInstalled = async () => {
 /**
  * Request authentication using Amber
  * This will open Amber and prompt the user for authentication
- * @returns {Promise<boolean>} Success status
+ * @returns {Promise<string>} The authenticated public key
  */
-const requestAuthentication = async () => {
-  if (Platform.OS !== 'android') {
-    console.warn('Amber authentication is only supported on Android');
-    return false;
-  }
-  
-  try {
-    // Create an authentication request event
-    const authEvent = {
-      kind: 22242, // Auth event kind
-      created_at: Math.floor(Date.now() / 1000),
-      content: 'Login to Runstr',
-      tags: [
-        ['relay', 'wss://relay.damus.io'],
-        ['relay', 'wss://nos.lol'],
-        ['relay', 'wss://relay.nostr.band']
-      ]
-    };
-    
-    // Convert to JSON and encode for URL
-    const eventJson = JSON.stringify(authEvent);
-    const encodedEvent = encodeURIComponent(eventJson);
-    
-    // Create the URI with the nostrsigner scheme and add callback URL
-    const callbackUrl = encodeURIComponent('runstr://callback');
-    const amberUri = `nostrsigner:sign?event=${encodedEvent}&callback=${callbackUrl}`;
-    
-    console.log('Opening Amber with URI:', amberUri);
-    
-    // Open Amber using the URI
-    await Linking.openURL(amberUri);
-    
-    // Authentication success will be handled by deep linking callback
-    return true;
-  } catch (error) {
-    console.error('Error authenticating with Amber:', error);
-    if (error.message && error.message.includes('Activity not found')) {
-      console.error('Amber app not found or not responding');
-      return false;
+const requestAuthentication = () => {
+  return new Promise(async (resolve, reject) => {
+    if (Platform.OS !== 'android') {
+      reject(new Error('Amber authentication is only supported on Android'));
+      return;
     }
-    return false;
-  }
+    
+    const id = `auth_${Math.random()}`;
+    
+    pendingRequests.set(id, {
+      resolve: (signedAuthEvent) => resolve(signedAuthEvent.pubkey),
+      reject
+    });
+    
+    try {
+      // Create an authentication request event
+      const authEvent = {
+        kind: 22242, // Auth event kind
+        created_at: Math.floor(Date.now() / 1000),
+        content: 'Login to Runstr',
+        tags: [
+          ['relay', 'wss://relay.damus.io'],
+          ['relay', 'wss://nos.lol'],
+          ['relay', 'wss://relay.nostr.band']
+        ]
+      };
+      
+      // Convert to JSON and encode for URL
+      const encodedEvent = encodeURIComponent(JSON.stringify(authEvent));
+      
+      // Create the callback URL with the request ID
+      const callbackUrl = encodeURIComponent(`runstr://callback?id=${id}`);
+      const amberUri = `nostrsigner:sign?event=${encodedEvent}&callback=${callbackUrl}`;
+      
+      console.log('Opening Amber with URI:', amberUri);
+      
+      // Open Amber using the URI
+      await Linking.openURL(amberUri);
+    } catch (error) {
+      pendingRequests.delete(id);
+      console.error('Error authenticating with Amber:', error);
+      reject(error);
+    }
+  });
 };
 
 // Simple stub of AmberAuth for diagnostic scripts running outside the mobile app.
 export default {
   isLoggedIn: () => false,
-  signEvent: async (ev) => ev,
   isAmberInstalled,
   requestAuthentication,
   setupDeepLinkHandling,

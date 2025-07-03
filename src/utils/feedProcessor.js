@@ -5,6 +5,7 @@
  */
 
 import seasonPassService from '../services/seasonPassService';
+import { REWARDS } from '../config/rewardsConfig';
 
 /**
  * Lightweight post processor for initial fast display
@@ -18,10 +19,20 @@ export const lightweightProcessPosts = (posts, filterSource = null) => {
     return [];
   }
 
+  // Competition date range for bulletproof date filtering
+  const COMPETITION_START = Math.floor(new Date(REWARDS.SEASON_1.startUtc).getTime() / 1000);
+  const COMPETITION_END = Math.floor(new Date(REWARDS.SEASON_1.endUtc).getTime() / 1000);
+
   // Apply RUNSTR filtering if specified
   let filteredPosts = posts;
   if (filterSource && filterSource.toUpperCase() === 'RUNSTR') {
     filteredPosts = posts.filter(event => {
+      // BULLETPROOF DATE FILTERING - Only allow events from competition period
+      if (event.created_at < COMPETITION_START || event.created_at > COMPETITION_END) {
+        console.log(`[feedProcessor] Filtering out event outside competition period: ${new Date(event.created_at * 1000).toISOString()}`);
+        return false;
+      }
+
       // RUNSTR signature requirements based on createWorkoutEvent
       const hasRequiredTags = {
         source: false,
