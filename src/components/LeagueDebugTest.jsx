@@ -1,7 +1,20 @@
 import React from 'react';
+import { useLeagueLeaderboard } from '../hooks/useLeagueLeaderboard';
 
 export const LeagueDebugTest = () => {
   console.log('🔍 LeagueDebugTest: Component is rendering');
+  
+  // Test the hook
+  let hookResult = null;
+  let hookError = null;
+  
+  try {
+    hookResult = useLeagueLeaderboard();
+    console.log('🔍 useLeagueLeaderboard hook result:', hookResult);
+  } catch (error) {
+    hookError = error;
+    console.error('🔍 useLeagueLeaderboard hook error:', error);
+  }
   
   return (
     <div style={{ 
@@ -14,27 +27,33 @@ export const LeagueDebugTest = () => {
       minHeight: '300px'
     }}>
       <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '1rem' }}>
-        🚨 DEBUG: League Component Test
+        🚨 DEBUG: League Hook Test
       </h1>
-      <p>✅ React import: Working</p>
-      <p>✅ Component export: Working</p>
-      <p>✅ JSX rendering: Working</p>
-      <p>✅ Inline styles: Working</p>
-      <p>✅ Basic component structure: Working</p>
       
       <div style={{ backgroundColor: '#0066cc', padding: '1rem', borderRadius: '4px', margin: '1rem 0' }}>
-        <p style={{ fontWeight: 'bold' }}>If you can see this red box:</p>
-        <ul style={{ marginLeft: '1.5rem', marginTop: '0.5rem' }}>
-          <li>✅ Component mounting works</li>
-          <li>✅ Route configuration works</li>
-          <li>✅ Basic rendering works</li>
-        </ul>
+        <p style={{ fontWeight: 'bold' }}>Hook Test Results:</p>
+        {hookError ? (
+          <div style={{ color: '#ff6666' }}>
+            <p>❌ Hook Error: {hookError.message}</p>
+            <pre style={{ fontSize: '12px', marginTop: '0.5rem' }}>
+              {hookError.stack}
+            </pre>
+          </div>
+        ) : (
+          <div style={{ color: '#66ff66' }}>
+            <p>✅ Hook loaded successfully</p>
+            <p>Loading: {hookResult?.isLoading ? 'true' : 'false'}</p>
+            <p>Error: {hookResult?.error || 'none'}</p>
+            <p>Leaderboard length: {hookResult?.leaderboard?.length || 0}</p>
+            <p>Activity mode: {hookResult?.activityMode || 'unknown'}</p>
+          </div>
+        )}
       </div>
       
       <button 
         onClick={() => {
-          console.log('🔍 Button clicked - testing event handlers');
-          alert('Debug button works! The issue is NOT with basic React functionality.');
+          console.log('🔍 Full hook result:', hookResult);
+          console.log('🔍 Browser console should show details above');
         }}
         style={{
           backgroundColor: '#ffff00',
@@ -46,7 +65,7 @@ export const LeagueDebugTest = () => {
           cursor: 'pointer'
         }}
       >
-        🔧 Test Button
+        🔧 Log Hook Details
       </button>
     </div>
   );
