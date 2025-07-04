@@ -208,11 +208,7 @@ export const useLeagueLeaderboard = () => {
     events.forEach(event => {
       if (!event.pubkey || isDuplicateEvent(event, processedEvents)) return;
       
-      // Filter by competition date range - only count runs during the competition
-      if (event.created_at < COMPETITION_START || event.created_at > COMPETITION_END) {
-        console.log(`[useLeagueLeaderboard] Skipping event outside competition period: ${new Date(event.created_at * 1000).toISOString()}`);
-        return; // Skip events outside competition period
-      }
+      // REMOVED: Date filtering - count all runs from participants regardless of date
       
       // Filter by current activity mode using exercise tag
       const exerciseTag = event.tags?.find(tag => tag[0] === 'exercise');
@@ -344,9 +340,8 @@ export const useLeagueLeaderboard = () => {
         const fetchPromise = fetchEvents(ndk, {
           kinds: [1301],
           authors: participants, // Only query Season Pass participants
-          limit: MAX_EVENTS,
-          since: COMPETITION_START, // Competition start date
-          until: COMPETITION_END   // Competition end date
+          limit: MAX_EVENTS
+          // REMOVED date filtering - show all runs from participants
         });
 
         // Add 30 second timeout
