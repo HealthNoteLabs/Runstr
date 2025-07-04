@@ -1341,3 +1341,117 @@ if (isRunstrWorkout) {
 - The Central Feed Manager had no awareness of Season Pass logic
 - Fix involved **removal** rather than addition (elegant solution)
 - Empty state handling in UI components (LeagueMap, PostList) remains intact
+
+## League Tab Blank Screen (RunClub Route)
+
+### Date
+- 2025-07-04
+
+### Bug Description
+- On Android (GrapheneOS) build, tapping the **LEAGUE** tab (`/club` route) renders a completely black screen with only the floating avatar visible (see attached screenshot).  
+- Other routes (Dashboard, Profile, etc.) work normally.  
+- The crash happens very early – no Tailwind-styled fallback UI, no red **LEAGUE MAP TEST** banner from `LeagueMapSimple`, and no error card from `LeagueErrorBoundary` appears.
+
+### Preliminary Analysis / Hypotheses
+1. **Hook-Level Runtime Error**  
+   `RunClub.jsx` mounts several heavy custom hooks (`useRunFeed`, `usePostInteractions`, `useLeagueLeaderboard`) **outside** the error boundary.  A thrown error inside any of these hooks will crash the whole component tree *before* `LeagueErrorBoundary` has a chance to catch it, resulting in the blank screen we see.
+
+2. **NDK / Web Socket issue**  
+   `useRunFeed` calls `awaitNDKReady()` which in turn initialises `@nostr-dev-kit/ndk` and attempts to connect to five relays at module-execution time.  If something in the mobile WebView (no polyfill for `global` / `process` / crypto APIs, CSP blockage of raw WebSocket URLs, etc.) throws synchronously during that import, React will unmount the tree and we get the blank page.
+
+3. **Uuid / crypto dependency**  
+   `utils/nostr.js` imports `uuid`'s `v4` helper.  `uuid` <9.0 polyfills `crypto.randomUUID` with `crypto.getRandomValues` which is *not* available in some stripped-down WebViews.  A ReferenceError emitted here would match the symptoms.
+
+4. **Local Storage quota / access**  
+   `useLeagueLeaderboard` tries to read & write `localStorage` on mount.  On certain privacy-hardened mobile browsers `localStorage` might be disabled, throwing a `SecurityError: Failed to read the 'localStorage' property`.  If that happens before the try/catch guards (e.g. at module scope) it will crash the page.
+
+### Evidence Collected
+- `RunClub.jsx` renders a simple `LeagueMapSimple` test component yet nothing shows – implies the failure occurs *before* children render.
+- No route mismatch – MenuBar points to `/club` and `AppRoutes.jsx` defines that path correctly.
+- The only logic executed before the blank screen is hook initialisation + NDK singleton import.
+
+### Next Diagnostic Steps
+1. Build a quick **safety shell** around `useRunFeed` in dev: wrap its body in `try/catch` and log to `window._leagueDebug` so we can capture the real exception on device.
+2. Ship a temporary `window.onerror` + `console.error` bridge that writes to localStorage and inspect it after crash.
+3. As a fast sanity check, comment-out the `useRunFeed` hook in `RunClub.jsx` and hard-code mock props into `LeagueMapSimple`; if the screen paints, the culprit is definitely inside `useRunFeed` / NDK stack.
+
+### Candidate Fixes (to be validated)
+1. **Guard Heavy Hooks** – Move the heavy data hooks *inside* `LeagueErrorBoundary` or add an outer boundary so runtime errors don't take the whole screen down.
+2. **Defensive Imports** – Lazy-import NDK (`import('...')`) inside a `useEffect` so that any failure is async and can be caught.
+3. **Polyfill / Feature-detect Crypto** – Load a lightweight `crypto.getRandomValues` polyfill *only* when the WebView doesn't expose it; switch to `nanoid` which falls back to Math.random.
+4. **Local Storage Safety** – Wrap all direct `localStorage` access in `try/catch` and feature-detect availability (`typeof localStorage !== 'undefined' && safeAccess`).
+
+---
+
+## League Tab Blank Screen (RunClub Route) – Initial Investigation (2025-07-04)
+
+### Bug Description
+A completely black screen (only the floating avatar is visible) is shown when the user taps the **LEAGUE** tab (`/club`). Other tabs work as expected.
+
+### Early Observations
+1. `RunClub.jsx` mounts several heavy hooks (`useRunFeed`, `usePostInteractions`, `useLeagueLeaderboard`) **before** `LeagueErrorBoundary` renders. A synchronous error in any of these hooks will crash the whole tree – exactly the symptom we see (no fallback UI, no red test banner from `LeagueMapSimple`).
+2. The hooks import `@nostr-dev-kit/ndk`, `uuid`, and perform `localStorage` I/O at module scope. Any environment-specific failure (e.g. missing `crypto.getRandomValues` in the embedded WebView, or blocked `localStorage` access) would throw very early.
+3. Replacing `LeagueMap` with the lightweight `LeagueMapSimple` did **not** fix the issue, confirming that the crash happens **before** the child component tree is reached.
+
+### Candidate Root Causes
+| ID | Hypothesis | Why it fits the symptoms |
+|----|------------|--------------------------|
+| A | **NDK initialisation error** (`ndk.connect()` throws in WebView) | RunClub is the first route to import hooks that touch the singleton NDK. If the library hits an unsupported API (e.g. missing polyfills) the throw will happen synchronously and kill the render. |
+| B | **`uuid` crypto polyfill failure** | `utils/nostr.js` imports `uuid/v4`; older versions call `crypto.getRandomValues`. Some hardened WebViews (GrapheneOS) strip the `crypto` object → `ReferenceError` → blank screen. |
+| C | **`localStorage` security error** | `useLeagueLeaderboard` reads from `localStorage` without guards. If storage is disabled, the read throws a `SecurityError` *before* the try/catch that protects it. |
+
+### Recommended Next Debug Steps
+1. **Safety Wrapper Test** – Temporarily comment-out `useRunFeed` in `RunClub.jsx` and pass mock props into `LeagueMapSimple`. If the screen renders, the culprit is in the feed hook (points strongly to A or B).
+2. **Global Error Tap** – Add a `window.onerror` handler that writes the error message into `localStorage['leagueCrash']` so we can inspect it after the crash on device.
+3. **Lazy-import NDK** – Convert the `ndkSingleton` initialisation to a dynamic `import()` inside a `useEffect`. Even if it still fails, the error becomes async and should be caught by `LeagueErrorBoundary`, allowing the rest of the UI to appear.
+
+### Potential Fix Options
+1. **Move Heavy Hooks Inside Error Boundary** (Low effort)  
+   Wrap the hook calls themselves in a small functional component placed **inside** `LeagueErrorBoundary` so any synchronous error is contained and we at least get the boundary fallback instead of a full blank screen.
+2. **Polyfill & Feature-detect Crypto** (Medium effort)  
+   Add a runtime check for `globalThis.crypto?.getRandomValues`; if absent, inject a lightweight polyfill or switch `uuid` to `nanoid` which falls back to `Math.random`.
+3. **Guard Local Storage Access** (Low effort)  
+   Surround every direct `localStorage` read/write with `try/catch` and early-exit on failure.
+4. **Lazy-Load NDK & External Libs** (Higher effort)  
+   Convert heavy networking libraries to dynamic imports so they don't execute on the initial render path.
+
+> **Next action:** Implement **Test #1** (comment-out `useRunFeed`) to confirm that the crash source is indeed inside the feed/NDK stack.
+
+---
+
+## League Tab Blank Screen - RESOLVED (2025-01-04)
+
+### Solution Applied
+**Reverted to Working Architecture from commit `8df29ce` (new-features-0.5.0-20250702-152823)**
+
+### Changes Made:
+1. **RunClub.jsx**: Restored exact working version
+   - Removed `LeagueErrorBoundary` wrapper
+   - Removed `LeagueMapSimple` import
+   - Removed `useLeagueLeaderboard` hook (moved back to LeagueMap component)
+   - Simplified to just `<LeagueMap />` and `<PostList />` components
+   - Kept working `useRunFeed('RUNSTR')` and `usePostInteractions` hooks
+
+2. **LeagueMap.jsx**: Restored exact working version  
+   - Removed complex PostList integration that was causing crashes
+   - Removed console.log statements
+   - Simplified props to just `{ feedPosts, feedLoading, feedError }`
+   - Kept working leaderboard display and Season Pass functionality
+   - Removed inline feed display (handled separately by PostList in RunClub)
+
+### Key Architectural Differences:
+- **Working Version**: Simple separation - LeagueMap shows leaderboard, PostList shows feed
+- **Broken Version**: Complex integration - LeagueMap tried to embed PostList causing hook conflicts
+
+### Files Changed:
+- `src/pages/RunClub.jsx` - Reverted to working version
+- `src/components/LeagueMap.jsx` - Reverted to working version  
+- `src/components/LeagueMapBroken.jsx` - Backup of broken version
+
+### Testing:
+- League tab should now load without crashing
+- Leaderboard should display correctly
+- Feed should show below the leaderboard
+- Season Pass functionality should work
+
+</rewritten_file>
