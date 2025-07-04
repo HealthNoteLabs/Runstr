@@ -33,16 +33,45 @@ export const useLeagueLeaderboard = () => {
   const COMPETITION_END = Math.floor(new Date(REWARDS.SEASON_1.endUtc).getTime() / 1000);
 
   /**
-   * Load cached leaderboard data
+   * Load cached leaderboard data with safety checks
    */
   const loadCachedData = useCallback(() => {
     try {
+      // Safety Check: localStorage availability
+      if (typeof localStorage === 'undefined') {
+        console.warn('[useLeagueLeaderboard] localStorage not available');
+        return false;
+      }
+
       const cached = localStorage.getItem(CACHE_KEY);
       if (cached) {
-        const { data, timestamp } = JSON.parse(cached);
+        const parsed = JSON.parse(cached);
+        
+        // Safety Check: validate cache structure
+        if (!parsed || typeof parsed !== 'object' || !parsed.data || !parsed.timestamp) {
+          console.warn('[useLeagueLeaderboard] Invalid cache structure');
+          localStorage.removeItem(CACHE_KEY); // Clean up bad cache
+          return false;
+        }
+
+        const { data, timestamp } = parsed;
         const now = Date.now();
         
+        // Safety Check: validate timestamp
+        if (typeof timestamp !== 'number' || timestamp > now) {
+          console.warn('[useLeagueLeaderboard] Invalid cache timestamp');
+          localStorage.removeItem(CACHE_KEY); // Clean up bad cache
+          return false;
+        }
+        
         if (now - timestamp < CACHE_DURATION_MS) {
+          // Safety Check: validate data structure
+          if (!Array.isArray(data)) {
+            console.warn('[useLeagueLeaderboard] Cached data is not an array');
+            localStorage.removeItem(CACHE_KEY); // Clean up bad cache
+            return false;
+          }
+
           console.log('[useLeagueLeaderboard] Using cached data');
           setLeaderboard(data);
           setLastUpdated(new Date(timestamp));
@@ -52,22 +81,59 @@ export const useLeagueLeaderboard = () => {
       }
     } catch (err) {
       console.error('[useLeagueLeaderboard] Error loading cache:', err);
+      // Try to clean up corrupted cache
+      try {
+        localStorage.removeItem(CACHE_KEY);
+      } catch (cleanupErr) {
+        console.error('[useLeagueLeaderboard] Error cleaning up cache:', cleanupErr);
+      }
     }
     return false; // No valid cache
   }, [CACHE_KEY]);
 
   /**
-   * Save leaderboard data to cache
+   * Save leaderboard data to cache with safety checks
    */
   const saveCachedData = useCallback((data) => {
     try {
+      // Safety Check: localStorage availability
+      if (typeof localStorage === 'undefined') {
+        console.warn('[useLeagueLeaderboard] localStorage not available for saving');
+        return;
+      }
+
+      // Safety Check: validate data before saving
+      if (!Array.isArray(data)) {
+        console.warn('[useLeagueLeaderboard] Cannot save non-array data to cache');
+        return;
+      }
+
       const cacheData = {
         data,
         timestamp: Date.now()
       };
-      localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+      
+      const serialized = JSON.stringify(cacheData);
+      
+      // Safety Check: validate serialization
+      if (!serialized || serialized === 'null' || serialized === 'undefined') {
+        console.warn('[useLeagueLeaderboard] Failed to serialize cache data');
+        return;
+      }
+
+      localStorage.setItem(CACHE_KEY, serialized);
     } catch (err) {
       console.error('[useLeagueLeaderboard] Error saving cache:', err);
+      
+      // Check if it's a quota exceeded error
+      if (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+        console.warn('[useLeagueLeaderboard] localStorage quota exceeded, clearing old cache');
+        try {
+          localStorage.removeItem(CACHE_KEY);
+        } catch (clearErr) {
+          console.error('[useLeagueLeaderboard] Error clearing cache after quota error:', clearErr);
+        }
+      }
     }
   }, [CACHE_KEY]);
 
@@ -216,19 +282,39 @@ export const useLeagueLeaderboard = () => {
 
   /**
    * Fetch fresh leaderboard data from Season Pass participants only
+   * Enhanced with safety checks for Fix 3
    */
   const fetchLeaderboardData = useCallback(async () => {
+    // Safety Check 1: NDK availability
     if (!ndk) {
       console.log('[useLeagueLeaderboard] NDK not available');
+      setError('Nostr connection not available');
+      setIsLoading(false);
+      return;
+    }
+
+    // Safety Check 2: fetchEvents function availability
+    if (typeof fetchEvents !== 'function') {
+      console.error('[useLeagueLeaderboard] fetchEvents function not available');
+      setError('Event fetching service unavailable');
+      setIsLoading(false);
       return;
     }
 
     try {
       setError(null);
       
-      // **Approach 2: Get Season Pass participants first**
-      const participants = seasonPassService.getParticipants();
-      console.log(`[useLeagueLeaderboard] Season Pass participants: ${participants.length}`);
+      // **Safety Check 3: Season Pass Service with fallback**
+      let participants = [];
+      try {
+        participants = seasonPassService.getParticipants();
+        console.log(`[useLeagueLeaderboard] Season Pass participants: ${participants.length}`);
+      } catch (seasonErr) {
+        console.error('[useLeagueLeaderboard] Error accessing seasonPassService:', seasonErr);
+        setError('Unable to access participant data');
+        setIsLoading(false);
+        return;
+      }
       
       // **Handle empty participants gracefully - no error, just empty leaderboard**
       if (participants.length === 0) {
@@ -241,22 +327,69 @@ export const useLeagueLeaderboard = () => {
         return;
       }
 
+      // **Safety Check 4: Validate participants array**
+      if (!Array.isArray(participants)) {
+        console.error('[useLeagueLeaderboard] Participants is not an array:', typeof participants);
+        setError('Invalid participant data format');
+        setIsLoading(false);
+        return;
+      }
+
       // **Only fetch events from Season Pass participants during competition period**
       console.log(`[useLeagueLeaderboard] Fetching events from ${participants.length} participants for ${activityMode} mode during competition period`);
       
-      const events = await fetchEvents(ndk, {
-        kinds: [1301],
-        authors: participants, // Only query Season Pass participants
-        limit: MAX_EVENTS,
-        since: COMPETITION_START, // Competition start date
-        until: COMPETITION_END   // Competition end date
-      });
+      // **Safety Check 5: Wrap fetchEvents with timeout and error handling**
+      let events = [];
+      try {
+        const fetchPromise = fetchEvents(ndk, {
+          kinds: [1301],
+          authors: participants, // Only query Season Pass participants
+          limit: MAX_EVENTS,
+          since: COMPETITION_START, // Competition start date
+          until: COMPETITION_END   // Competition end date
+        });
+
+        // Add 30 second timeout
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Fetch timeout')), 30000)
+        );
+
+        events = await Promise.race([fetchPromise, timeoutPromise]);
+        
+        // Safety check: ensure events is an array
+        if (!Array.isArray(events)) {
+          console.warn('[useLeagueLeaderboard] fetchEvents returned non-array:', typeof events);
+          events = [];
+        }
+
+      } catch (fetchErr) {
+        console.error('[useLeagueLeaderboard] Error fetching events:', fetchErr);
+        
+        // Try to use cached data if available
+        const hasCachedData = loadCachedData();
+        if (hasCachedData) {
+          console.log('[useLeagueLeaderboard] Using cached data due to fetch error');
+          return; // loadCachedData already set the state
+        }
+        
+        setError(`Failed to fetch workout data: ${fetchErr.message}`);
+        setIsLoading(false);
+        return;
+      }
 
       console.log(`[useLeagueLeaderboard] Fetched ${events.length} events from ${participants.length} participants`);
 
-      // Process events into leaderboard
-      const leaderboardData = processEvents(events);
-      console.log(`[useLeagueLeaderboard] Processed ${leaderboardData.length} users for leaderboard`);
+      // **Safety Check 6: Process events with error handling**
+      let leaderboardData = [];
+      try {
+        leaderboardData = processEvents(events);
+        console.log(`[useLeagueLeaderboard] Processed ${leaderboardData.length} users for leaderboard`);
+      } catch (processErr) {
+        console.error('[useLeagueLeaderboard] Error processing events:', processErr);
+        setError('Failed to process workout data');
+        setIsLoading(false);
+        return;
+      }
 
       // Update state and cache
       setLeaderboard(leaderboardData);
@@ -264,12 +397,12 @@ export const useLeagueLeaderboard = () => {
       setLastUpdated(new Date());
 
     } catch (err) {
-      console.error('[useLeagueLeaderboard] Error fetching leaderboard:', err);
+      console.error('[useLeagueLeaderboard] Unexpected error fetching leaderboard:', err);
       setError(err.message || 'Failed to load leaderboard');
     } finally {
       setIsLoading(false);
     }
-  }, [ndk, processEvents, saveCachedData, activityMode]);
+  }, [ndk, processEvents, saveCachedData, activityMode, loadCachedData]);
 
   /**
    * Refresh leaderboard data

@@ -12,42 +12,95 @@ export const LeagueMap = ({ feedPosts = [], feedLoading = false, feedError = nul
   const [showSeasonPassModal, setShowSeasonPassModal] = useState(false);
   const [showPrizePoolModal, setShowPrizePoolModal] = useState(false);
   
-  const { publicKey } = useNostr();
+  // Defensive: Check NostrContext availability
+  const nostrContext = useNostr();
+  const publicKey = nostrContext?.publicKey || null;
+  
+  // Safety check: If NostrContext is completely missing, show error state
+  if (!nostrContext) {
+    return (
+      <div className="bg-bg-secondary rounded-lg border border-border-secondary p-6 mb-4">
+        <div className="flex flex-col justify-center items-center h-32">
+          <div className="text-4xl mb-3">⚠️</div>
+          <p className="text-text-secondary text-center">Nostr context not available</p>
+        </div>
+      </div>
+    );
+  }
   
   // Get comprehensive leaderboard data with caching
+  const leaderboardHook = useLeagueLeaderboard();
   const {
-    leaderboard,
-    isLoading: leaderboardLoading,
-    error: leaderboardError,
-    lastUpdated,
-    refresh: refreshLeaderboard,
-    courseTotal,
-    activityMode
-  } = useLeagueLeaderboard();
+    leaderboard = [], // Defensive: default to empty array
+    isLoading: leaderboardLoading = false,
+    error: leaderboardError = null,
+    lastUpdated = null,
+    refresh: refreshLeaderboard = () => {},
+    courseTotal = 500,
+    activityMode = 'run'
+  } = leaderboardHook || {}; // Defensive: handle undefined hook result
 
-  // Get profiles for leaderboard users
-  const leaderboardPubkeys = useMemo(() => 
-    leaderboard.map(user => user.pubkey), [leaderboard]
-  );
-  const { profiles } = useProfiles(leaderboardPubkeys);
+  // Get profiles for leaderboard users - defensive programming
+  const leaderboardPubkeys = useMemo(() => {
+    if (!Array.isArray(leaderboard)) {
+      console.warn('[LeagueMap] leaderboard is not an array:', leaderboard);
+      return [];
+    }
+    return leaderboard
+      .filter(user => user && typeof user === 'object' && user.pubkey)
+      .map(user => user.pubkey);
+  }, [leaderboard]);
+  
+  const profilesHook = useProfiles(leaderboardPubkeys);
+  const profiles = profilesHook?.profiles || {};
 
-  // Enhanced leaderboard with profile data
+  // Enhanced leaderboard with profile data - defensive programming
   const enhancedLeaderboard = useMemo(() => {
-    return leaderboard.map(user => {
-      // Fix: useProfiles returns an object, not a Map
-      const profile = profiles?.[user.pubkey] || profiles?.get?.(user.pubkey) || {};
-      return {
-        ...user,
-        displayName: profile.display_name || profile.name || `Runner ${user.pubkey.slice(0, 8)}`,
-        picture: profile.picture,
-        isCurrentUser: user.pubkey === publicKey
-      };
-    });
+    if (!Array.isArray(leaderboard)) {
+      console.warn('[LeagueMap] Cannot enhance leaderboard - not an array');
+      return [];
+    }
+    
+    return leaderboard
+      .filter(user => user && typeof user === 'object' && user.pubkey)
+      .map(user => {
+        try {
+          // Defensive: Multiple ways to access profile data
+          const profile = profiles?.[user.pubkey] || profiles?.get?.(user.pubkey) || {};
+          const displayName = profile.display_name || profile.name || (
+            user.pubkey ? `Runner ${user.pubkey.slice(0, 8)}` : 'Anonymous Runner'
+          );
+          
+          return {
+            ...user,
+            displayName,
+            picture: profile.picture || null,
+            isCurrentUser: publicKey && user.pubkey === publicKey
+          };
+        } catch (err) {
+          console.error('[LeagueMap] Error enhancing user profile:', err, user);
+          return {
+            ...user,
+            displayName: 'Error Loading Profile',
+            picture: null,
+            isCurrentUser: false
+          };
+        }
+      });
   }, [leaderboard, profiles, publicKey]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setIsInitialLoad(false), 500);
-    return () => clearTimeout(timer);
+    // Safety: Multiple timeouts to ensure we exit loading state
+    const shortTimer = setTimeout(() => setIsInitialLoad(false), 500);
+    const safetyTimer = setTimeout(() => {
+      console.warn('[LeagueMap] Safety timeout triggered - forcing exit from loading state');
+      setIsInitialLoad(false);
+    }, 10000); // 10 second safety net
+    
+    return () => {
+      clearTimeout(shortTimer);
+      clearTimeout(safetyTimer);
+    };
   }, []);
 
   // Generate dynamic league title based on activity mode
@@ -87,9 +140,14 @@ export const LeagueMap = ({ feedPosts = [], feedLoading = false, feedError = nul
     return Number(distance || 0).toFixed(1);
   };
 
-  // Season Pass helpers
+  // Season Pass helpers with safety checks
   const hasSeasonPass = useMemo(() => {
-    return publicKey ? seasonPassPaymentService.hasSeasonPass(publicKey) : false;
+    try {
+      return publicKey ? seasonPassPaymentService.hasSeasonPass(publicKey) : false;
+    } catch (err) {
+      console.error('[LeagueMap] Error checking season pass status:', err);
+      return false; // Fail safely to "no pass"
+    }
   }, [publicKey]);
 
   const handleSeasonPassClick = () => {
@@ -97,62 +155,84 @@ export const LeagueMap = ({ feedPosts = [], feedLoading = false, feedError = nul
       alert('Please connect your Nostr account first');
       return;
     }
-    setShowSeasonPassModal(true);
+    try {
+      setShowSeasonPassModal(true);
+    } catch (err) {
+      console.error('[LeagueMap] Error opening season pass modal:', err);
+      alert('Unable to open Season Pass payment. Please try again.');
+    }
   };
 
   const handlePaymentSuccess = () => {
-    // Refresh the leaderboard to show updated content
-    refreshLeaderboard();
+    try {
+      // Refresh the leaderboard to show updated content
+      if (typeof refreshLeaderboard === 'function') {
+        refreshLeaderboard();
+      }
+    } catch (err) {
+      console.error('[LeagueMap] Error refreshing after payment:', err);
+    }
   };
 
-  // Enhanced loading and empty state logic
+  // Enhanced loading and empty state logic with safety checks
   const getLeagueState = () => {
-    // Still doing initial load
-    if (isInitialLoad) {
-      return { type: 'loading', message: 'Loading League Race...' };
-    }
-    
-    // Currently loading with no cached data
-    if (leaderboardLoading && leaderboard.length === 0) {
-      return { type: 'loading', message: 'Loading League Race...' };
-    }
-    
-    // Error with no fallback data
-    if (leaderboardError && leaderboard.length === 0) {
-      return { type: 'error', message: leaderboardError };
-    }
-    
-    // Check Season Pass participants for empty state context
-    const participantCount = seasonPassService.getParticipantCount();
-    
-    // No participants yet (pre-launch scenario)
-    if (participantCount === 0) {
-      return { 
-        type: 'empty-participants', 
-        message: 'No Season Pass participants yet. Be the first to join!' 
-      };
-    }
-    
-    // Have participants but no leaderboard data (launch day, no qualifying runs yet)
-    if (leaderboard.length === 0) {
-      const currentDate = new Date();
-      const competitionStart = new Date('2025-07-11T00:00:00Z');
+    try {
+      // Still doing initial load
+      if (isInitialLoad) {
+        return { type: 'loading', message: 'Loading League Race...' };
+      }
       
-      if (currentDate < competitionStart) {
+      // Currently loading with no cached data
+      if (leaderboardLoading && leaderboard.length === 0) {
+        return { type: 'loading', message: 'Loading League Race...' };
+      }
+      
+      // Error with no fallback data
+      if (leaderboardError && leaderboard.length === 0) {
+        return { type: 'error', message: leaderboardError };
+      }
+      
+      // Check Season Pass participants for empty state context with safety
+      let participantCount = 0;
+      try {
+        participantCount = seasonPassService.getParticipantCount();
+      } catch (err) {
+        console.error('[LeagueMap] Error getting participant count:', err);
+        // Fall through to handle as if 0 participants
+      }
+      
+      // No participants yet (pre-launch scenario)
+      if (participantCount === 0) {
         return { 
-          type: 'pre-competition', 
-          message: `Competition starts July 11th, 2025. ${participantCount} runner${participantCount !== 1 ? 's' : ''} ready!` 
-        };
-      } else {
-        return { 
-          type: 'no-qualifying-runs', 
-          message: `Competition is live! Waiting for first ${activityMode === 'run' ? 'runs' : activityMode === 'walk' ? 'walks' : 'rides'}...` 
+          type: 'empty-participants', 
+          message: 'No Season Pass participants yet. Be the first to join!' 
         };
       }
+      
+      // Have participants but no leaderboard data (launch day, no qualifying runs yet)
+      if (leaderboard.length === 0) {
+        const currentDate = new Date();
+        const competitionStart = new Date('2025-07-11T00:00:00Z');
+        
+        if (currentDate < competitionStart) {
+          return { 
+            type: 'pre-competition', 
+            message: `Competition starts July 11th, 2025. ${participantCount} runner${participantCount !== 1 ? 's' : ''} ready!` 
+          };
+        } else {
+          return { 
+            type: 'no-qualifying-runs', 
+            message: `Competition is live! Waiting for first ${activityMode === 'run' ? 'runs' : activityMode === 'walk' ? 'walks' : 'rides'}...` 
+          };
+        }
+      }
+      
+      // Normal state with data
+      return { type: 'normal' };
+    } catch (err) {
+      console.error('[LeagueMap] Error determining league state:', err);
+      return { type: 'error', message: 'Unable to determine league status' };
     }
-    
-    // Normal state with data
-    return { type: 'normal' };
   };
 
   const leagueState = getLeagueState();

@@ -5,6 +5,7 @@ import { useRunFeed } from '../hooks/useRunFeed';
 import { usePostInteractions } from '../hooks/usePostInteractions';
 import { PostList } from '../components/PostList';
 import { LeagueMap } from '../components/LeagueMap';
+import LeagueErrorBoundary from '../components/LeagueErrorBoundary';
 import { handleAppBackground } from '../utils/nostr';
 import '../components/RunClub.css';
 
@@ -94,8 +95,10 @@ export const RunClub = () => {
         </div>
       )}
       
-      {/* League Map Component */}
-      <LeagueMap />
+      {/* League Map Component with Error Boundary */}
+      <LeagueErrorBoundary>
+        <LeagueMap />
+      </LeagueErrorBoundary>
       
       {/* PostList Component for workout feed */}
       <PostList
