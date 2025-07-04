@@ -1,4 +1,5 @@
 import { NWCWalletConnector } from '../components/NWCWalletConnector';
+import { WalletDebugger } from '../components/WalletDebugger';
 
 export const NWC = () => {
   return (
@@ -13,6 +14,9 @@ export const NWC = () => {
       </div>
 
       <NWCWalletConnector />
+
+      {/* Debug Component */}
+      <WalletDebugger />
 
       {/* Features Info Card */}
       <div className="wallet-option nwc-features-card">

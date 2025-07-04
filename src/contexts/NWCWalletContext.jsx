@@ -38,11 +38,18 @@ export const NWCWalletProvider = ({ children }) => {
         
         // Try to get balance
         let balance = 0;
+        let balanceError = null;
         try {
+          console.log('[NWCWalletContext] Fetching balance...');
           const balanceResult = await walletAPI.getBalance();
-          balance = balanceResult?.balance || 0;
-        } catch (balanceError) {
-          console.warn('[NWCWalletContext] Could not fetch balance:', balanceError);
+          console.log('[NWCWalletContext] Raw balance result:', balanceResult, 'Type:', typeof balanceResult);
+          
+          // getBalance() returns a number directly, not an object
+          balance = typeof balanceResult === 'number' ? balanceResult : 0;
+          console.log('[NWCWalletContext] Parsed balance:', balance);
+        } catch (error) {
+          console.error('[NWCWalletContext] Could not fetch balance:', error);
+          balanceError = error.message;
           // Don't treat balance fetch failure as connection failure
         }
 
@@ -52,7 +59,7 @@ export const NWCWalletProvider = ({ children }) => {
           balance,
           walletAPI,
           loading: false,
-          error: null,
+          error: balanceError,
           isInitialized: true
         }));
       } else {
@@ -184,9 +191,15 @@ export const NWCWalletProvider = ({ children }) => {
 
       setState(prev => ({ ...prev, loading: true, error: null }));
 
-      // This would need to be implemented based on your wallet's capabilities
-      // Many NWC wallets don't support invoice generation
-      throw new Error('Invoice generation not supported by this wallet');
+      console.log('[NWCWalletContext] Generating invoice for', amount, 'sats with memo:', memo);
+      
+      // Use the AlbyWallet's generateInvoice method
+      const invoice = await state.walletAPI.generateInvoice(amount, memo);
+      
+      console.log('[NWCWalletContext] Invoice generated successfully:', invoice?.substring(0, 50) + '...');
+      
+      setState(prev => ({ ...prev, loading: false }));
+      return invoice;
     } catch (error) {
       console.error('[NWCWalletContext] Invoice generation failed:', error);
       setState(prev => ({

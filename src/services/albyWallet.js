@@ -34,29 +34,36 @@ export class AlbyWallet {
 
       if (url.startsWith('nostr+walletconnect://')) {
         // Direct NWC connection string
+        console.log('[AlbyWallet] Connecting with direct NWC connection string...');
         this.connectionString = url;
         localStorage.setItem('nwcConnectionString', url);
         
         // Create both clients
+        console.log('[AlbyWallet] Creating NWC and LN clients...');
         this.nwcClient = new nwc.NWCClient({ nostrWalletConnectUrl: url });
         this.lnClient = new LN(url);
+        console.log('[AlbyWallet] Clients created successfully');
       }
       else if (url.startsWith('https://')) {
         // Authorization URL
+        console.log('[AlbyWallet] Connecting with authorization URL...');
         this.authUrl = url;
         localStorage.setItem('nwcAuthUrl', url);
         
         try {
           // Create NWC client from authorization URL
+          console.log('[AlbyWallet] Creating NWC client from authorization URL...');
           this.nwcClient = await nwc.NWCClient.fromAuthorizationUrl(url, {
             name: "RUNSTR App " + Date.now(),
           });
           
           // Store the connection and create LN client
           const nwcUrl = this.nwcClient.getNostrWalletConnectUrl();
+          console.log('[AlbyWallet] Got NWC URL from authorization:', nwcUrl?.substring(0, 50) + '...');
           this.connectionString = nwcUrl;
           localStorage.setItem('nwcConnectionString', nwcUrl);
           this.lnClient = new LN(nwcUrl);
+          console.log('[AlbyWallet] Authorization connection completed');
         } catch (error) {
           console.error('Failed to connect via authorization URL:', error);
           throw new Error(`Authorization URL connection failed: ${error.message || 'Unknown error'}`);
@@ -218,15 +225,19 @@ export class AlbyWallet {
    */
   async getInfo() {
     try {
+      console.log('[AlbyWallet] Starting getInfo()...');
+      
       if (!this.nwcClient) {
         console.error('[AlbyWallet] No NWC client available for getInfo');
         throw new Error('Wallet not initialized');
       }
       
+      console.log('[AlbyWallet] NWC client exists, calling getInfo()...');
+      
       // Some implementations don't support getInfo, so we handle that case
       try {
         const info = await this.nwcClient.getInfo();
-        console.log('[AlbyWallet] Wallet info retrieved:', info);
+        console.log('[AlbyWallet] Wallet info retrieved successfully:', info);
         return info;
       } catch (error) {
         // If getInfo failed, try to use getBalance as an alternative way to check connection
@@ -234,7 +245,7 @@ export class AlbyWallet {
         const balance = await this.nwcClient.getBalance();
         
         // If we get here, the connection is working even though getInfo failed
-        console.log('[AlbyWallet] Connection confirmed via getBalance');
+        console.log('[AlbyWallet] Connection confirmed via getBalance, balance result:', balance);
         return { 
           fallback: true, 
           message: 'This wallet implementation does not support getInfo, but connection is confirmed',
@@ -253,22 +264,48 @@ export class AlbyWallet {
    */
   async getBalance() {
     try {
+      console.log('[AlbyWallet] Starting getBalance()...');
+      
       if (!await this.ensureConnected()) {
         throw new Error('Wallet not connected');
       }
       
+      console.log('[AlbyWallet] Wallet connected, calling nwcClient.getBalance()...');
       const response = await this.nwcClient.getBalance();
+      
+      console.log('[AlbyWallet] Raw getBalance response:', {
+        response,
+        type: typeof response,
+        isObject: typeof response === 'object',
+        isNull: response === null,
+        keys: response && typeof response === 'object' ? Object.keys(response) : 'N/A'
+      });
+      
       // Handle different response formats and convert msats to sats if needed
+      let balance = 0;
+      
       if (typeof response === 'object' && response !== null) {
         // If balance is in msats (NWC standard), convert to sats
-        return Math.floor((response.balance || 0) / 1000);
+        const rawBalance = response.balance || response.amount || response.value || 0;
+        balance = Math.floor(rawBalance / 1000);
+        console.log('[AlbyWallet] Object response - raw:', rawBalance, 'converted to sats:', balance);
       } else if (typeof response === 'number') {
         // Some implementations might return just a number
-        return response;
+        // Check if it looks like msats (> 1M suggests msats)
+        if (response > 1000000) {
+          balance = Math.floor(response / 1000);
+          console.log('[AlbyWallet] Number response (likely msats) - raw:', response, 'converted to sats:', balance);
+        } else {
+          balance = response;
+          console.log('[AlbyWallet] Number response (likely sats) - balance:', balance);
+        }
+      } else {
+        console.log('[AlbyWallet] Unexpected response type, returning 0');
+        balance = 0;
       }
       
-      // Default fallback
-      return 0;
+      console.log('[AlbyWallet] Final balance result:', balance);
+      return balance;
     } catch (error) {
       console.error('[AlbyWallet] Get balance error:', error);
       throw new Error(`Failed to get wallet balance: ${error.message || 'Unknown error'}`);
@@ -602,5 +639,44 @@ export class AlbyWallet {
       reconnectAttempts: this.reconnectAttempts,
       hasAuthUrl: !!this.authUrl
     };
+  }
+
+  /**
+   * Debug method to test wallet capabilities and connection
+   * @returns {Promise<Object>} - Debug information
+   */
+  async debugWallet() {
+    const debug = {
+      hasNwcClient: !!this.nwcClient,
+      hasLnClient: !!this.lnClient,
+      isConnected: this.isConnected,
+      connectionString: this.connectionString?.substring(0, 50) + '...',
+      authUrl: this.authUrl?.substring(0, 50) + '...',
+      capabilities: {},
+      errors: []
+    };
+
+    if (!this.nwcClient) {
+      debug.errors.push('No NWC client available');
+      return debug;
+    }
+
+    // Test getInfo
+    try {
+      const info = await this.nwcClient.getInfo();
+      debug.capabilities.getInfo = { success: true, data: info };
+    } catch (error) {
+      debug.capabilities.getInfo = { success: false, error: error.message };
+    }
+
+    // Test getBalance
+    try {
+      const balance = await this.nwcClient.getBalance();
+      debug.capabilities.getBalance = { success: true, data: balance };
+    } catch (error) {
+      debug.capabilities.getBalance = { success: false, error: error.message };
+    }
+
+    return debug;
   }
 } 
