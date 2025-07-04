@@ -28,6 +28,13 @@ export const LeagueMap = ({
   wallet
 }) => {
   console.log('🔍 LeagueMap: Restored component rendering');
+  console.log('🔍 LeagueMap props:', { 
+    feedPostsLength: feedPosts?.length || 0, 
+    feedLoading, 
+    feedError,
+    hasUserLikes: !!userLikes,
+    hasOnLike: !!onLike 
+  });
   
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [showSeasonPassModal, setShowSeasonPassModal] = useState(false);
@@ -232,20 +239,16 @@ export const LeagueMap = ({
         <PostList
           posts={feedPosts}
           loading={feedLoading}
-          error={feedError}
+          page={1}
           userLikes={userLikes}
           userReposts={userReposts}
-          onLike={onLike}
-          onRepost={onRepost}
-          onZap={onZap}
-          onComment={onComment}
-          onCommentClick={onCommentClick}
-          onLoadMore={onLoadMore}
+          handleLike={onLike}
+          handleRepost={onRepost}
+          handleZap={(post) => onZap(post, wallet)}
+          handleComment={onComment}
+          handleCommentClick={onCommentClick}
           commentText={commentText}
           setCommentText={setCommentText}
-          onRefresh={onRefresh}
-          isRefreshing={isRefreshing}
-          defaultZapAmount={defaultZapAmount}
           wallet={wallet}
         />
       </div>

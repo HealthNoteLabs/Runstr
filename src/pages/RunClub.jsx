@@ -4,6 +4,7 @@ import { WalletContext } from '../contexts/WalletContext.jsx';
 import { useRunFeed } from '../hooks/useRunFeed';
 import { usePostInteractions } from '../hooks/usePostInteractions';
 import { LeagueMap } from '../components/LeagueMap';
+import LeagueMapSimple from '../components/LeagueMapSimple';
 import LeagueErrorBoundary from '../components/LeagueErrorBoundary';
 import { handleAppBackground } from '../utils/nostr';
 import '../components/RunClub.css';
@@ -96,24 +97,10 @@ export const RunClub = () => {
       
       {/* League Map Component with Error Boundary */}
       <LeagueErrorBoundary>
-        <LeagueMap 
+        <LeagueMapSimple 
           feedPosts={posts}
           feedLoading={loading}
           feedError={error}
-          userLikes={userLikes}
-          userReposts={userReposts}
-          onLike={handleLike}
-          onRepost={handleRepost}
-          onZap={handleZap}
-          onComment={handleComment}
-          onCommentClick={handleCommentClick}
-          onLoadMore={loadMorePosts}
-          commentText={commentText}
-          setCommentText={setCommentText}
-          onRefresh={refreshFeed}
-          isRefreshing={isRefreshing}
-          defaultZapAmount={defaultZapAmount}
-          wallet={wallet}
         />
       </LeagueErrorBoundary>
     </div>
