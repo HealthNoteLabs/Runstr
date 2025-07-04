@@ -4,10 +4,29 @@ import { useProfiles } from '../hooks/useProfiles';
 import { useNostr } from '../hooks/useNostr';
 import SeasonPassPaymentModal from './modals/SeasonPassPaymentModal';
 import PrizePoolModal from './modals/PrizePoolModal';
+import { PostList } from './PostList';
 import seasonPassPaymentService from '../services/seasonPassPaymentService';
 import seasonPassService from '../services/seasonPassService';
 
-export const LeagueMap = ({ feedPosts = [], feedLoading = false, feedError = null }) => {
+export const LeagueMap = ({ 
+  feedPosts = [], 
+  feedLoading = false, 
+  feedError = null,
+  userLikes = {},
+  userReposts = {},
+  onLike,
+  onRepost,
+  onZap,
+  onComment,
+  onCommentClick,
+  onLoadMore,
+  commentText = '',
+  setCommentText,
+  onRefresh,
+  isRefreshing = false,
+  defaultZapAmount,
+  wallet
+}) => {
   console.log('🔍 LeagueMap: Restored component rendering');
   
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -195,6 +214,40 @@ export const LeagueMap = ({ feedPosts = [], feedLoading = false, feedError = nul
             ))}
           </div>
         )}
+      </div>
+
+      {/* Feed Section */}
+      <div className="bg-bg-secondary rounded-lg border border-border-secondary overflow-hidden">
+        <div className="flex justify-between items-center p-4 border-b border-border-secondary bg-bg-tertiary">
+          <h3 className="text-lg font-semibold text-text-primary">🏃 Recent Activities</h3>
+          <button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="px-3 py-1 bg-primary text-text-primary text-sm rounded-md hover:bg-primary/80 disabled:opacity-50"
+          >
+            {isRefreshing ? '🔄' : '↻'} Refresh
+          </button>
+        </div>
+        
+        <PostList
+          posts={feedPosts}
+          loading={feedLoading}
+          error={feedError}
+          userLikes={userLikes}
+          userReposts={userReposts}
+          onLike={onLike}
+          onRepost={onRepost}
+          onZap={onZap}
+          onComment={onComment}
+          onCommentClick={onCommentClick}
+          onLoadMore={onLoadMore}
+          commentText={commentText}
+          setCommentText={setCommentText}
+          onRefresh={onRefresh}
+          isRefreshing={isRefreshing}
+          defaultZapAmount={defaultZapAmount}
+          wallet={wallet}
+        />
       </div>
 
       {/* Season Pass Payment Modal */}
