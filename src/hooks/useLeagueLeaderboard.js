@@ -9,7 +9,6 @@ import { REWARDS } from '../config/rewardsConfig';
  * Hook: useLeagueLeaderboard
  * Fetches Kind 1301 workout records from Season Pass participants only and creates a comprehensive leaderboard
  * Filters by current activity mode (run/walk/cycle) for activity-specific leagues
- * Only counts runs during the competition period (July 11 - October 11, 2025)
  * Uses localStorage caching (30 min expiry) and lazy loading for better UX
  * 
  * @returns {Object} { leaderboard, isLoading, error, refresh, lastUpdated, activityMode, courseTotal }
@@ -25,12 +24,8 @@ export const useLeagueLeaderboard = () => {
   // Constants
   const COURSE_TOTAL_MILES = 500; // Updated to 500 miles
   const CACHE_DURATION_MS = 30 * 60 * 1000; // 30 minutes cache
-  const CACHE_KEY = `runstr_league_leaderboard_${activityMode}_v2`; // Activity-specific cache with competition dates
+  const CACHE_KEY = `runstr_league_leaderboard_${activityMode}_v2`; // Activity-specific cache
   const MAX_EVENTS = 5000; // Limit to prevent overwhelming queries
-  
-  // Competition date range
-  const COMPETITION_START = Math.floor(new Date(REWARDS.SEASON_1.startUtc).getTime() / 1000);
-  const COMPETITION_END = Math.floor(new Date(REWARDS.SEASON_1.endUtc).getTime() / 1000);
 
   /**
    * Load cached leaderboard data with safety checks
@@ -198,7 +193,6 @@ export const useLeagueLeaderboard = () => {
 
   /**
    * Process events into user statistics
-   * Only counts runs during the competition period
    */
   const processEvents = useCallback((events) => {
     const userStats = {};
@@ -214,7 +208,7 @@ export const useLeagueLeaderboard = () => {
       const exerciseTag = event.tags?.find(tag => tag[0] === 'exercise');
       const eventActivityType = exerciseTag?.[1]?.toLowerCase();
       
-      // Map activity mode to possible exercise tag values (RUNSTR uses 'run', others might use 'running')
+      // Map activity mode to possible exercise tag values
       const activityMatches = {
         'run': ['run', 'running', 'jog', 'jogging'],
         'cycle': ['cycle', 'cycling', 'bike', 'biking'],  
@@ -241,24 +235,24 @@ export const useLeagueLeaderboard = () => {
         userStats[event.pubkey] = {
           pubkey: event.pubkey,
           totalMiles: 0,
-          runCount: 0, // Keep as runCount for backward compatibility but it represents activity count
+          runCount: 0,
           lastActivity: 0,
-          runs: [] // Keep as runs for backward compatibility but it represents activities
+          runs: []
         };
       }
 
       // Add activity data
       userStats[event.pubkey].totalMiles += distance;
-      userStats[event.pubkey].runCount++; // Actually activity count
+      userStats[event.pubkey].runCount++;
       userStats[event.pubkey].lastActivity = Math.max(
         userStats[event.pubkey].lastActivity, 
         event.created_at
       );
-      userStats[event.pubkey].runs.push({ // Actually activities
+      userStats[event.pubkey].runs.push({
         distance,
         timestamp: event.created_at,
         eventId: event.id,
-        activityType: eventActivityType // Store the activity type for reference
+        activityType: eventActivityType
       });
     });
 
@@ -274,11 +268,10 @@ export const useLeagueLeaderboard = () => {
       .map((user, index) => ({ ...user, rank: index + 1 }));
 
     return leaderboardData;
-  }, [extractDistance, isDuplicateEvent, COURSE_TOTAL_MILES, activityMode, COMPETITION_START, COMPETITION_END]);
+  }, [extractDistance, isDuplicateEvent, COURSE_TOTAL_MILES, activityMode]);
 
   /**
    * Fetch fresh leaderboard data from Season Pass participants only
-   * Enhanced with safety checks for Fix 3
    */
   const fetchLeaderboardData = useCallback(async () => {
     // Safety Check 1: NDK availability
@@ -331,8 +324,8 @@ export const useLeagueLeaderboard = () => {
         return;
       }
 
-      // **Only fetch events from Season Pass participants during competition period**
-      console.log(`[useLeagueLeaderboard] Fetching events from ${participants.length} participants for ${activityMode} mode during competition period`);
+      // **Only fetch events from Season Pass participants**
+      console.log(`[useLeagueLeaderboard] Fetching events from ${participants.length} participants for ${activityMode} mode`);
       
       // **Safety Check 5: Wrap fetchEvents with timeout and error handling**
       let events = [];
@@ -441,4 +434,4 @@ export const useLeagueLeaderboard = () => {
     activityMode,
     courseTotal: COURSE_TOTAL_MILES
   };
-}; 
+};

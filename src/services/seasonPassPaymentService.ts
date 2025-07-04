@@ -10,7 +10,7 @@ import seasonPassService from './seasonPassService';
 import { REWARDS } from '../config/rewardsConfig';
 
 // RUNSTR Reward NWC URI - Updated January 2025
-const RUNSTR_REWARD_NWC_URI = "nostr+walletconnect://ba80990666ef0b6f4ba5059347beb13242921e54669e680064ca755256a1e3a6?relay=wss%3A%2F%2Frelay.coinos.io&secret=975686fcf2632af13e263013337d6ee76747e85c5ead6863d6897c1c199ee0da&lud16=RUNSTR@coinos.io";
+const RUNSTR_REWARD_NWC_URI = "nostr+walletconnect://bc8032a1af649b90f45a8395c5054d8b45dacf6f3e99b99d6c11206e887f10e2?relay=wss://relay.getalby.com/v1&secret=8793aaf0eab13050cd52542d8b711b240511d80a84324a8a948ab7a81d3fba26&lud16=hustle@getalby.com";
 
 export interface SeasonPassPaymentResult {
   success: boolean;
