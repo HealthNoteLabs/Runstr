@@ -1,15 +1,33 @@
-import { useState, useContext } from 'react';
+import { useState, useContext, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { publishRun } from '../utils/runPublisher';
 import { NostrContext } from '../contexts/NostrContext';
 import { useSettings } from '../contexts/SettingsContext';
+import { getWorkoutAssociations } from '../utils/teamChallengeHelper';
 
 export const PostRunWizardModal = ({ run, onClose }) => {
   const [publishing, setPublishing] = useState(false);
   const [publishResults, setPublishResults] = useState(null);
+  const [teamInfo, setTeamInfo] = useState(null);
 
   const { lightningAddress, publicKey } = useContext(NostrContext);
   const settings = useSettings();
+
+  // Fetch team associations when modal opens
+  useEffect(() => {
+    const fetchTeamInfo = async () => {
+      try {
+        const associations = await getWorkoutAssociations();
+        setTeamInfo(associations.teamAssociation);
+      } catch (error) {
+        console.warn('PostRunWizardModal: Error fetching team associations:', error);
+        // Silently fail - modal still works without team info
+        setTeamInfo(null);
+      }
+    };
+
+    fetchTeamInfo();
+  }, []);
 
   const handlePublish = async () => {
     setPublishing(true);
@@ -78,6 +96,7 @@ export const PostRunWizardModal = ({ run, onClose }) => {
             <p><strong>Distance:</strong> {run.distance ? `${(run.distance / 1000).toFixed(2)} km` : 'N/A'}</p>
             <p><strong>Duration:</strong> {run.duration ? formatTime(run.duration) : 'N/A'}</p>
             <p><strong>Activity:</strong> {run.activityType || 'Run'}</p>
+            <p><strong>Team:</strong> {teamInfo?.teamName || 'None'}</p>
           </div>
           
           <div className="status-section mt-3">
