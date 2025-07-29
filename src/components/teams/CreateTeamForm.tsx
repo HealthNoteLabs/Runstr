@@ -134,7 +134,7 @@ const CreateTeamForm: React.FC = () => {
             id="teamName"
             value={teamName}
             onChange={(e) => setTeamName(e.target.value)}
-            className="w-full p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-purple-500 focus:border-purple-500"
+            className="w-full p-2 border border-border-primary rounded-md bg-bg-tertiary text-text-primary focus:ring-border-focus focus:border-border-focus"
             required
           />
         </div>
@@ -148,7 +148,7 @@ const CreateTeamForm: React.FC = () => {
             value={teamDescription}
             onChange={(e) => setTeamDescription(e.target.value)}
             rows={3}
-            className="w-full p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-purple-500 focus:border-purple-500"
+            className="w-full p-2 border border-border-primary rounded-md bg-bg-tertiary text-text-primary focus:ring-border-focus focus:border-border-focus"
           ></textarea>
         </div>
 
@@ -161,7 +161,7 @@ const CreateTeamForm: React.FC = () => {
             id="teamImage"
             value={teamImage}
             onChange={(e) => setTeamImage(e.target.value)}
-            className="w-full p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-purple-500 focus:border-purple-500"
+            className="w-full p-2 border border-border-primary rounded-md bg-bg-tertiary text-text-primary focus:ring-border-focus focus:border-border-focus"
             placeholder="https://example.com/image.png"
           />
         </div>
@@ -172,7 +172,7 @@ const CreateTeamForm: React.FC = () => {
               type="checkbox"
               checked={isPublic}
               onChange={(e) => setIsPublic(e.target.checked)}
-              className="h-4 w-4 text-purple-600 border-gray-500 rounded bg-gray-700 focus:ring-purple-500"
+              className="h-4 w-4 text-text-primary border-border-primary rounded bg-bg-tertiary focus:ring-border-focus"
             />
             <span className="ml-2 text-sm text-gray-300">Publicly visible team</span>
           </label>
@@ -187,7 +187,7 @@ const CreateTeamForm: React.FC = () => {
         <button
           type="submit"
           disabled={isLoading || !ndkReadyFromContext}
-          className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition duration-150 ease-in-out"
+          className="w-full bg-bg-primary hover:bg-bg-tertiary text-text-primary border border-border-primary font-bold py-2 px-4 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition duration-150 ease-in-out"
         >
           {isLoading ? (
             <div className="flex items-center justify-center">

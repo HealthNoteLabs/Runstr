@@ -107,9 +107,9 @@ select {
 
 /* Nostr button style */
 .nostr-button {
-  background-color: #8a30ff; /* Purple color for Nostr */
-  color: white;
-  border: none;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
   border-radius: 4px;
   padding: 10px 16px;
   font-size: 16px;
@@ -118,7 +118,7 @@ select {
 }
 
 .nostr-button:hover {
-  background-color: #7029d2;
+  background-color: var(--bg-tertiary);
 }
 
 .nostr-button:disabled {
@@ -192,9 +192,9 @@ select {
 }
 
 .confirm-button {
-  background-color: #8a30ff;
-  color: white;
-  border: none;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
   border-radius: 4px;
   padding: 10px 16px;
   font-size: 16px;
@@ -203,5 +203,5 @@ select {
 }
 
 .confirm-button:hover {
-  background-color: #7029d2;
+  background-color: var(--bg-tertiary);
 } 

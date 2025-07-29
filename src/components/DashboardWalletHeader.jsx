@@ -414,7 +414,9 @@ Current Mint: ${currentMint?.url || 'none'}
               className="action-button debug-button" 
               onClick={handleDebugError}
               style={{
-                background: '#ff9800',
+                background: 'var(--bg-tertiary)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-primary)',
                 fontSize: '0.7rem',
                 minWidth: '45px'
               }}
@@ -435,8 +437,8 @@ Current Mint: ${currentMint?.url || 'none'}
             
             {sendError && (
               <div className="error-message" style={{ 
-                background: 'rgba(255, 99, 99, 0.2)', 
-                color: '#ff6363', 
+                background: 'var(--bg-tertiary)', 
+                color: 'var(--text-primary)', 
                 padding: '8px', 
                 borderRadius: '6px', 
                 marginBottom: '12px',
@@ -444,7 +446,8 @@ Current Mint: ${currentMint?.url || 'none'}
                 maxHeight: '200px',
                 overflowY: 'auto',
                 whiteSpace: 'pre-wrap',
-                fontFamily: 'monospace'
+                fontFamily: 'monospace',
+                border: '1px solid var(--border-primary)'
               }}>
                 {sendError}
               </div>
@@ -452,12 +455,13 @@ Current Mint: ${currentMint?.url || 'none'}
 
             {sendSuccess && (
               <div className="success-message" style={{ 
-                background: 'rgba(99, 255, 99, 0.2)', 
-                color: '#63ff63', 
+                background: 'var(--bg-tertiary)', 
+                color: 'var(--text-primary)', 
                 padding: '8px', 
                 borderRadius: '6px', 
                 marginBottom: '12px',
-                fontSize: '0.9rem'
+                fontSize: '0.9rem',
+                border: '1px solid var(--border-primary)'
               }}>
                 {sendSuccess}
               </div>
@@ -566,8 +570,8 @@ Current Mint: ${currentMint?.url || 'none'}
             
             {receiveError && (
               <div className="error-message" style={{ 
-                background: 'rgba(255, 99, 99, 0.2)', 
-                color: '#ff6363', 
+                background: 'var(--bg-tertiary)', 
+                color: 'var(--text-primary)', 
                 padding: '8px', 
                 borderRadius: '6px', 
                 marginBottom: '12px',
@@ -575,7 +579,8 @@ Current Mint: ${currentMint?.url || 'none'}
                 maxHeight: '200px',
                 overflowY: 'auto',
                 whiteSpace: 'pre-wrap',
-                fontFamily: 'monospace'
+                fontFamily: 'monospace',
+                border: '1px solid var(--border-primary)'
               }}>
                 {receiveError}
               </div>
@@ -583,12 +588,13 @@ Current Mint: ${currentMint?.url || 'none'}
 
             {receiveSuccess && (
               <div className="success-message" style={{ 
-                background: 'rgba(99, 255, 99, 0.2)', 
-                color: '#63ff63', 
+                background: 'var(--bg-tertiary)', 
+                color: 'var(--text-primary)', 
                 padding: '8px', 
                 borderRadius: '6px', 
                 marginBottom: '12px',
-                fontSize: '0.9rem'
+                fontSize: '0.9rem',
+                border: '1px solid var(--border-primary)'
               }}>
                 {receiveSuccess}
               </div>
