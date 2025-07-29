@@ -17,6 +17,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { NostrContext } from '../contexts/NostrContext';
 import { publishRun } from '../utils/runPublisher';
 import appToast from '../utils/toast';
+import { getWorkoutAssociations } from '../utils/teamChallengeHelper';
 
 export const RunTracker = () => {
   const { 
@@ -139,10 +140,68 @@ export const RunTracker = () => {
   }, []);
 
   // Handle posting to Nostr
-  const handlePostToNostr = () => {
+  const handlePostToNostr = async () => {
     if (!recentRun) return;
-    setAdditionalContent('');
-    setShowPostModal(true);
+    
+    try {
+      // Fetch team associations
+      const associations = await getWorkoutAssociations();
+      const teamInfo = associations.teamAssociation;
+      
+      // Generate workout summary content
+      const run = recentRun;
+      const activity = run.activityType || ACTIVITY_TYPES.RUN;
+      const caloriesBurned = run.calories !== null && run.calories !== undefined 
+        ? run.calories 
+        : Math.round(run.distance * 0.06);
+
+      let activitySpecificMetricLine = '';
+      let introMessage = '';
+      let primaryHashtag = '#Running';
+
+      if (activity === ACTIVITY_TYPES.WALK) {
+        const steps = run.estimatedTotalSteps !== undefined ? Math.round(run.estimatedTotalSteps).toLocaleString() : '0';
+        activitySpecificMetricLine = `👟 Steps: ${steps} steps`;
+        introMessage = `Just completed a walk with RUNSTR! 🚶‍♀️💨`;
+        primaryHashtag = '#Walking';
+      } else if (activity === ACTIVITY_TYPES.CYCLE) {
+        const avgSpeed = run.averageSpeed && run.averageSpeed.value !== undefined ? parseFloat(run.averageSpeed.value).toFixed(1) : '0.0';
+        const speedUnit = run.averageSpeed && run.averageSpeed.unit ? run.averageSpeed.unit : (distanceUnit === 'km' ? 'km/h' : 'mph');
+        activitySpecificMetricLine = `🚴 Speed: ${avgSpeed} ${speedUnit}`;
+        introMessage = `Just completed a cycle with RUNSTR! 🚴💨`;
+        primaryHashtag = '#Cycling';
+      } else {
+        const paceValue = (run.duration / 60 / (distanceUnit === 'km' ? run.distance/1000 : run.distance/1609.344));
+        const paceString = (paceValue && paceValue !== Infinity && paceValue !== 0) 
+                          ? `${Math.floor(paceValue)}:${Math.round((paceValue - Math.floor(paceValue)) * 60).toString().padStart(2, '0')}`
+                          : '-';
+        activitySpecificMetricLine = `⚡ Pace: ${paceString} min/${distanceUnit}`;
+        introMessage = `Just completed a run with RUNSTR! 🏃‍♂️💨`;
+      }
+      
+      // Add team info if available
+      const teamLine = teamInfo?.teamName ? `\n🏆 Team: ${teamInfo.teamName}` : '';
+      
+      const generatedContent = `${teamLine ? teamLine + '\n\n' : ''}${introMessage}
+
+⏱️ Duration: ${runDataService.formatTime(run.duration)}
+📏 Distance: ${displayDistance(run.distance, distanceUnit)}
+${activitySpecificMetricLine}
+🔥 Calories: ${caloriesBurned} kcal
+${run.elevation && run.elevation.gain ? `\n🏔️ Elevation Gain: ${formatElevation(run.elevation.gain, distanceUnit)}` : ''}
+${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevation(run.elevation.loss, distanceUnit)}` : ''}
+#RUNSTR ${primaryHashtag}`.trim();
+
+      setAdditionalContent(generatedContent);
+      setIsAutoPost(true); // Mark as auto-generated to make it read-only
+      setShowPostModal(true);
+    } catch (error) {
+      console.error('Error preparing post content:', error);
+      // Fallback to empty content if there's an error
+      setAdditionalContent('');
+      setIsAutoPost(false);
+      setShowPostModal(true);
+    }
   };
 
   const handlePostSubmit = async () => {
@@ -788,20 +847,21 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="bg-bg-secondary rounded-xl p-6 w-full max-w-md border border-border-primary">
             <h3 className="text-xl font-semibold mb-4 text-text-primary">
-              {isAutoPost ? 'Auto-post Run to Nostr' : 'Post Run to Nostr'}
+              Post Run to Nostr
             </h3>
             {isAutoPost && (
               <p className="text-sm text-text-secondary mb-3">
-                Your run summary has been prepared. You can edit it before posting or cancel to skip.
+                Your run summary has been prepared with your workout details.
               </p>
             )}
             <textarea
               value={additionalContent}
               onChange={(e) => setAdditionalContent(e.target.value)}
               placeholder={isAutoPost ? "Edit your run summary..." : "Add any additional comments or hashtags..."}
-              rows={isAutoPost ? 10 : 4}
+              rows={isAutoPost ? 12 : 4}
               className="w-full bg-bg-tertiary border border-border-secondary rounded-lg p-3 mb-4 text-text-primary placeholder-text-muted focus:border-border-focus outline-none"
               disabled={isPosting}
+              readOnly={isAutoPost}
             />
             <div className="flex justify-end space-x-3">
               <Button 

@@ -1,15 +1,14 @@
-name: Build and Release Simple-updates Debug Apk
+name: Build and Release Development APK
 
 on:
   push:
     branches:
-      - '**'   # run for pushes to any branch
-      - '!development-consolidated'  # exclude development-consolidated (has its own workflow)
+      - development-consolidated
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
   build:
-    name: Build and Release Debug Apk
+    name: Build and Release Development APK
     runs-on: ubuntu-latest
 
     steps:
@@ -37,7 +36,7 @@ jobs:
       # Generate release tag dynamically
       - name: Generate Release Tag
         id: release_tag
-        run: echo "RELEASE_TAG=feed-${{ env.VERSION }}-${{ env.DATE }}" >> $GITHUB_ENV
+        run: echo "RELEASE_TAG=development-${{ env.VERSION }}-${{ env.DATE }}" >> $GITHUB_ENV
 
       # Build the React app
       - name: Build React app
@@ -66,7 +65,7 @@ jobs:
       - name: Grant execute permission to Gradle wrapper
         run: chmod +x ./android/gradlew
 
-      # Build Debug APK
+      # Build Debug APK (suitable for testing and distribution)
       - name: Build Debug APK
         run: cd android && ./gradlew assembleDebug
 
@@ -78,11 +77,29 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          release_name: 'Feed Fix ${{ env.RELEASE_TAG }}'
+          release_name: 'Development Release ${{ env.RELEASE_TAG }}'
+          body: |
+            🚀 **Development Release v${{ env.VERSION }}**
+            
+            This release includes:
+            - ✅ Complete feed functionality 
+            - ✅ Full team features (NIP-29 teams, local chat, leaderboards)
+            - ✅ Run tracking with GPS and activity modes
+            - ✅ Wallet integration (NWC, Lightning)
+            - ✅ Music integration with Wavlake
+            - ✅ Events and achievements system
+            
+            **Installation:**
+            Download the `runstr-v${{ env.VERSION }}.apk` file and install on your Android device.
+            
+            **Note:** This is a development release with consolidated features. Enable "Install from unknown sources" in Android settings.
+            
+            Built from branch: `development-consolidated`
+            Commit: ${{ github.sha }}
           draft: false
-          prerelease: true
+          prerelease: false
 
-      # Upload Debug APK to Release
+      # Upload Release APK to Release with proper naming
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
         env:
@@ -90,5 +107,5 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: android/app/build/outputs/apk/debug/app-debug.apk
-          asset_name: app-debug.apk
+          asset_name: runstr-v${{ env.VERSION }}.apk
           asset_content_type: application/vnd.android.package-archive

@@ -1,10 +1,27 @@
-import { useContext } from 'react';
+import { useContext, useState, useEffect } from 'react';
 import { useActivityMode, ACTIVITY_TYPES } from '../contexts/ActivityModeContext';
 import { useSettings } from '../contexts/SettingsContext';
+import { getWorkoutAssociations } from '../utils/teamChallengeHelper';
 
 export const ActivityModeBanner = ({ onSettingsClick }) => {
   const { mode, setMode, getActivityText } = useActivityMode();
   const { distanceUnit, toggleDistanceUnit } = useSettings();
+  const [teamInfo, setTeamInfo] = useState(null);
+
+  // Fetch team information when component mounts
+  useEffect(() => {
+    const fetchTeamInfo = async () => {
+      try {
+        const associations = await getWorkoutAssociations();
+        setTeamInfo(associations.teamAssociation);
+      } catch (error) {
+        console.warn('ActivityModeBanner: Error fetching team associations:', error);
+        setTeamInfo(null);
+      }
+    };
+
+    fetchTeamInfo();
+  }, []);
 
   const activityModes = [
     { 
@@ -32,6 +49,23 @@ export const ActivityModeBanner = ({ onSettingsClick }) => {
   return (
     <div className="dashboard-wallet-header">
       <div className="wallet-card">
+        {/* Team Display */}
+        {teamInfo && teamInfo.teamName && (
+          <div style={{
+            padding: '8px 16px',
+            borderBottom: '1px solid var(--border-color)',
+            fontSize: '0.75rem',
+            color: 'var(--text-secondary)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <svg xmlns="http://www.w3.org/2000/svg" style={{height: '14px', width: '14px'}} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+            <span>Team: {teamInfo.teamName}</span>
+          </div>
+        )}
         <div className="wallet-actions" style={{ 
           display: 'flex', 
           alignItems: 'center', 
