@@ -9,6 +9,7 @@ import { NostrContext } from '../contexts/NostrContext';
 import { fetchRunDataFromWatch, mapWatchDataToRun } from '../services/BluetoothService';
 import { SyncConfirmationModal } from '../components/modals/SyncConfirmationModal';
 import { testConnection } from '../lib/blossom';
+import { updateHapticsFromSettings } from '../utils/haptics';
 
 const Settings = () => {
   const { 
@@ -29,6 +30,8 @@ const Settings = () => {
     setAutoPostToNostr,
     autoPostKind1Note,
     setAutoPostKind1Note,
+    hapticsEnabled,
+    setHapticsEnabled,
     // skipStartCountdown,
     // setSkipStartCountdown,
     // skipEndCountdown,
@@ -136,6 +139,13 @@ const Settings = () => {
     const value = e.target.checked;
     setLeaderboardParticipation(value);
     saveLeaderboardParticipation(value);
+  };
+
+  // Save haptics setting
+  const handleHapticsToggle = (e) => {
+    const value = e.target.checked;
+    setHapticsEnabled(value);
+    updateHapticsFromSettings(value);
   };
   
   // COMMENTED OUT - Bitcoin rewards functions (moving to manual weekly rewards)
@@ -274,6 +284,19 @@ const Settings = () => {
               id="darkModeToggle"
               checked={darkMode}
               onChange={handleDarkModeToggle}
+            />
+            <span className="toggle-slider"></span>
+          </div>
+        </div>
+        
+        <div className="setting-item">
+          <label htmlFor="hapticsToggle">Haptic Feedback</label>
+          <div className="toggle-switch">
+            <input 
+              type="checkbox"
+              id="hapticsToggle"
+              checked={hapticsEnabled}
+              onChange={handleHapticsToggle}
             />
             <span className="toggle-slider"></span>
           </div>

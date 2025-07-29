@@ -18,6 +18,7 @@ import { NostrContext } from '../contexts/NostrContext';
 import { publishRun } from '../utils/runPublisher';
 import appToast from '../utils/toast';
 import { getWorkoutAssociations } from '../utils/teamChallengeHelper';
+import { triggerRunStart, triggerRunStop, triggerRunPause, triggerSuccess, triggerError } from '../utils/haptics';
 
 export const RunTracker = () => {
   const { 
@@ -207,6 +208,8 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
   const handlePostSubmit = async () => {
     if (!recentRun) return;
     
+    // Trigger haptic feedback for posting action
+    triggerSuccess();
     setIsPosting(true);
     
     try {
@@ -265,6 +268,9 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
   }, []);
 
   const initiateRun = () => {
+    // Trigger haptic feedback for starting a run
+    triggerRunStart();
+    
     // Check if the user has already granted permissions
     const permissionsGranted = localStorage.getItem('permissionsGranted');
     
@@ -280,6 +286,26 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
       appToast.error('Location permission is required for tracking. Please restart the app to grant permissions.');
       // Set the flag to show permission dialog next time the app starts
       localStorage.removeItem('permissionsGranted');
+    }
+  };
+
+  // Enhanced handlers with haptic feedback
+  const handleResumeRun = () => {
+    triggerRunStart();
+    resumeRun();
+  };
+
+  const handlePauseRun = () => {
+    triggerRunPause();
+    pauseRun();
+  };
+
+  const handleStopRun = () => {
+    triggerRunStop();
+    if (skipEndCountdown) {
+      stopRun();
+    } else {
+      startCountdown('stop');
     }
   };
 
@@ -404,6 +430,8 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
   const handleSaveWorkoutRecord = async () => {
     if (!recentRun) return;
     
+    // Trigger haptic feedback for save action
+    triggerSuccess();
     setIsSavingWorkout(true);
     setWorkoutSaved(false);
     
@@ -453,6 +481,8 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
     const confirmDelete = window.confirm("Are you sure you want to delete this run? This action cannot be undone.");
     if (!confirmDelete) return;
     
+    // Trigger haptic feedback for delete action (error pattern)
+    triggerError();
     setIsDeleting(true);
     
     try {
@@ -710,7 +740,7 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
         <div className="flex justify-between px-4 my-4">
           {isPaused ? (
             <Button 
-              onClick={resumeRun}
+              onClick={handleResumeRun}
               variant="success"
               className="flex-1 mr-2 font-semibold !bg-black border border-white"
             >
@@ -718,7 +748,7 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
             </Button>
           ) : (
             <Button 
-              onClick={pauseRun}
+              onClick={handlePauseRun}
               variant="warning"
               className="flex-1 mr-2 font-semibold !bg-black border border-white"
             >
@@ -726,13 +756,7 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
             </Button>
           )}
           <Button 
-            onClick={() => {
-              if (skipEndCountdown) {
-                stopRun();
-              } else {
-                startCountdown('stop');
-              }
-            }}
+            onClick={handleStopRun}
             variant="error"
             className="flex-1 ml-2 font-semibold !bg-black border border-white"
           >

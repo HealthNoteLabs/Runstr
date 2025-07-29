@@ -38,6 +38,7 @@
     "@capacitor-community/keep-awake": "^7.0.0",
     "@capacitor/android": "^7.0.1",
     "@capacitor/core": "^7.0.1",
+    "@capacitor/haptics": "^7.0.1",
     "@capawesome-team/capacitor-android-battery-optimization": "^7.0.0",
     "@getalby/bitcoin-connect": "^3.6.3",
     "@getalby/sdk": "^5.0.0",

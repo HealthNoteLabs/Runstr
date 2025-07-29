@@ -47,6 +47,8 @@ export const useSettings = () => {
       setAutoPostKind1Note: () => console.warn('Settings not initialized'),
       useLocalStats: false,
       setUseLocalStats: () => console.warn('Settings not initialized'),
+      hapticsEnabled: true,
+      setHapticsEnabled: () => console.warn('Settings not initialized'),
     };
     PUBLISHABLE_METRICS.forEach(metric => {
       const keyName = `publish${metric.key.charAt(0).toUpperCase() + metric.key.slice(1)}`;
@@ -85,6 +87,7 @@ export const SettingsProvider = ({ children }) => {
   const [autoPostToNostr, setAutoPostToNostr] = useState(() => initBooleanState('autoPostToNostr', false));
   const [autoPostKind1Note, setAutoPostKind1Note] = useState(() => initBooleanState('autoPostKind1Note', false));
   const [useLocalStats, setUseLocalStats] = useState(() => initBooleanState('useLocalStats', false));
+  const [hapticsEnabled, setHapticsEnabled] = useState(() => initBooleanState('hapticsEnabled', true));
 
   const initialMetricPrefs = useMemo(() => PUBLISHABLE_METRICS.reduce((acc, metric) => {
     const key = `publish${metric.key.charAt(0).toUpperCase() + metric.key.slice(1)}`;
@@ -111,6 +114,7 @@ export const SettingsProvider = ({ children }) => {
   useEffect(() => localStorage.setItem('autoPostToNostr', autoPostToNostr.toString()), [autoPostToNostr]);
   useEffect(() => localStorage.setItem('autoPostKind1Note', autoPostKind1Note.toString()), [autoPostKind1Note]);
   useEffect(() => localStorage.setItem('useLocalStats', useLocalStats.toString()), [useLocalStats]);
+  useEffect(() => localStorage.setItem('hapticsEnabled', hapticsEnabled.toString()), [hapticsEnabled]);
 
   useEffect(() => {
     try {
@@ -188,6 +192,7 @@ export const SettingsProvider = ({ children }) => {
     autoPostToNostr, setAutoPostToNostr,
     autoPostKind1Note, setAutoPostKind1Note,
     useLocalStats, setUseLocalStats,
+    hapticsEnabled, setHapticsEnabled,
     metricPublishPrefs,
     dynamicMetricSetters
   ]);
