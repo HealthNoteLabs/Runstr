@@ -101,7 +101,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
               value={eventName}
               onChange={(e) => setEventName(e.target.value)}
               placeholder="Saturday Morning 5K"
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white"
               required
             />
           </div>
@@ -119,8 +119,8 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   onClick={() => setActivity(type)}
                   className={`px-4 py-2 rounded-lg capitalize transition-colors ${
                     activity === type
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                      ? 'bg-white text-black border-2 border-black'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border-2 border-gray-700'
                   }`}
                 >
                   {type === 'run' ? '🏃 Run' : type === 'walk' ? '🚶 Walk' : '🚴 Cycle'}
@@ -142,8 +142,8 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   onClick={() => setDistance(preset.value)}
                   className={`px-4 py-2 rounded-lg transition-colors ${
                     distance === preset.value
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                      ? 'bg-white text-black border-2 border-black'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border-2 border-gray-700'
                   }`}
                 >
                   {preset.label}
@@ -158,7 +158,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 placeholder="Enter distance in km"
                 step="0.1"
                 min="0.1"
-                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white"
                 required
               />
             )}
@@ -174,7 +174,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
               value={eventDate}
               onChange={(e) => setEventDate(e.target.value)}
               min={minDate}
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-purple-500"
+              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-white"
               required
             />
           </div>
@@ -190,14 +190,14 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
                 placeholder="Start time"
-                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-white"
               />
               <input
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
                 placeholder="End time"
-                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-white"
               />
             </div>
             <p className="text-xs text-gray-500 mt-1">
