@@ -1220,4 +1220,221 @@ function parseDurationToSeconds(durationStr: string): number {
   
   // Handle plain seconds
   return parseInt(durationStr) || 0;
+}
+
+// Team Event specific types
+export interface TeamEventDetails {
+  id: string;
+  teamAIdentifier: string;
+  name: string;
+  activity: 'run' | 'walk' | 'cycle';
+  distance: number; // in km
+  date: string; // YYYY-MM-DD format
+  startTime?: string; // HH:MM format
+  endTime?: string; // HH:MM format
+  creatorPubkey: string;
+  createdAt: number;
+  participantCount?: number;
+}
+
+export interface EventParticipation {
+  pubkey: string;
+  workoutId: string;
+  duration: number; // in seconds
+  distance: number; // in km
+  pace: number; // min/km for run/walk, km/h for cycle
+  completedAt: number;
+}
+
+/**
+ * Creates a new team event (KIND_NIP101_TEAM_EVENT)
+ */
+export async function createTeamEvent(
+  ndk: NDK,
+  eventData: {
+    teamAIdentifier: string;
+    name: string;
+    activity: 'run' | 'walk' | 'cycle';
+    distance: number;
+    date: string;
+    startTime?: string;
+    endTime?: string;
+    creatorPubkey: string;
+  }
+): Promise<string | null> {
+  if (!ndk) {
+    console.error("NDK instance not provided to createTeamEvent.");
+    return null;
+  }
+
+  const eventId = uuidv4();
+  const tags = [
+    ["d", eventId],
+    ["a", eventData.teamAIdentifier],
+    ["name", eventData.name],
+    ["activity", eventData.activity],
+    ["distance", eventData.distance.toString()],
+    ["date", eventData.date]
+  ];
+
+  if (eventData.startTime) {
+    tags.push(["start_time", eventData.startTime]);
+  }
+  if (eventData.endTime) {
+    tags.push(["end_time", eventData.endTime]);
+  }
+
+  const eventTemplate: EventTemplate = {
+    kind: KIND_NIP101_TEAM_EVENT,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: tags,
+    content: `Team event: ${eventData.name} - ${eventData.distance}km ${eventData.activity} on ${eventData.date}`
+  };
+
+  try {
+    const ndkEvent = new NDKEvent(ndk, { ...eventTemplate, pubkey: eventData.creatorPubkey });
+    await ndkEvent.sign();
+    const publishedRelays = await ndkEvent.publish();
+    
+    if (publishedRelays.size > 0) {
+      console.log(`Team event created successfully: ${eventId}`);
+      return eventId;
+    } else {
+      console.error("Failed to publish team event to any relays.");
+      return null;
+    }
+  } catch (error) {
+    console.error("Error creating team event:", error);
+    return null;
+  }
+}
+
+/**
+ * Fetches all events for a team
+ */
+export async function fetchTeamEvents(
+  ndk: NDK,
+  teamAIdentifier: string
+): Promise<TeamEventDetails[]> {
+  if (!ndk) {
+    console.warn("NDK instance not provided to fetchTeamEvents.");
+    return [];
+  }
+
+  const filter: NDKFilter = {
+    kinds: [KIND_NIP101_TEAM_EVENT as NDKKind],
+    '#a': [teamAIdentifier],
+    limit: 100
+  };
+
+  try {
+    const eventsSet = await ndk.fetchEvents(filter, { cacheUsage: NDKSubscriptionCacheUsage.CACHE_FIRST });
+    const events = Array.from(eventsSet).map(ndkEvent => {
+      const rawEvent = ndkEvent.rawEvent();
+      const tags = rawEvent.tags;
+      
+      return {
+        id: tags.find(t => t[0] === 'd')?.[1] || '',
+        teamAIdentifier: teamAIdentifier,
+        name: tags.find(t => t[0] === 'name')?.[1] || 'Unnamed Event',
+        activity: (tags.find(t => t[0] === 'activity')?.[1] || 'run') as 'run' | 'walk' | 'cycle',
+        distance: parseFloat(tags.find(t => t[0] === 'distance')?.[1] || '0'),
+        date: tags.find(t => t[0] === 'date')?.[1] || '',
+        startTime: tags.find(t => t[0] === 'start_time')?.[1],
+        endTime: tags.find(t => t[0] === 'end_time')?.[1],
+        creatorPubkey: rawEvent.pubkey,
+        createdAt: rawEvent.created_at
+      };
+    });
+
+    // Sort by date (newest first)
+    events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    console.log(`Fetched ${events.length} events for team`);
+    return events;
+  } catch (error) {
+    console.error("Error fetching team events:", error);
+    return [];
+  }
+}
+
+/**
+ * Fetches participation data for a specific event
+ */
+export async function fetchEventParticipation(
+  ndk: NDK,
+  eventId: string,
+  teamAIdentifier: string,
+  eventDate: string
+): Promise<EventParticipation[]> {
+  if (!ndk) {
+    console.warn("NDK instance not provided to fetchEventParticipation.");
+    return [];
+  }
+
+  // Parse the team identifier to get team UUID
+  const teamParts = teamAIdentifier.split(':');
+  const teamUUID = teamParts[teamParts.length - 1];
+
+  // Fetch workouts for the event date with team tag
+  const startOfDay = new Date(eventDate);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(eventDate);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  const filter: NDKFilter = {
+    kinds: [KIND_WORKOUT_RECORD as NDKKind],
+    '#team_uuid': [teamUUID],
+    since: Math.floor(startOfDay.getTime() / 1000),
+    until: Math.floor(endOfDay.getTime() / 1000),
+    limit: 100
+  };
+
+  try {
+    const workoutsSet = await ndk.fetchEvents(filter, { cacheUsage: NDKSubscriptionCacheUsage.CACHE_FIRST });
+    const participation: EventParticipation[] = [];
+
+    Array.from(workoutsSet).forEach(ndkEvent => {
+      const workout = ndkEvent.rawEvent();
+      const tags = workout.tags;
+      
+      // Extract workout data
+      const distanceTag = tags.find(t => t[0] === 'distance');
+      const durationTag = tags.find(t => t[0] === 'duration');
+      const activityTag = tags.find(t => t[0] === 'activity');
+      
+      if (distanceTag && durationTag) {
+        const distance = parseFloat(distanceTag[1]);
+        const durationSeconds = parseDurationToSeconds(durationTag[1]);
+        const activity = activityTag?.[1] || 'run';
+        
+        // Calculate pace
+        let pace = 0;
+        if (distance > 0 && durationSeconds > 0) {
+          if (activity === 'cycle') {
+            // For cycling: km/h
+            pace = (distance / (durationSeconds / 3600));
+          } else {
+            // For run/walk: min/km
+            pace = (durationSeconds / 60) / distance;
+          }
+        }
+
+        participation.push({
+          pubkey: workout.pubkey,
+          workoutId: workout.id,
+          duration: durationSeconds,
+          distance: distance,
+          pace: pace,
+          completedAt: workout.created_at
+        });
+      }
+    });
+
+    console.log(`Found ${participation.length} participants for event ${eventId}`);
+    return participation;
+  } catch (error) {
+    console.error("Error fetching event participation:", error);
+    return [];
+  }
 } 

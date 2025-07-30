@@ -39,6 +39,7 @@ import TeamStatsWidget from '../components/teams/TeamStatsWidget';
 import { useTeamActivity } from '../hooks/useTeamActivity';
 import { setDefaultPostingTeamIdentifier, getDefaultPostingTeamIdentifier } from '../utils/settingsManager';
 import { cacheTeamName } from '../services/nameResolver';
+import TeamEventsTab from '../components/teams/TeamEventsTab';
 
 // Define a type for the route parameters
 interface TeamDetailParams extends Record<string, string | undefined> {
@@ -69,7 +70,7 @@ const TeamDetailPage: React.FC = () => {
   const [team, setTeam] = useState<NostrTeamEvent | null>(seededEvent);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'chat' | 'members'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'members' | 'events'>('chat');
 
   const [teamFeed, setTeamFeed] = useState<NostrWorkoutEvent[]>([]);
   const [isLoadingFeed, setIsLoadingFeed] = useState<boolean>(false);
@@ -442,7 +443,7 @@ const TeamDetailPage: React.FC = () => {
     return (
       <div className="mb-8 border-b border-border-secondary">
         <nav className="-mb-px flex space-x-6 sm:space-x-8 overflow-x-auto pb-px scrollbar-hide" aria-label="Tabs">
-          {['chat', 'members'].map((tabName) => {
+          {['chat', 'members', 'events'].map((tabName) => {
             let displayName = tabName;
             if (tabName === 'members') displayName = 'Members';
             else displayName = tabName.charAt(0).toUpperCase() + tabName.slice(1);
@@ -502,6 +503,13 @@ const TeamDetailPage: React.FC = () => {
       return <div className="text-text-muted p-4 text-center">Chat unavailable – missing team ID</div>;
     }
     return <LocalTeamChat teamId={teamUUID} userPubkey={currentUserPubkey} />;
+  };
+
+  const renderEventsTabContent = () => {
+    if (!teamAIdentifierForChat) {
+      return <div className="text-text-muted p-4 text-center">Events unavailable – missing team identifier</div>;
+    }
+    return <TeamEventsTab teamAIdentifier={teamAIdentifierForChat} isCaptain={isCurrentUserCaptain} />;
   };
 
   const renderCurrentTabContent = () => {
@@ -576,6 +584,8 @@ const TeamDetailPage: React.FC = () => {
             )}
           </div>
         );
+      case 'events':
+        return renderEventsTabContent();
       default:
         return null;
     }
