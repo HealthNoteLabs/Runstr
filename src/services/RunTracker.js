@@ -201,6 +201,13 @@ class RunTracker extends EventEmitter {
       return;
     }
 
+    // Filter out positions with poor GPS accuracy (> 20 meters)
+    const accuracy = newPosition.accuracy ?? newPosition.coords?.accuracy ?? 999;
+    if (accuracy > 20) {
+      console.log(`Position filtered: poor accuracy (${accuracy}m)`);
+      return;
+    }
+
     // Normalise the incoming position so it always has a `coords` object – this is
     // the shape expected by the shared helper utilities (runCalculations etc.)
     const standardise = (pos) => ({
@@ -215,6 +222,14 @@ class RunTracker extends EventEmitter {
     });
 
     const currentPositionStd = standardise(newPosition);
+
+    // Validate coordinates are within valid ranges
+    const lat = currentPositionStd.coords.latitude;
+    const lon = currentPositionStd.coords.longitude;
+    if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      console.log(`Position filtered: invalid coordinates (${lat}, ${lon})`);
+      return;
+    }
 
     // Keep duration accurate even when JS timers are throttled in background.
     // Uses GPS timestamp so splits don\'t get 0:00 durations.
@@ -430,6 +445,44 @@ class RunTracker extends EventEmitter {
       if (!permissionsGranted) {
         console.warn('Attempting to start tracking without permissions. This should not happen.');
         return;
+      }
+
+      // Additional safety check: verify actual system permissions if possible
+      try {
+        // This will help catch cases where localStorage is out of sync with actual permissions
+        await BackgroundGeolocation.addWatcher(
+          {
+            id: 'permission_test_' + Date.now(),
+            requestPermissions: false,
+            backgroundMessage: 'Testing permissions...',
+            backgroundTitle: 'Runstr',
+            highAccuracy: true,
+            distanceFilter: 999999, // Very high to avoid actual location updates
+            interval: 600000, // 10 minutes - won't actually fire
+          },
+          (location, error) => {
+            if (error && (error.code === 'NOT_AUTHORIZED' || error.message?.includes('permission'))) {
+              console.warn('Permission check failed, updating localStorage');
+              localStorage.setItem('permissionsGranted', 'false');
+              this.emit('permissionError', error);
+            }
+          }
+        );
+        // Clean up the test watcher immediately
+        setTimeout(async () => {
+          try {
+            await BackgroundGeolocation.removeWatcher({ id: 'permission_test_' + (Date.now() - 100) });
+          } catch (e) {
+            // Ignore cleanup errors for test watcher
+          }
+        }, 100);
+      } catch (permissionTestError) {
+        console.warn('Permission validation failed:', permissionTestError);
+        if (permissionTestError.message?.includes('permission')) {
+          localStorage.setItem('permissionsGranted', 'false');
+          this.emit('permissionError', permissionTestError);
+          return;
+        }
       }
       
       // First, ensure any existing watchers are cleaned up

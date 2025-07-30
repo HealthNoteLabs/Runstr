@@ -12,8 +12,8 @@
       "locationProvider": 3,
       "desiredAccuracy": 10,
       "stationaryRadius": 50,
-      "distanceFilter": 30,
-      "debug": true,
+      "distanceFilter": 5,
+      "debug": false,
       "stopOnTerminate": false,
       "startForeground": true,
       "foregroundServiceType": "location"
