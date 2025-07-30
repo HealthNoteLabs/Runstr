@@ -24,7 +24,7 @@ const TeamEventDetailPage: React.FC = () => {
     eventId: string;
   }>();
   const navigate = useNavigate();
-  const { ndk, ndkReady, publicKey } = useNostr();
+  const { ndk, ndkReady, publicKey, fetchWithTimeout, ensureConnection, ndkStatus } = useNostr();
 
 
   const [event, setEvent] = useState<TeamEventDetails | null>(null);
@@ -37,6 +37,7 @@ const TeamEventDetailPage: React.FC = () => {
   const [isParticipating, setIsParticipating] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
+  const [loadingState, setLoadingState] = useState<'loading' | 'success' | 'error' | 'timeout' | 'cancelled'>('loading');
   
   // Construct team identifier from URL params
   const teamAIdentifier = `33404:${captainPubkey}:${teamUUID}`;
@@ -80,58 +81,88 @@ const TeamEventDetailPage: React.FC = () => {
     }
   };
 
-  // Load event details
+  // Enhanced event loading with proper timeout and cancellation
   useEffect(() => {
+    if (!eventId || !teamAIdentifier) {
+      setLoadingState('error');
+      setLoadingStatus('Missing event ID or team identifier');
+      return;
+    }
+
+    let isMounted = true;
+    
     const loadEvent = async () => {
-      setLoadingStatus(`Checking NDK: ${!!ndk}, Ready: ${ndkReady}, EventID: ${!!eventId}`);
-      
-      if (!ndk || !ndkReady || !eventId || !teamAIdentifier) {
-        setLoadingStatus('Dependencies not ready');
-        setIsLoading(false);
-        return;
-      }
-
-      setIsLoading(true);
-      setLoadingStatus('Fetching team events...');
-      
       try {
-        // Add timeout to prevent hanging
-        const timeoutId = setTimeout(() => {
-          setLoadingStatus('Fetch timeout - retrying...');
-        }, 5000);
+        setLoadingState('loading');
+        setLoadingStatus('Checking NDK connection...');
+        
+        // Ensure NDK is ready with timeout
+        if (!ndkStatus?.isConnected) {
+          setLoadingStatus('Connecting to Nostr relays...');
+          const connected = await ensureConnection(15000);
+          if (!connected) {
+            if (isMounted) {
+              setLoadingState('error');
+              setLoadingStatus('Failed to connect to Nostr relays');
+              toast.error('Unable to connect to Nostr network');
+            }
+            return;
+          }
+        }
 
-        // Fetch team events and find the specific event
-        const teamEvents = await fetchTeamEvents(ndk, teamAIdentifier);
-        clearTimeout(timeoutId);
+        if (!isMounted) return;
+        setLoadingStatus('Fetching team events...');
         
+        // Use enhanced fetch with automatic timeout and cancellation
+        const teamEvents = await fetchWithTimeout(
+          (ndk) => fetchTeamEvents(ndk, teamAIdentifier),
+          12000 // 12 second timeout
+        );
+
+        if (!isMounted) return;
         setLoadingStatus(`Found ${teamEvents.length} events, searching for ${eventId}...`);
-        const foundEvent = teamEvents.find(e => e.id === eventId);
         
+        const foundEvent = teamEvents.find(e => e.id === eventId);
         if (!foundEvent) {
-          setLoadingStatus('Event not found');
-          toast.error('Event not found');
-          setTimeout(() => navigate(`/teams/${captainPubkey}/${teamUUID}`), 2000);
+          if (isMounted) {
+            setLoadingState('error');
+            setLoadingStatus('Event not found');
+            toast.error('Event not found');
+            setTimeout(() => navigate(`/teams/${captainPubkey}/${teamUUID}`), 2000);
+          }
           return;
         }
 
-        setLoadingStatus('Loading event details...');
+        if (!isMounted) return;
         setEvent(foundEvent);
-
         setLoadingStatus('Loading participants...');
-        // Load participants and participation data in parallel
+
+        // Load participants and participation data with timeout
         const [eventParticipants, participationData] = await Promise.all([
-          fetchEventParticipants(ndk, eventId, teamAIdentifier),
-          fetchEventParticipation(ndk, eventId, teamAIdentifier, foundEvent.date)
+          fetchWithTimeout(
+            (ndk) => fetchEventParticipants(ndk, eventId, teamAIdentifier),
+            10000
+          ),
+          fetchWithTimeout(
+            (ndk) => fetchEventParticipation(ndk, eventId, teamAIdentifier, foundEvent.date),
+            10000
+          )
         ]);
 
+        if (!isMounted) return;
         setParticipantPubkeys(eventParticipants);
         setParticipants(participationData);
 
         // Check if current user is participating
         if (publicKey) {
           setLoadingStatus('Checking participation...');
-          const userIsParticipating = await isUserParticipating(ndk, eventId, teamAIdentifier, publicKey);
-          setIsParticipating(userIsParticipating);
+          const userIsParticipating = await fetchWithTimeout(
+            (ndk) => isUserParticipating(ndk, eventId, teamAIdentifier, publicKey),
+            8000
+          );
+          if (isMounted) {
+            setIsParticipating(userIsParticipating);
+          }
         }
 
         // Load event activities if we have participants
@@ -140,18 +171,41 @@ const TeamEventDetailPage: React.FC = () => {
           await loadEventActivities(foundEvent, eventParticipants);
         }
         
-        setLoadingStatus('Complete');
+        if (isMounted) {
+          setLoadingState('success');
+          setLoadingStatus('Complete');
+        }
+
       } catch (error) {
         console.error('Error loading event:', error);
-        setLoadingStatus(`Error: ${error.message}`);
-        toast.error('Failed to load event details');
+        
+        if (!isMounted) return;
+        
+        if (error.message === 'Request cancelled') {
+          setLoadingState('cancelled');
+          setLoadingStatus('Request cancelled');
+        } else if (error.message.includes('timeout')) {
+          setLoadingState('timeout');
+          setLoadingStatus('Request timed out');
+          toast.error('Loading timed out. Please try again.');
+        } else {
+          setLoadingState('error');
+          setLoadingStatus(`Error: ${error.message}`);
+          toast.error('Failed to load event details');
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     loadEvent();
-  }, [ndk, ndkReady, eventId, teamAIdentifier, publicKey, captainPubkey, teamUUID, navigate]);
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [eventId, teamAIdentifier, fetchWithTimeout, ensureConnection, ndkStatus, publicKey, captainPubkey, teamUUID, navigate]);
 
   // Remove timeout - it's causing false timeouts when the event actually loads
   // The event is loading properly, just slowly
@@ -259,22 +313,22 @@ const TeamEventDetailPage: React.FC = () => {
       case 'completed':
         return (
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-gray-500"></div>
-            <span className="text-sm text-gray-400">Completed</span>
+            <div className="w-2 h-2 rounded-full bg-text-muted"></div>
+            <span className="text-sm text-text-muted">Completed</span>
           </div>
         );
       case 'active':
         return (
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
-            <span className="text-sm text-white font-medium">Live Now</span>
+            <div className="w-2 h-2 rounded-full bg-success animate-pulse"></div>
+            <span className="text-sm text-success font-medium">Live Now</span>
           </div>
         );
       case 'upcoming':
         return (
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-gray-400"></div>
-            <span className="text-sm text-gray-400">Upcoming</span>
+            <div className="w-2 h-2 rounded-full bg-text-secondary"></div>
+            <span className="text-sm text-text-secondary">Upcoming</span>
           </div>
         );
       default:
@@ -408,19 +462,20 @@ const TeamEventDetailPage: React.FC = () => {
     );
   };
 
-  if (isLoading) {
+  // Enhanced loading states with proper error handling
+  if (loadingState === 'loading' || isLoading) {
     return (
-      <div className="min-h-screen bg-black text-white p-4">
+      <div className="min-h-screen bg-bg-primary text-text-primary p-4">
         <div className="max-w-4xl mx-auto">
           <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
-            <p className="text-gray-400 mb-4">Loading event details...</p>
-            <div className="bg-gray-800 rounded-lg p-4 mb-4">
-              <p className="text-sm text-gray-300">{loadingStatus}</p>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-text-primary mx-auto mb-4"></div>
+            <p className="text-text-secondary mb-4">Loading event details...</p>
+            <div className="bg-bg-secondary rounded-lg p-4 mb-4 border border-border-secondary">
+              <p className="text-sm text-text-secondary">{loadingStatus}</p>
             </div>
             <button
               onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}`)}
-              className="mt-4 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg border border-gray-600 transition-colors"
+              className="mt-4 px-4 py-2 bg-bg-secondary hover:bg-bg-tertiary text-text-primary rounded-lg border border-border-secondary transition-colors"
             >
               ← Back to Team
             </button>
@@ -430,17 +485,81 @@ const TeamEventDetailPage: React.FC = () => {
     );
   }
 
-  if (!event) {
-        return (
-      <div className="min-h-screen bg-black text-white p-4">
+  if (loadingState === 'timeout') {
+    return (
+      <div className="min-h-screen bg-bg-primary text-text-primary p-4">
         <div className="max-w-4xl mx-auto">
           <div className="text-center py-8">
-            <p className="text-gray-400">Event not found</p>
+            <div className="text-warning text-4xl mb-4">⚠️</div>
+            <h2 className="text-xl font-semibold text-text-primary mb-2">Request Timed Out</h2>
+            <p className="text-text-secondary mb-4">Loading took too long. This might be due to slow relay connections.</p>
+            <div className="bg-bg-secondary rounded-lg p-4 mb-4 border border-border-secondary">
+              <p className="text-sm text-text-muted">{loadingStatus}</p>
+            </div>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 bg-primary hover:bg-primary-hover text-text-inverse rounded-lg transition-colors"
+              >
+                Try Again
+              </button>
+              <button
+                onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}`)}
+                className="px-4 py-2 bg-bg-secondary hover:bg-bg-tertiary text-text-primary rounded-lg border border-border-secondary transition-colors"
+              >
+                ← Back to Team
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadingState === 'error') {
+    return (
+      <div className="min-h-screen bg-bg-primary text-text-primary p-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center py-8">
+            <div className="text-error text-4xl mb-4">❌</div>
+            <h2 className="text-xl font-semibold text-text-primary mb-2">Loading Error</h2>
+            <p className="text-text-secondary mb-4">Unable to load event details</p>
+            <div className="bg-bg-secondary rounded-lg p-4 mb-4 border border-border-secondary">
+              <p className="text-sm text-text-muted">{loadingStatus}</p>
+            </div>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 bg-primary hover:bg-primary-hover text-text-inverse rounded-lg transition-colors"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}`)}
+                className="px-4 py-2 bg-bg-secondary hover:bg-bg-tertiary text-text-primary rounded-lg border border-border-secondary transition-colors"
+              >
+                ← Back to Team
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!event && loadingState === 'success') {
+    return (
+      <div className="min-h-screen bg-bg-primary text-text-primary p-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center py-8">
+            <div className="text-error text-4xl mb-4">🔍</div>
+            <h2 className="text-xl font-semibold text-text-primary mb-2">Event Not Found</h2>
+            <p className="text-text-secondary mb-4">The requested event could not be found</p>
             <button
               onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}`)}
-              className="mt-4 px-4 py-2 bg-white text-black rounded-lg hover:bg-gray-200 transition-colors"
+              className="mt-4 px-4 py-2 bg-primary hover:bg-primary-hover text-text-inverse rounded-lg transition-colors"
             >
-              Back to Team
+              ← Back to Team
             </button>
           </div>
         </div>
@@ -452,7 +571,7 @@ const TeamEventDetailPage: React.FC = () => {
   const status = getEventStatus();
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-bg-primary text-text-primary">
       <div className="max-w-4xl mx-auto p-4">
         {/* Header */}
         <div className="mb-6">

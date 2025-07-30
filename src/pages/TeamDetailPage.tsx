@@ -62,7 +62,7 @@ const TeamDetailPage: React.FC = () => {
   const { captainPubkey, teamUUID } = useParams<TeamDetailParams>();
   const location = useLocation();
   const seededEvent = (location.state as any)?.teamEvent ?? null;
-  const { ndk, ndkReady, publicKey, canReadData, connectSigner } = useNostr();
+  const { ndk, ndkReady, publicKey, canReadData, connectSigner, ndkStatus, ensureConnection } = useNostr();
   let currentUserPubkey = publicKey;
   const { wallet } = useAuth();
   const navigate = useNavigate();
@@ -124,11 +124,30 @@ const TeamDetailPage: React.FC = () => {
   };
 
   const loadTeamDetails = useCallback(async (forceRefetch = false) => {
-    // Option A: Use canReadData for data fetching operations
-    if (!captainPubkey || !teamUUID || !canReadData || !ndk) return;
+    if (!captainPubkey || !teamUUID) {
+      setError('Missing team parameters');
+      return;
+    }
+
     if (!forceRefetch) setIsLoading(true);
     setError(null);
+
     try {
+      // Ensure NDK connection before proceeding
+      if (!ndkStatus?.isConnected) {
+        console.log('[TeamDetailPage] Ensuring NDK connection...');
+        const connected = await ensureConnection(10000);
+        if (!connected) {
+          setError('Unable to connect to Nostr network');
+          return;
+        }
+      }
+
+      if (!ndk) {
+        setError('NDK not available');
+        return;
+      }
+
       const fetchedTeam = await fetchTeamById(ndk, captainPubkey, teamUUID);
       if (fetchedTeam) {
         setTeam(fetchedTeam);
@@ -149,13 +168,15 @@ const TeamDetailPage: React.FC = () => {
     } finally {
       if (!forceRefetch) setIsLoading(false);
     }
-  }, [captainPubkey, teamUUID, ndk, canReadData]);
+  }, [captainPubkey, teamUUID, ndk, ndkStatus, ensureConnection]);
 
   useEffect(() => {
-    if (captainPubkey && teamUUID && canReadData && ndk) {
+    // Always attempt to load if we have the basic parameters
+    // loadTeamDetails will handle NDK connection internally
+    if (captainPubkey && teamUUID) {
       loadTeamDetails();
     }
-  }, [captainPubkey, teamUUID, canReadData, ndk, loadTeamDetails]);
+  }, [captainPubkey, teamUUID, loadTeamDetails]);
 
   // Effect for Chat Subscription
   useEffect(() => {
@@ -412,7 +433,7 @@ const TeamDetailPage: React.FC = () => {
     return <div className="p-4 text-text-primary text-center bg-bg-primary min-h-screen">Loading team details...</div>;
   }
 
-  if (!canReadData && !isLoading && !team) {
+  if (!ndkStatus?.isConnected && !isLoading && !team) {
       return <div className="p-4 text-text-primary text-center bg-bg-primary min-h-screen">Connecting to Nostr... <br/> If this persists, please check your relay connections.</div>;
   }
 

@@ -87,8 +87,8 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
     if (upcomingEvents.length === 0) return null;
 
     return (
-      <div className="mb-6 p-4 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-0 focus:bg-gray-800" style={{backgroundColor: '#1f2937 !important', background: '#1f2937 !important'}}>
-        <h4 className="text-sm font-medium text-white mb-2">🔔 Upcoming Events</h4>
+      <div className="mb-6 p-4 bg-bg-secondary border border-border-secondary rounded-lg">
+        <h4 className="text-sm font-medium text-text-primary mb-2">🔔 Upcoming Events</h4>
         {upcomingEvents.map(event => {
           const timeUntil = getTimeUntilEvent(event.date);
           const isToday = new Date(event.date).toDateString() === new Date().toDateString();
@@ -96,18 +96,18 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
           return (
             <div key={event.id} className="flex items-center justify-between py-2">
               <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-white bg-gray-700 px-2 py-1 rounded">
+                <span className="text-xs font-bold text-text-inverse bg-bg-tertiary px-2 py-1 rounded">
                   {getActivityLabel(event.activity)}
                 </span>
                 <div>
-                  <p className="text-white font-medium">{event.name}</p>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-text-primary font-medium">{event.name}</p>
+                  <p className="text-xs text-text-muted">
                     {event.distance}km {event.activity} • {isToday ? 'Today' : 'Tomorrow'}
                   </p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-sm text-white">
+                <p className="text-sm text-text-primary">
                   {timeUntil === 'starting soon' ? 'Starting Soon!' : `Starts ${timeUntil}`}
                 </p>
               </div>
@@ -175,22 +175,22 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
       case 'completed':
         return (
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-gray-500"></div>
-            <span className="text-xs text-gray-400">Completed</span>
+            <div className="w-2 h-2 rounded-full bg-text-muted"></div>
+            <span className="text-xs text-text-muted">Completed</span>
           </div>
         );
       case 'active':
         return (
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-            <span className="text-xs text-green-400 font-medium">Live Now</span>
+            <div className="w-2 h-2 rounded-full bg-success animate-pulse"></div>
+            <span className="text-xs text-success font-medium">Live Now</span>
           </div>
         );
       case 'upcoming':
         return (
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-white"></div>
-            <span className="text-xs text-white">
+            <div className="w-2 h-2 rounded-full bg-text-primary"></div>
+            <span className="text-xs text-text-primary">
               Starts {timeUntil}
             </span>
           </div>
@@ -236,11 +236,11 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
       {renderReminderBanner()}
       
       <div className="flex justify-between items-center">
-        <h3 className="text-xl font-semibold text-gray-100">Team Events</h3>
+        <h3 className="text-xl font-semibold text-text-primary">Team Events</h3>
         {isCaptain && (
           <button
             onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-black hover:bg-gray-900 text-white font-semibold rounded-lg transition-colors border-2 border-white focus:outline-none focus:ring-0"
+            className="px-4 py-2 bg-bg-primary hover:bg-bg-tertiary text-text-primary font-semibold rounded-lg transition-colors border-2 border-border-primary focus:outline-none focus:ring-0"
           >
             Create Event
           </button>
@@ -248,10 +248,10 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
       </div>
 
       {events.length === 0 ? (
-        <div className="text-center py-12 bg-gray-800/50 rounded-lg border border-gray-700 focus:outline-none focus:ring-0 focus:bg-gray-800/50" style={{backgroundColor: 'rgba(31, 41, 55, 0.5) !important', background: 'rgba(31, 41, 55, 0.5) !important'}}>
-          <p className="text-gray-400 mb-2">No events created yet.</p>
+        <div className="text-center py-12 bg-bg-secondary/50 rounded-lg border border-border-secondary">
+          <p className="text-text-muted mb-2">No events created yet.</p>
           {isCaptain && (
-            <p className="text-sm text-gray-500">Create your first team event to get started!</p>
+            <p className="text-sm text-text-muted">Create your first team event to get started!</p>
           )}
         </div>
       ) : (
@@ -262,21 +262,20 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
               <div
                 key={event.id}
                 onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}/event/${event.id}`)}
-                className="bg-gray-800 border border-gray-700 rounded-lg p-4 hover:bg-gray-700 transition-colors cursor-pointer focus:outline-none focus:ring-0 focus:bg-gray-700 active:bg-gray-700"
-                style={{backgroundColor: '#1f2937 !important', background: '#1f2937 !important'}}
+                className="bg-bg-secondary border border-border-secondary rounded-lg p-4 hover:bg-bg-tertiary transition-colors cursor-pointer"
               >
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex items-center space-x-3">
-                    <span className="text-sm font-bold text-white bg-gray-700 px-3 py-2 rounded">
+                    <span className="text-sm font-bold text-text-inverse bg-bg-tertiary px-3 py-2 rounded">
                       {getActivityLabel(event.activity)}
                     </span>
                     <div>
-                      <h4 className="text-lg font-semibold text-white">{event.name}</h4>
-                      <p className="text-sm text-gray-400">
+                      <h4 className="text-lg font-semibold text-text-primary">{event.name}</h4>
+                      <p className="text-sm text-text-secondary">
                         {event.distance}km {event.activity}
                       </p>
                       {event.description && (
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-text-muted mt-1">
                           {event.description}
                         </p>
                       )}
@@ -285,12 +284,12 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
                   {getStatusBadge(status, event.date)}
                 </div>
                 <div className="flex justify-between items-center mt-3">
-                  <p className="text-sm text-gray-400">
+                  <p className="text-sm text-text-secondary">
                     {formatEventDate(event.date)}
                     {event.startTime && ` • ${event.startTime}`}
                     {event.endTime && ` - ${event.endTime}`}
                   </p>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-text-muted">
                     {event.participantCount || 0} participants
                   </p>
                 </div>
