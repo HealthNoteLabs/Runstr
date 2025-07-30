@@ -86,19 +86,21 @@ Transform team events to match the league tab functionality, creating a unified 
 - [ ] Progress indicators
 
 ### Phase 3: Activity Feed Integration
-**Status: Planned**
+**Status: Complete**
 
 #### 3.1 Feed Data Fetching
-- [ ] Query kind 1301 with event tags
-- [ ] Filter by participant list
-- [ ] Apply date range filtering
-- [ ] Sort by recency
+- [x] Query kind 1301 with event tags
+- [x] Filter by participant list
+- [x] Apply date range filtering
+- [x] Sort by recency
 
 #### 3.2 Feed Display
-- [ ] Reuse Post/WorkoutCard components
-- [ ] Display below leaderboard
-- [ ] Show participant profiles
-- [ ] Activity-specific formatting
+- [x] Reuse Post/WorkoutCard components
+- [x] Display below leaderboard
+- [x] Show participant profiles
+- [x] Activity-specific formatting
+- [x] Loading states and empty states
+- [x] Auto-refresh on participant changes
 
 ### Phase 4: UI Polish - Black/White Theme
 **Status: Planned**

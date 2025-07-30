@@ -40,6 +40,15 @@ export interface NostrTeamEvent extends NostrEvent {
 
 export interface NostrWorkoutEvent extends NostrEvent {} // Basic type for workout events
 
+export interface EventParticipation {
+  pubkey: string;
+  distance: number;
+  duration: number;
+  pace: number;
+  joined_at: number;
+  completed_at?: number;
+}
+
 /**
  * Prepares a new NIP-101e Fitness Team (Kind 33404) event template.
  * The actual signing and publishing will be handled by the app's NDK/Nostr client instance.
@@ -1656,6 +1665,7 @@ export async function isUserParticipating(
   return participants.includes(userPubkey);
 }
 
+
 /**
  * Fetch event activities - returns kind 1301 events from participants during event period
  */
@@ -1681,8 +1691,9 @@ export async function fetchEventActivities(
     kinds: [KIND_WORKOUT_RECORD as NDKKind],
     authors: participantPubkeys,
     since: eventStartTime,
-    until: eventEndTime,
-    '#team': [teamAIdentifier] // Activities tagged with team
+    until: eventEndTime
+    // Note: Removed '#team' filter to capture all activities during event period
+    // Activities don't need to be explicitly tagged with the team to count for the event
   };
 
   try {

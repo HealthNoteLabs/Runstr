@@ -9,9 +9,11 @@ import {
   fetchEventParticipants,
   isUserParticipating,
   fetchEventParticipation, 
+  fetchEventActivities,
   EventParticipation 
 } from '../services/nostr/NostrTeamsService';
 import { DisplayName } from '../components/shared/DisplayName';
+import { Post } from '../components/Post';
 import EditEventModal from '../components/modals/EditEventModal';
 import toast from 'react-hot-toast';
 
@@ -27,7 +29,9 @@ const TeamEventDetailPage: React.FC = () => {
   const [event, setEvent] = useState<TeamEventDetails | null>(null);
   const [participants, setParticipants] = useState<EventParticipation[]>([]);
   const [participantPubkeys, setParticipantPubkeys] = useState<string[]>([]);
+  const [activities, setActivities] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingActivities, setIsLoadingActivities] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [isParticipating, setIsParticipating] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -37,6 +41,42 @@ const TeamEventDetailPage: React.FC = () => {
 
   // Check if current user is team captain
   const isCaptain = publicKey === captainPubkey;
+
+  // Load event activities
+  const loadEventActivities = async (eventDetails: TeamEventDetails, participantPubkeys: string[]) => {
+    if (!ndk || participantPubkeys.length === 0) return;
+
+    setIsLoadingActivities(true);
+    try {
+      const eventActivities = await fetchEventActivities(
+        ndk, 
+        eventDetails.id, 
+        teamAIdentifier, 
+        participantPubkeys, 
+        eventDetails.date,
+        eventDetails.endTime ? eventDetails.date : undefined
+      );
+
+      // Convert NDK events to a format compatible with Post component
+      const formattedActivities = eventActivities.map(activity => ({
+        ...activity,
+        kind: activity.kind,
+        content: activity.content,
+        created_at: activity.created_at,
+        pubkey: activity.pubkey,
+        tags: activity.tags,
+        author: {
+          pubkey: activity.pubkey
+        }
+      }));
+
+      setActivities(formattedActivities);
+    } catch (error) {
+      console.error('Error loading event activities:', error);
+    } finally {
+      setIsLoadingActivities(false);
+    }
+  };
 
   // Load event details
   useEffect(() => {
@@ -72,6 +112,11 @@ const TeamEventDetailPage: React.FC = () => {
           setIsParticipating(userIsParticipating);
         }
 
+        // Load event activities if we have participants
+        if (eventParticipants.length > 0) {
+          await loadEventActivities(foundEvent, eventParticipants);
+        }
+
       } catch (error) {
         console.error('Error loading event:', error);
         toast.error('Failed to load event details');
@@ -99,6 +144,11 @@ const TeamEventDetailPage: React.FC = () => {
         // Refresh participant list
         const updatedParticipants = await fetchEventParticipants(ndk, eventId!, teamAIdentifier);
         setParticipantPubkeys(updatedParticipants);
+        
+        // Refresh activities if event details are available
+        if (event && updatedParticipants.length > 0) {
+          await loadEventActivities(event, updatedParticipants);
+        }
       } else {
         toast.error('Failed to join event');
       }
@@ -126,6 +176,11 @@ const TeamEventDetailPage: React.FC = () => {
         // Refresh participant list
         const updatedParticipants = await fetchEventParticipants(ndk, eventId!, teamAIdentifier);
         setParticipantPubkeys(updatedParticipants);
+        
+        // Refresh activities if event details are available
+        if (event && updatedParticipants.length > 0) {
+          await loadEventActivities(event, updatedParticipants);
+        }
       } else {
         toast.error('Failed to leave event');
       }
@@ -439,6 +494,46 @@ const TeamEventDetailPage: React.FC = () => {
           </div>
           
           {renderLeaderboard()}
+        </div>
+
+        {/* Activity Feed Section */}
+        <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden mt-6">
+          <div className="p-4 border-b border-gray-700 bg-gray-800">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-white">Event Activities</h2>
+              <span className="text-sm text-gray-400">
+                {activities.length} workout{activities.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+          </div>
+          
+          <div className="p-4">
+            {isLoadingActivities ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
+                <p className="text-gray-400">Loading activities...</p>
+              </div>
+            ) : activities.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-gray-400 mb-2">No activities yet</p>
+                <p className="text-sm text-gray-500">
+                  Participant workouts during the event will appear here
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {activities.map((activity, index) => (
+                  <div key={activity.id || index} className="bg-gray-800 rounded-lg border border-gray-700">
+                    <Post 
+                      post={activity} 
+                      handleZap={() => {}} 
+                      wallet={null} 
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
