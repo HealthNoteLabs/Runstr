@@ -240,7 +240,7 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
         {isCaptain && (
           <button
             onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-black hover:bg-gray-900 text-white font-semibold rounded-lg transition-colors border-2 border-white"
+            className="px-4 py-2 bg-black hover:bg-gray-900 text-white font-semibold rounded-lg transition-colors border-2 border-white focus:outline-none focus:ring-0"
           >
             Create Event
           </button>

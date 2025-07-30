@@ -81,7 +81,10 @@ const TeamEventDetailPage: React.FC = () => {
   // Load event details
   useEffect(() => {
     const loadEvent = async () => {
-      if (!ndk || !ndkReady || !eventId || !teamAIdentifier) return;
+      if (!ndk || !ndkReady || !eventId || !teamAIdentifier) {
+        setIsLoading(false);
+        return;
+      }
 
       setIsLoading(true);
       try {
@@ -385,6 +388,7 @@ const TeamEventDetailPage: React.FC = () => {
       <div className="min-h-screen bg-black text-white p-4">
         <div className="max-w-4xl mx-auto">
           <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
             <p className="text-gray-400">Loading event details...</p>
           </div>
         </div>
