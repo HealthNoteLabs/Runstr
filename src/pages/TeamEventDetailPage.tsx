@@ -36,6 +36,8 @@ const TeamEventDetailPage: React.FC = () => {
   const [isJoining, setIsJoining] = useState(false);
   const [isParticipating, setIsParticipating] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState('Initializing...');
+  
   // Construct team identifier from URL params
   const teamAIdentifier = `33404:${captainPubkey}:${teamUUID}`;
 
@@ -81,25 +83,41 @@ const TeamEventDetailPage: React.FC = () => {
   // Load event details
   useEffect(() => {
     const loadEvent = async () => {
+      setLoadingStatus(`Checking NDK: ${!!ndk}, Ready: ${ndkReady}, EventID: ${!!eventId}`);
+      
       if (!ndk || !ndkReady || !eventId || !teamAIdentifier) {
+        setLoadingStatus('Dependencies not ready');
         setIsLoading(false);
         return;
       }
 
       setIsLoading(true);
+      setLoadingStatus('Fetching team events...');
+      
       try {
+        // Add timeout to prevent hanging
+        const timeoutId = setTimeout(() => {
+          setLoadingStatus('Fetch timeout - retrying...');
+        }, 5000);
+
         // Fetch team events and find the specific event
         const teamEvents = await fetchTeamEvents(ndk, teamAIdentifier);
+        clearTimeout(timeoutId);
+        
+        setLoadingStatus(`Found ${teamEvents.length} events, searching for ${eventId}...`);
         const foundEvent = teamEvents.find(e => e.id === eventId);
         
         if (!foundEvent) {
+          setLoadingStatus('Event not found');
           toast.error('Event not found');
-          navigate(`/teams/${captainPubkey}/${teamUUID}`);
+          setTimeout(() => navigate(`/teams/${captainPubkey}/${teamUUID}`), 2000);
           return;
         }
 
+        setLoadingStatus('Loading event details...');
         setEvent(foundEvent);
 
+        setLoadingStatus('Loading participants...');
         // Load participants and participation data in parallel
         const [eventParticipants, participationData] = await Promise.all([
           fetchEventParticipants(ndk, eventId, teamAIdentifier),
@@ -111,16 +129,21 @@ const TeamEventDetailPage: React.FC = () => {
 
         // Check if current user is participating
         if (publicKey) {
+          setLoadingStatus('Checking participation...');
           const userIsParticipating = await isUserParticipating(ndk, eventId, teamAIdentifier, publicKey);
           setIsParticipating(userIsParticipating);
         }
 
         // Load event activities if we have participants
         if (eventParticipants.length > 0) {
+          setLoadingStatus('Loading activities...');
           await loadEventActivities(foundEvent, eventParticipants);
         }
+        
+        setLoadingStatus('Complete');
       } catch (error) {
         console.error('Error loading event:', error);
+        setLoadingStatus(`Error: ${error.message}`);
         toast.error('Failed to load event details');
       } finally {
         setIsLoading(false);
@@ -391,7 +414,16 @@ const TeamEventDetailPage: React.FC = () => {
         <div className="max-w-4xl mx-auto">
           <div className="text-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
-            <p className="text-gray-400">Loading event details...</p>
+            <p className="text-gray-400 mb-4">Loading event details...</p>
+            <div className="bg-gray-800 rounded-lg p-4 mb-4">
+              <p className="text-sm text-gray-300">{loadingStatus}</p>
+            </div>
+            <button
+              onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}`)}
+              className="mt-4 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg border border-gray-600 transition-colors"
+            >
+              ← Back to Team
+            </button>
           </div>
         </div>
       </div>
@@ -456,8 +488,8 @@ const TeamEventDetailPage: React.FC = () => {
 
           {/* Action Buttons */}
           <div className="flex items-center gap-3">
-            {/* Show join/leave button for non-captains */}
-            {!isCaptain && (
+            {/* Show join/leave button for all logged-in users (including captains) */}
+            {publicKey && (
               <>
                 {isParticipating ? (
                   <button
@@ -497,8 +529,8 @@ const TeamEventDetailPage: React.FC = () => {
         </div>
 
         {/* Participants Section */}
-        <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden focus:outline-none focus:ring-0">
-          <div className="p-4 border-b border-gray-700 bg-gray-800 focus:outline-none focus:ring-0 focus:bg-gray-800">
+        <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden focus:outline-none focus:ring-0" style={{backgroundColor: '#111827 !important', background: '#111827 !important'}}>
+          <div className="p-4 border-b border-gray-700 bg-gray-800 focus:outline-none focus:ring-0 focus:bg-gray-800" style={{backgroundColor: '#1f2937 !important', background: '#1f2937 !important'}}>
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold text-white">Event Leaderboard</h2>
               <span className="text-sm text-gray-400">
@@ -511,8 +543,8 @@ const TeamEventDetailPage: React.FC = () => {
         </div>
 
         {/* Activity Feed Section */}
-        <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden mt-6 focus:outline-none focus:ring-0">
-          <div className="p-4 border-b border-gray-700 bg-gray-800 focus:outline-none focus:ring-0 focus:bg-gray-800">
+        <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden mt-6 focus:outline-none focus:ring-0" style={{backgroundColor: '#111827 !important', background: '#111827 !important'}}>
+          <div className="p-4 border-b border-gray-700 bg-gray-800 focus:outline-none focus:ring-0 focus:bg-gray-800" style={{backgroundColor: '#1f2937 !important', background: '#1f2937 !important'}}>
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold text-white">Event Activities</h2>
               <span className="text-sm text-gray-400">

@@ -87,7 +87,7 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
     if (upcomingEvents.length === 0) return null;
 
     return (
-      <div className="mb-6 p-4 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-0 focus:bg-gray-800">
+      <div className="mb-6 p-4 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-0 focus:bg-gray-800" style={{backgroundColor: '#1f2937 !important', background: '#1f2937 !important'}}>
         <h4 className="text-sm font-medium text-white mb-2">🔔 Upcoming Events</h4>
         {upcomingEvents.map(event => {
           const timeUntil = getTimeUntilEvent(event.date);
@@ -248,7 +248,7 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
       </div>
 
       {events.length === 0 ? (
-        <div className="text-center py-12 bg-gray-800/50 rounded-lg border border-gray-700 focus:outline-none focus:ring-0 focus:bg-gray-800/50">
+        <div className="text-center py-12 bg-gray-800/50 rounded-lg border border-gray-700 focus:outline-none focus:ring-0 focus:bg-gray-800/50" style={{backgroundColor: 'rgba(31, 41, 55, 0.5) !important', background: 'rgba(31, 41, 55, 0.5) !important'}}>
           <p className="text-gray-400 mb-2">No events created yet.</p>
           {isCaptain && (
             <p className="text-sm text-gray-500">Create your first team event to get started!</p>
@@ -263,6 +263,7 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
                 key={event.id}
                 onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}/event/${event.id}`)}
                 className="bg-gray-800 border border-gray-700 rounded-lg p-4 hover:bg-gray-700 transition-colors cursor-pointer focus:outline-none focus:ring-0 focus:bg-gray-700 active:bg-gray-700"
+                style={{backgroundColor: '#1f2937 !important', background: '#1f2937 !important'}}
               >
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex items-center space-x-3">
