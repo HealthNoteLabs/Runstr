@@ -26,6 +26,12 @@ const TeamEventDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const { ndk, ndkReady, publicKey } = useNostr();
 
+  console.log('TeamEventDetailPage: Component rendered with params:', {
+    captainPubkey,
+    teamUUID,
+    eventId
+  });
+
   const [event, setEvent] = useState<TeamEventDetails | null>(null);
   const [participants, setParticipants] = useState<EventParticipation[]>([]);
   const [participantPubkeys, setParticipantPubkeys] = useState<string[]>([]);
@@ -35,12 +41,19 @@ const TeamEventDetailPage: React.FC = () => {
   const [isJoining, setIsJoining] = useState(false);
   const [isParticipating, setIsParticipating] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string[]>([]);
+  const [loadingStep, setLoadingStep] = useState('');
 
   // Construct team identifier from URL params
   const teamAIdentifier = `33404:${captainPubkey}:${teamUUID}`;
 
   // Check if current user is team captain
   const isCaptain = publicKey === captainPubkey;
+
+  // Helper to add debug messages
+  const addDebugInfo = (message: string) => {
+    setDebugInfo(prev => [...prev.slice(-4), `${new Date().toLocaleTimeString()}: ${message}`]);
+  };
 
   // Load event activities
   const loadEventActivities = async (eventDetails: TeamEventDetails, participantPubkeys: string[]) => {
@@ -81,31 +94,58 @@ const TeamEventDetailPage: React.FC = () => {
   // Load event details
   useEffect(() => {
     const loadEvent = async () => {
-      if (!ndk || !ndkReady || !eventId || !teamAIdentifier) {
+      addDebugInfo(`Loading started - NDK: ${!!ndk}, Ready: ${ndkReady}, EventID: ${eventId}`);
+      setLoadingStep('Checking dependencies...');
+
+      if (!ndk || !ndkReady) {
+        addDebugInfo(`NDK not ready - NDK: ${!!ndk}, Ready: ${ndkReady}`);
+        setLoadingStep('Waiting for connection...');
         setIsLoading(false);
         return;
       }
 
+      if (!eventId || !teamAIdentifier) {
+        addDebugInfo(`Missing parameters - EventID: ${eventId}, Team: ${!!teamAIdentifier}`);
+        setLoadingStep('Invalid parameters');
+        setIsLoading(false);
+        return;
+      }
+
+      setLoadingStep('Fetching team events...');
       setIsLoading(true);
       try {
+        addDebugInfo(`Fetching events for team: ${teamAIdentifier.substring(0, 20)}...`);
         // Fetch team events and find the specific event
         const teamEvents = await fetchTeamEvents(ndk, teamAIdentifier);
+        addDebugInfo(`Found ${teamEvents.length} team events`);
+        setLoadingStep(`Found ${teamEvents.length} events, searching...`);
+        
         const foundEvent = teamEvents.find(e => e.id === eventId);
+        addDebugInfo(`Looking for event ID: ${eventId}`);
+        if (teamEvents.length > 0) {
+          addDebugInfo(`First event ID: ${teamEvents[0].id}`);
+        }
         
         if (!foundEvent) {
+          addDebugInfo(`Event not found! Available IDs: ${teamEvents.map(e => e.id).join(', ')}`);
+          setLoadingStep('Event not found');
           toast.error('Event not found');
-          navigate(`/teams/${captainPubkey}/${teamUUID}`);
+          setTimeout(() => navigate(`/teams/${captainPubkey}/${teamUUID}`), 2000);
           return;
         }
 
+        addDebugInfo(`Event found: ${foundEvent.name}`);
+        setLoadingStep('Loading event details...');
         setEvent(foundEvent);
 
+        setLoadingStep('Loading participants...');
         // Load participants and participation data in parallel
         const [eventParticipants, participationData] = await Promise.all([
           fetchEventParticipants(ndk, eventId, teamAIdentifier),
           fetchEventParticipation(ndk, eventId, teamAIdentifier, foundEvent.date)
         ]);
 
+        addDebugInfo(`Loaded ${eventParticipants.length} participants`);
         setParticipantPubkeys(eventParticipants);
         setParticipants(participationData);
 
@@ -117,19 +157,38 @@ const TeamEventDetailPage: React.FC = () => {
 
         // Load event activities if we have participants
         if (eventParticipants.length > 0) {
+          setLoadingStep('Loading activities...');
           await loadEventActivities(foundEvent, eventParticipants);
         }
 
+        addDebugInfo('Event loaded successfully!');
       } catch (error) {
-        console.error('Error loading event:', error);
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        addDebugInfo(`Error: ${errorMsg}`);
+        setLoadingStep(`Error: ${errorMsg}`);
         toast.error('Failed to load event details');
       } finally {
+        setLoadingStep('Complete');
         setIsLoading(false);
       }
     };
 
     loadEvent();
   }, [ndk, ndkReady, eventId, teamAIdentifier, publicKey, captainPubkey, teamUUID, navigate]);
+
+  // Fallback timeout to prevent infinite loading
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (isLoading) {
+        addDebugInfo('Loading timeout after 10 seconds');
+        setLoadingStep('Timeout - forcing stop');
+        setIsLoading(false);
+        toast.error('Loading timeout - please try again');
+      }
+    }, 10000); // 10 second timeout
+
+    return () => clearTimeout(timeout);
+  }, [isLoading]);
 
   const handleJoinEvent = async () => {
     if (!ndk || !publicKey || !event) {
@@ -389,7 +448,33 @@ const TeamEventDetailPage: React.FC = () => {
         <div className="max-w-4xl mx-auto">
           <div className="text-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
-            <p className="text-gray-400">Loading event details...</p>
+            <p className="text-gray-400 mb-4">Loading event details...</p>
+            
+            {/* Current loading step */}
+            <div className="bg-gray-800 rounded-lg p-4 mb-4">
+              <p className="text-white font-semibold">Current Step:</p>
+              <p className="text-gray-300">{loadingStep || 'Initializing...'}</p>
+            </div>
+
+            {/* Debug info */}
+            {debugInfo.length > 0 && (
+              <div className="bg-gray-900 rounded-lg p-4 text-left">
+                <p className="text-white font-semibold mb-2">Debug Log:</p>
+                {debugInfo.map((info, index) => (
+                  <p key={index} className="text-xs text-gray-400 mb-1 font-mono">
+                    {info}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {/* Back button */}
+            <button
+              onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}`)}
+              className="mt-4 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg border border-gray-600 transition-colors"
+            >
+              ← Back to Team
+            </button>
           </div>
         </div>
       </div>
@@ -397,6 +482,7 @@ const TeamEventDetailPage: React.FC = () => {
   }
 
   if (!event) {
+    console.log('TeamEventDetailPage: Rendering event not found state');
     return (
       <div className="min-h-screen bg-black text-white p-4">
         <div className="max-w-4xl mx-auto">
@@ -413,6 +499,8 @@ const TeamEventDetailPage: React.FC = () => {
       </div>
     );
   }
+
+  console.log('TeamEventDetailPage: Rendering main event page');
 
   const status = getEventStatus();
 
