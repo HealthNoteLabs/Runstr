@@ -509,7 +509,14 @@ const TeamDetailPage: React.FC = () => {
     if (!teamAIdentifierForChat) {
       return <div className="text-text-muted p-4 text-center">Events unavailable – missing team identifier</div>;
     }
-    return <TeamEventsTab teamAIdentifier={teamAIdentifierForChat} isCaptain={isCurrentUserCaptain} />;
+    return (
+      <TeamEventsTab 
+        teamAIdentifier={teamAIdentifierForChat} 
+        isCaptain={isCurrentUserCaptain}
+        captainPubkey={captainPubkey}
+        teamUUID={teamUUID}
+      />
+    );
   };
 
   const renderCurrentTabContent = () => {

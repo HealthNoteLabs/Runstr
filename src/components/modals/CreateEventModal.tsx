@@ -197,13 +197,13 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   key={type}
                   type="button"
                   onClick={() => setActivity(type)}
-                  className={`px-4 py-2 rounded-lg capitalize transition-colors ${
+                  className={`px-4 py-2 rounded-lg capitalize font-semibold transition-colors ${
                     activity === type
                       ? 'bg-white text-black border-2 border-black'
                       : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border-2 border-gray-700'
                   }`}
                 >
-                  {type === 'run' ? '🏃 Run' : type === 'walk' ? '🚶 Walk' : '🚴 Cycle'}
+                  {type === 'run' ? 'Run' : type === 'walk' ? 'Walk' : 'Cycle'}
                 </button>
               ))}
             </div>
@@ -231,16 +231,19 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
               ))}
             </div>
             {distance === 'custom' && (
-              <input
-                type="number"
-                value={customDistance}
-                onChange={(e) => setCustomDistance(e.target.value)}
-                placeholder="Enter distance in km"
-                step="0.1"
-                min="0.1"
-                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white"
-                required
-              />
+              <div className="relative">
+                <input
+                  type="number"
+                  value={customDistance}
+                  onChange={(e) => setCustomDistance(e.target.value)}
+                  placeholder="Enter distance"
+                  step="0.1"
+                  min="0.1"
+                  className="w-full px-4 py-2 pr-12 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white"
+                  required
+                />
+                <span className="absolute right-3 top-2 text-gray-400 text-sm">km</span>
+              </div>
             )}
           </div>
 

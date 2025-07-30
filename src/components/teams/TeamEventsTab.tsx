@@ -1,21 +1,28 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useNostr } from '../../hooks/useNostr';
 import { fetchTeamEvents, TeamEventDetails } from '../../services/nostr/NostrTeamsService';
 import CreateEventModal from '../modals/CreateEventModal';
-import EventDetailModal from '../modals/EventDetailModal';
 import toast from 'react-hot-toast';
 
 interface TeamEventsTabProps {
   teamAIdentifier: string;
   isCaptain: boolean;
+  captainPubkey: string;
+  teamUUID: string;
 }
 
-const TeamEventsTab: React.FC<TeamEventsTabProps> = ({ teamAIdentifier, isCaptain }) => {
+const TeamEventsTab: React.FC<TeamEventsTabProps> = ({ 
+  teamAIdentifier, 
+  isCaptain, 
+  captainPubkey, 
+  teamUUID 
+}) => {
   const { ndk, ndkReady } = useNostr();
+  const navigate = useNavigate();
   const [events, setEvents] = useState<TeamEventDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedEvent, setSelectedEvent] = useState<TeamEventDetails | null>(null);
 
   const loadEvents = async () => {
     if (!ndk || !ndkReady || !teamAIdentifier) return;
@@ -49,13 +56,27 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({ teamAIdentifier, isCaptai
     return events.filter(event => {
       const eventDate = new Date(event.date);
       const eventDateString = eventDate.toDateString();
+      const status = getEventStatus(event);
       
-      // Show events happening today or tomorrow
-      if (eventDateString === today || eventDateString === tomorrow) {
-        // Check if event is still upcoming or active
-        const status = getEventStatus(event);
-        return status === 'upcoming' || status === 'active';
+      // Only show upcoming events or active events that started recently (within 2 hours)
+      if (eventDateString === today) {
+        if (status === 'active') {
+          // For active events, check if they started recently (show for first 2 hours)
+          if (event.startTime) {
+            const eventStart = new Date(event.date + 'T' + event.startTime);
+            const timeSinceStart = now.getTime() - eventStart.getTime();
+            return timeSinceStart <= 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+          }
+          return true; // Show all-day active events
+        }
+        return status === 'upcoming';
       }
+      
+      // Show tomorrow's upcoming events
+      if (eventDateString === tomorrow) {
+        return status === 'upcoming';
+      }
+      
       return false;
     });
   };
@@ -75,7 +96,9 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({ teamAIdentifier, isCaptai
           return (
             <div key={event.id} className="flex items-center justify-between py-2">
               <div className="flex items-center gap-3">
-                <span className="text-lg">{getActivityIcon(event.activity)}</span>
+                <span className="text-xs font-bold text-white bg-gray-700 px-2 py-1 rounded">
+                  {getActivityLabel(event.activity)}
+                </span>
                 <div>
                   <p className="text-white font-medium">{event.name}</p>
                   <p className="text-xs text-gray-400">
@@ -85,7 +108,7 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({ teamAIdentifier, isCaptai
               </div>
               <div className="text-right">
                 <p className="text-sm text-white">
-                  {timeUntil === 'starting soon' ? '🔥 Starting Soon!' : `Starts ${timeUntil}`}
+                  {timeUntil === 'starting soon' ? 'Starting Soon!' : `Starts ${timeUntil}`}
                 </p>
               </div>
             </div>
@@ -99,12 +122,29 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({ teamAIdentifier, isCaptai
     const now = new Date();
     const eventDate = new Date(event.date);
     
-    // Set event date to end of day for comparison
-    eventDate.setHours(23, 59, 59, 999);
+    // If event has start/end times, use them for precise timing
+    if (event.startTime && event.endTime) {
+      const eventStart = new Date(event.date + 'T' + event.startTime);
+      const eventEnd = new Date(event.date + 'T' + event.endTime);
+      
+      if (now > eventEnd) {
+        return 'completed';
+      } else if (now >= eventStart && now <= eventEnd) {
+        return 'active';
+      } else {
+        return 'upcoming';
+      }
+    }
     
-    if (now > eventDate) {
+    // For all-day events, use more precise timing
+    const eventStart = new Date(event.date);
+    eventStart.setHours(0, 0, 0, 0);
+    const eventEnd = new Date(event.date);
+    eventEnd.setHours(23, 59, 59, 999);
+    
+    if (now > eventEnd) {
       return 'completed';
-    } else if (now.toDateString() === new Date(event.date).toDateString()) {
+    } else if (now >= eventStart && now <= eventEnd) {
       return 'active';
     } else {
       return 'upcoming';
@@ -170,16 +210,16 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({ teamAIdentifier, isCaptai
     });
   };
 
-  const getActivityIcon = (activity: string) => {
+  const getActivityLabel = (activity: string) => {
     switch (activity) {
       case 'run':
-        return '🏃';
+        return 'RUN';
       case 'walk':
-        return '🚶';
+        return 'WALK';
       case 'cycle':
-        return '🚴';
+        return 'CYCLE';
       default:
-        return '🏃';
+        return 'RUN';
     }
   };
 
@@ -221,12 +261,14 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({ teamAIdentifier, isCaptai
             return (
               <div
                 key={event.id}
-                onClick={() => setSelectedEvent(event)}
+                onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}/event/${event.id}`)}
                 className="bg-gray-800 border border-gray-700 rounded-lg p-4 hover:bg-gray-700 transition-colors cursor-pointer"
               >
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex items-center space-x-3">
-                    <span className="text-2xl">{getActivityIcon(event.activity)}</span>
+                    <span className="text-sm font-bold text-white bg-gray-700 px-3 py-2 rounded">
+                      {getActivityLabel(event.activity)}
+                    </span>
                     <div>
                       <h4 className="text-lg font-semibold text-white">{event.name}</h4>
                       <p className="text-sm text-gray-400">
@@ -262,19 +304,6 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({ teamAIdentifier, isCaptai
           teamAIdentifier={teamAIdentifier}
           onClose={() => setShowCreateModal(false)}
           onEventCreated={handleEventCreated}
-        />
-      )}
-
-      {selectedEvent && (
-        <EventDetailModal
-          event={selectedEvent}
-          teamAIdentifier={teamAIdentifier}
-          isCaptain={isCaptain}
-          onClose={() => setSelectedEvent(null)}
-          onEventUpdated={() => {
-            setSelectedEvent(null);
-            loadEvents(); // Reload events after update
-          }}
         />
       )}
     </div>

@@ -11,6 +11,7 @@ export const KIND_WORKOUT_RECORD = 1301; // Define Kind 1301
 export const KIND_TEAM_MEMBERSHIP = 33406; // New kind: membership join event
 export const KIND_TEAM_SUBSCRIPTION_RECEIPT = 33408; // Kind for subscription receipt events
 export const KIND_TEAM_AUTO_REMOVE = 33407; // Kind for auto-removal (grace period exceeded)
+export const KIND_EVENT_PARTICIPATION = 33409; // New kind: event participation
 
 // NIP-29 Kinds - to be removed or repurposed if NIP-29 integration is fully removed
 // export const KIND_NIP29_GROUP_METADATA = 10009;
@@ -1509,5 +1510,186 @@ export async function updateTeamEvent(
   } catch (error) {
     console.error("Error updating team event:", error);
     return null;
+  }
+}
+
+/**
+ * Join a team event - publishes a participation event
+ */
+export async function joinTeamEvent(
+  ndk: NDK,
+  eventId: string,
+  teamAIdentifier: string,
+  captainPubkey: string
+): Promise<NDKEvent | null> {
+  const eventTemplate = {
+    kind: KIND_EVENT_PARTICIPATION as NDKKind,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [
+      ['d', eventId], // Event identifier
+      ['a', teamAIdentifier], // Team identifier
+      ['e', eventId], // Event reference
+      ['p', captainPubkey] // Captain reference
+    ],
+    content: 'Joined team event'
+  };
+
+  try {
+    const ndkEvent = new NDKEvent(ndk);
+    ndkEvent.kind = eventTemplate.kind;
+    ndkEvent.created_at = eventTemplate.created_at;
+    ndkEvent.tags = eventTemplate.tags;
+    ndkEvent.content = eventTemplate.content;
+    
+    await ndkEvent.sign();
+    const publishedRelays = await ndkEvent.publish();
+    
+    if (publishedRelays.size > 0) {
+      console.log(`Successfully joined event: ${eventId}`);
+      return ndkEvent;
+    } else {
+      console.error("Failed to publish event participation to any relays.");
+      return null;
+    }
+  } catch (error) {
+    console.error("Error joining team event:", error);
+    return null;
+  }
+}
+
+/**
+ * Leave a team event - publishes a withdrawal event
+ */
+export async function leaveTeamEvent(
+  ndk: NDK,
+  eventId: string,
+  teamAIdentifier: string
+): Promise<boolean> {
+  const eventTemplate = {
+    kind: KIND_EVENT_PARTICIPATION as NDKKind,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [
+      ['d', eventId], // Event identifier
+      ['a', teamAIdentifier], // Team identifier
+      ['e', eventId], // Event reference
+      ['status', 'withdrawn'] // Withdrawal marker
+    ],
+    content: 'Left team event'
+  };
+
+  try {
+    const ndkEvent = new NDKEvent(ndk);
+    ndkEvent.kind = eventTemplate.kind;
+    ndkEvent.created_at = eventTemplate.created_at;
+    ndkEvent.tags = eventTemplate.tags;
+    ndkEvent.content = eventTemplate.content;
+    
+    await ndkEvent.sign();
+    const publishedRelays = await ndkEvent.publish();
+    
+    if (publishedRelays.size > 0) {
+      console.log(`Successfully left event: ${eventId}`);
+      return true;
+    } else {
+      console.error("Failed to publish event withdrawal to any relays.");
+      return false;
+    }
+  } catch (error) {
+    console.error("Error leaving team event:", error);
+    return false;
+  }
+}
+
+/**
+ * Fetch event participants - returns list of pubkeys who joined the event
+ */
+export async function fetchEventParticipants(
+  ndk: NDK,
+  eventId: string,
+  teamAIdentifier: string
+): Promise<string[]> {
+  const filter: NDKFilter = {
+    kinds: [KIND_EVENT_PARTICIPATION as NDKKind],
+    '#d': [eventId],
+    '#a': [teamAIdentifier]
+  };
+
+  try {
+    const events = await ndk.fetchEvents(filter);
+    const participants = new Map<string, boolean>(); // pubkey -> is active participant
+
+    // Process participation events chronologically
+    const sortedEvents = Array.from(events).sort((a, b) => a.created_at - b.created_at);
+    
+    for (const event of sortedEvents) {
+      const pubkey = event.pubkey;
+      const isWithdrawal = event.tags.some(tag => tag[0] === 'status' && tag[1] === 'withdrawn');
+      
+      if (isWithdrawal) {
+        participants.set(pubkey, false); // Mark as withdrawn
+      } else {
+        participants.set(pubkey, true); // Mark as joined
+      }
+    }
+
+    // Return only active participants
+    return Array.from(participants.entries())
+      .filter(([, isActive]) => isActive)
+      .map(([pubkey]) => pubkey);
+
+  } catch (error) {
+    console.error('Error fetching event participants:', error);
+    return [];
+  }
+}
+
+/**
+ * Check if current user is participating in an event
+ */
+export async function isUserParticipating(
+  ndk: NDK,
+  eventId: string,
+  teamAIdentifier: string,
+  userPubkey: string
+): Promise<boolean> {
+  const participants = await fetchEventParticipants(ndk, eventId, teamAIdentifier);
+  return participants.includes(userPubkey);
+}
+
+/**
+ * Fetch event activities - returns kind 1301 events from participants during event period
+ */
+export async function fetchEventActivities(
+  ndk: NDK,
+  eventId: string,
+  teamAIdentifier: string,
+  participantPubkeys: string[],
+  startDate: string,
+  endDate?: string
+): Promise<NDKEvent[]> {
+  if (participantPubkeys.length === 0) {
+    return [];
+  }
+
+  // Calculate date range
+  const eventStartTime = Math.floor(new Date(startDate).getTime() / 1000);
+  const eventEndTime = endDate 
+    ? Math.floor(new Date(endDate).getTime() / 1000)
+    : Math.floor(new Date(startDate).setHours(23, 59, 59, 999) / 1000);
+
+  const filter: NDKFilter = {
+    kinds: [KIND_WORKOUT_RECORD as NDKKind],
+    authors: participantPubkeys,
+    since: eventStartTime,
+    until: eventEndTime,
+    '#team': [teamAIdentifier] // Activities tagged with team
+  };
+
+  try {
+    const events = await ndk.fetchEvents(filter);
+    return Array.from(events).sort((a, b) => b.created_at - a.created_at);
+  } catch (error) {
+    console.error('Error fetching event activities:', error);
+    return [];
   }
 } 

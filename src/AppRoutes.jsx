@@ -49,6 +49,7 @@ const NostrStatsPage = safeLazy(() => import('./pages/NostrStatsPage'), 'NostrSt
 const TeamsPage = safeLazy(() => import('./pages/TeamsPage'), 'TeamsPage');
 const CreateTeamFormV2 = safeLazy(() => import('./components/teams/CreateTeamFormV2'), 'CreateTeamFormV2');
 const TeamDetailPage = safeLazy(() => import('./pages/TeamDetailPage'), 'TeamDetailPage');
+const TeamEventDetailPage = safeLazy(() => import('./pages/TeamEventDetailPage'), 'TeamEventDetailPage');
 const ChallengeDetailPage = safeLazy(() => import('./pages/ChallengeDetailPage'), 'ChallengeDetailPage');
 
 // Loading component to show while lazy loading
@@ -95,6 +96,7 @@ const AppRoutes = () => {
         <Route path="/teams" element={<TeamsPage />} />
         <Route path="/teams/new" element={<CreateTeamFormV2 />} />
         <Route path="/teams/:captainPubkey/:teamUUID" element={<TeamDetailPage />} />
+        <Route path="/teams/:captainPubkey/:teamUUID/event/:eventId" element={<TeamEventDetailPage />} />
         <Route path="/challenge/:captainPubkey/:challengeUUID" element={<ChallengeDetailPage />} />
         
         <Route path="/nostr-stats" element={<NostrStatsPage />} />
