@@ -1,31 +1,31 @@
 import React, { useState } from 'react';
 import { useNostr } from '../../hooks/useNostr';
-import { createTeamEvent } from '../../services/nostr/NostrTeamsService';
+import { TeamEventDetails, updateTeamEvent } from '../../services/nostr/NostrTeamsService';
 import toast from 'react-hot-toast';
 
-interface CreateEventModalProps {
-  teamAIdentifier: string;
+interface EditEventModalProps {
+  event: TeamEventDetails;
   onClose: () => void;
-  onEventCreated: () => void;
+  onEventUpdated: () => void;
 }
 
-const CreateEventModal: React.FC<CreateEventModalProps> = ({ 
-  teamAIdentifier, 
+const EditEventModal: React.FC<EditEventModalProps> = ({ 
+  event, 
   onClose, 
-  onEventCreated 
+  onEventUpdated 
 }) => {
   const { ndk, publicKey } = useNostr();
-  const [isCreating, setIsCreating] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   
-  // Form state
-  const [eventName, setEventName] = useState('');
-  const [eventDescription, setEventDescription] = useState('');
-  const [activity, setActivity] = useState<'run' | 'walk' | 'cycle'>('run');
-  const [distance, setDistance] = useState('5');
+  // Form state initialized with current event data
+  const [eventName, setEventName] = useState(event.name);
+  const [eventDescription, setEventDescription] = useState(event.description || '');
+  const [activity, setActivity] = useState<'run' | 'walk' | 'cycle'>(event.activity);
+  const [distance, setDistance] = useState(event.distance.toString());
   const [customDistance, setCustomDistance] = useState('');
-  const [eventDate, setEventDate] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
+  const [eventDate, setEventDate] = useState(event.date);
+  const [startTime, setStartTime] = useState(event.startTime || '');
+  const [endTime, setEndTime] = useState(event.endTime || '');
 
   const distancePresets = [
     { label: '5K', value: '5' },
@@ -35,50 +35,14 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
     { label: 'Custom', value: 'custom' }
   ];
 
-  const eventTemplates = [
-    {
-      name: 'Weekly 5K',
-      activity: 'run' as const,
-      distance: '5',
-      startTime: '08:00',
-      endTime: '12:00'
-    },
-    {
-      name: 'Saturday Long Run', 
-      activity: 'run' as const,
-      distance: '10',
-      startTime: '07:00',
-      endTime: '11:00'
-    },
-    {
-      name: 'Team Challenge',
-      activity: 'run' as const, 
-      distance: '21.1',
-      startTime: '09:00',
-      endTime: '15:00'
-    },
-    {
-      name: 'Morning Walk',
-      activity: 'walk' as const,
-      distance: '5',
-      startTime: '07:30',
-      endTime: '09:30'
+  // Set custom distance if current distance doesn't match presets
+  React.useEffect(() => {
+    const matchesPreset = distancePresets.some(preset => preset.value === distance);
+    if (!matchesPreset) {
+      setDistance('custom');
+      setCustomDistance(event.distance.toString());
     }
-  ];
-
-  const applyTemplate = (template: typeof eventTemplates[0]) => {
-    setEventName(template.name);
-    setActivity(template.activity);
-    setDistance(template.distance);
-    setStartTime(template.startTime);
-    setEndTime(template.endTime);
-    
-    // Set to next Saturday
-    const nextSaturday = new Date();
-    const daysUntilSaturday = (6 - nextSaturday.getDay()) % 7 || 7;
-    nextSaturday.setDate(nextSaturday.getDate() + daysUntilSaturday);
-    setEventDate(nextSaturday.toISOString().split('T')[0]);
-  };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,12 +63,13 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
       return;
     }
 
-    setIsCreating(true);
-    const toastId = toast.loading('Creating event...');
+    setIsUpdating(true);
+    const toastId = toast.loading('Updating event...');
 
     try {
-      await createTeamEvent(ndk, {
-        teamAIdentifier,
+      await updateTeamEvent(ndk, {
+        eventId: event.id,
+        teamAIdentifier: event.teamAIdentifier,
         name: eventName.trim(),
         description: eventDescription.trim() || undefined,
         activity,
@@ -115,48 +80,27 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
         creatorPubkey: publicKey
       });
 
-      toast.success('Event created successfully!', { id: toastId });
-      onEventCreated();
+      toast.success('Event updated successfully!', { id: toastId });
+      onEventUpdated();
     } catch (error) {
-      console.error('Error creating event:', error);
-      toast.error('Failed to create event', { id: toastId });
+      console.error('Error updating event:', error);
+      toast.error('Failed to update event', { id: toastId });
     } finally {
-      setIsCreating(false);
+      setIsUpdating(false);
     }
   };
 
-  // Get tomorrow's date as minimum date for event
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const minDate = tomorrow.toISOString().split('T')[0];
+  // Get today's date as minimum date for event
+  const today = new Date().toISOString().split('T')[0];
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-gray-900 rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-800">
-          <h2 className="text-xl font-bold text-white">Create Team Event</h2>
+          <h2 className="text-xl font-bold text-white">Edit Team Event</h2>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Quick Templates */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Quick Templates
-            </label>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {eventTemplates.map((template, index) => (
-                <button
-                  key={index}
-                  type="button"
-                  onClick={() => applyTemplate(template)}
-                  className="px-3 py-2 text-sm bg-gray-800 hover:bg-white hover:text-black text-gray-300 rounded-lg transition-colors border border-gray-700 hover:border-black"
-                >
-                  {template.name}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Event Name */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -253,7 +197,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
               type="date"
               value={eventDate}
               onChange={(e) => setEventDate(e.target.value)}
-              min={minDate}
+              min={today}
               className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-white"
               required
             />
@@ -290,17 +234,17 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              disabled={isCreating}
+              disabled={isUpdating}
               className="px-6 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isCreating}
+              disabled={isUpdating}
               className="px-6 py-2 bg-black hover:bg-gray-900 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 border-2 border-white"
             >
-              {isCreating ? 'Creating...' : 'Create Event'}
+              {isUpdating ? 'Updating...' : 'Update Event'}
             </button>
           </div>
         </form>
@@ -309,4 +253,4 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
   );
 };
 
-export default CreateEventModal;
+export default EditEventModal;

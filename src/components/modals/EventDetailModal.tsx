@@ -2,18 +2,28 @@ import React, { useState, useEffect } from 'react';
 import { useNostr } from '../../hooks/useNostr';
 import { TeamEventDetails, fetchEventParticipation, EventParticipation } from '../../services/nostr/NostrTeamsService';
 import { DisplayName } from '../shared/DisplayName';
+import EditEventModal from './EditEventModal';
 import toast from 'react-hot-toast';
 
 interface EventDetailModalProps {
   event: TeamEventDetails;
   teamAIdentifier: string;
+  isCaptain?: boolean;
   onClose: () => void;
+  onEventUpdated?: () => void;
 }
 
-const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, teamAIdentifier, onClose }) => {
-  const { ndk, ndkReady } = useNostr();
+const EventDetailModal: React.FC<EventDetailModalProps> = ({ 
+  event, 
+  teamAIdentifier, 
+  isCaptain = false,
+  onClose,
+  onEventUpdated 
+}) => {
+  const { ndk, ndkReady, publicKey } = useNostr();
   const [participants, setParticipants] = useState<EventParticipation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   useEffect(() => {
     const loadParticipants = async () => {
@@ -33,6 +43,30 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, teamAIdentif
 
     loadParticipants();
   }, [ndk, ndkReady, event, teamAIdentifier]);
+
+  const handleEventUpdated = () => {
+    setShowEditModal(false);
+    if (onEventUpdated) {
+      onEventUpdated();
+    }
+    // Reload participants in case event details changed
+    const loadParticipants = async () => {
+      if (!ndk || !ndkReady || !event) return;
+      setIsLoading(true);
+      try {
+        const participation = await fetchEventParticipation(ndk, event.id, teamAIdentifier, event.date);
+        setParticipants(participation);
+      } catch (error) {
+        console.error('Error fetching event participation:', error);
+        toast.error('Failed to load event participants');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadParticipants();
+  };
+
+  const canEdit = isCaptain && publicKey === event.creatorPubkey;
 
   const getActivityIcon = (activity: string) => {
     switch (activity) {
@@ -94,14 +128,25 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, teamAIdentif
       );
     }
 
+    // Define completion threshold (80% of target distance)
+    const completionThreshold = event.distance * 0.8;
+    
     // Sort participants by completion time
     const sortedParticipants = [...participants].sort((a, b) => {
-      // DNF (Did Not Finish) goes to bottom
-      if (a.distance < event.distance && b.distance >= event.distance) return 1;
-      if (b.distance < event.distance && a.distance >= event.distance) return -1;
+      const aCompleted = a.distance >= completionThreshold;
+      const bCompleted = b.distance >= completionThreshold;
       
-      // Sort by time for those who completed
-      return a.duration - b.duration;
+      // Completed participants first
+      if (aCompleted && !bCompleted) return -1;
+      if (!aCompleted && bCompleted) return 1;
+      
+      // Among completed participants, sort by time
+      if (aCompleted && bCompleted) {
+        return a.duration - b.duration;
+      }
+      
+      // Among non-completed participants, sort by distance (highest first)
+      return b.distance - a.distance;
     });
 
     return (
@@ -114,7 +159,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, teamAIdentif
           <div className="col-span-3 text-right">Pace</div>
         </div>
         {sortedParticipants.map((participant, index) => {
-          const completed = participant.distance >= event.distance;
+          const completed = participant.distance >= completionThreshold;
+          const completedRank = completed ? sortedParticipants.filter((p, i) => i <= index && p.distance >= completionThreshold).length : 0;
+          
           return (
             <div
               key={participant.pubkey}
@@ -124,11 +171,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, teamAIdentif
             >
               <div className="col-span-1 font-bold">
                 {completed ? (
-                  <span className={index < 3 ? 'text-yellow-400' : 'text-gray-400'}>
-                    {index + 1}
+                  <span className={completedRank <= 3 ? 'text-yellow-400' : 'text-gray-400'}>
+                    {completedRank}
                   </span>
                 ) : (
-                  <span className="text-gray-600">-</span>
+                  <span className="text-orange-400 text-xs">ATT</span>
                 )}
               </div>
               <div className="col-span-4">
@@ -140,10 +187,15 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, teamAIdentif
               <div className="col-span-2 text-right">
                 <span className={completed ? 'text-green-400' : 'text-orange-400'}>
                   {participant.distance.toFixed(1)} km
+                  {!completed && (
+                    <span className="text-xs text-gray-500 block">
+                      /{event.distance} km
+                    </span>
+                  )}
                 </span>
               </div>
               <div className="col-span-3 text-right text-gray-400">
-                {completed ? formatPace(event.activity, participant.pace) : 'DNF'}
+                {completed ? formatPace(event.activity, participant.pace) : 'Attempted'}
               </div>
             </div>
           );
@@ -164,14 +216,29 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, teamAIdentif
                 <p className="text-gray-400">
                   {event.distance}km {event.activity} • {new Date(event.date).toLocaleDateString()}
                 </p>
+                {event.description && (
+                  <p className="text-gray-300 mt-2 text-sm">
+                    {event.description}
+                  </p>
+                )}
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-white transition-colors"
-            >
-              ✕
-            </button>
+            <div className="flex items-center gap-3">
+              {canEdit && (
+                <button
+                  onClick={() => setShowEditModal(true)}
+                  className="px-3 py-2 bg-gray-800 hover:bg-white hover:text-black text-white text-sm rounded-lg transition-colors border border-gray-700 hover:border-black"
+                >
+                  Edit Event
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         </div>
 
@@ -207,6 +274,14 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, teamAIdentif
           </div>
         </div>
       </div>
+
+      {showEditModal && (
+        <EditEventModal
+          event={event}
+          onClose={() => setShowEditModal(false)}
+          onEventUpdated={handleEventUpdated}
+        />
+      )}
     </div>
   );
 };

@@ -1227,6 +1227,7 @@ export interface TeamEventDetails {
   id: string;
   teamAIdentifier: string;
   name: string;
+  description?: string; // Optional event description/notes
   activity: 'run' | 'walk' | 'cycle';
   distance: number; // in km
   date: string; // YYYY-MM-DD format
@@ -1254,6 +1255,7 @@ export async function createTeamEvent(
   eventData: {
     teamAIdentifier: string;
     name: string;
+    description?: string;
     activity: 'run' | 'walk' | 'cycle';
     distance: number;
     date: string;
@@ -1277,6 +1279,9 @@ export async function createTeamEvent(
     ["date", eventData.date]
   ];
 
+  if (eventData.description) {
+    tags.push(["description", eventData.description]);
+  }
   if (eventData.startTime) {
     tags.push(["start_time", eventData.startTime]);
   }
@@ -1337,6 +1342,7 @@ export async function fetchTeamEvents(
         id: tags.find(t => t[0] === 'd')?.[1] || '',
         teamAIdentifier: teamAIdentifier,
         name: tags.find(t => t[0] === 'name')?.[1] || 'Unnamed Event',
+        description: tags.find(t => t[0] === 'description')?.[1],
         activity: (tags.find(t => t[0] === 'activity')?.[1] || 'run') as 'run' | 'walk' | 'cycle',
         distance: parseFloat(tags.find(t => t[0] === 'distance')?.[1] || '0'),
         date: tags.find(t => t[0] === 'date')?.[1] || '',
@@ -1436,5 +1442,72 @@ export async function fetchEventParticipation(
   } catch (error) {
     console.error("Error fetching event participation:", error);
     return [];
+  }
+}
+
+/**
+ * Updates an existing team event (KIND_NIP101_TEAM_EVENT)
+ */
+export async function updateTeamEvent(
+  ndk: NDK,
+  eventData: {
+    eventId: string;
+    teamAIdentifier: string;
+    name: string;
+    description?: string;
+    activity: 'run' | 'walk' | 'cycle';
+    distance: number;
+    date: string;
+    startTime?: string;
+    endTime?: string;
+    creatorPubkey: string;
+  }
+): Promise<string | null> {
+  if (!ndk) {
+    console.error("NDK instance not provided to updateTeamEvent.");
+    return null;
+  }
+
+  const tags = [
+    ["d", eventData.eventId], // Keep same event ID to update existing event
+    ["a", eventData.teamAIdentifier],
+    ["name", eventData.name],
+    ["activity", eventData.activity],
+    ["distance", eventData.distance.toString()],
+    ["date", eventData.date]
+  ];
+
+  if (eventData.description) {
+    tags.push(["description", eventData.description]);
+  }
+  if (eventData.startTime) {
+    tags.push(["start_time", eventData.startTime]);
+  }
+  if (eventData.endTime) {
+    tags.push(["end_time", eventData.endTime]);
+  }
+
+  const eventTemplate: EventTemplate = {
+    kind: KIND_NIP101_TEAM_EVENT,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: tags,
+    content: `Team event: ${eventData.name} - ${eventData.distance}km ${eventData.activity} on ${eventData.date}`
+  };
+
+  try {
+    const ndkEvent = new NDKEvent(ndk, { ...eventTemplate, pubkey: eventData.creatorPubkey });
+    await ndkEvent.sign();
+    const publishedRelays = await ndkEvent.publish();
+    
+    if (publishedRelays.size > 0) {
+      console.log(`Team event updated successfully: ${eventData.eventId}`);
+      return eventData.eventId;
+    } else {
+      console.error("Failed to publish updated team event to any relays.");
+      return null;
+    }
+  } catch (error) {
+    console.error("Error updating team event:", error);
+    return null;
   }
 } 

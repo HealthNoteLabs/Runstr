@@ -41,6 +41,60 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({ teamAIdentifier, isCaptai
     loadEvents(); // Reload events after creation
   };
 
+  const getUpcomingReminders = () => {
+    const now = new Date();
+    const today = now.toDateString();
+    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toDateString();
+    
+    return events.filter(event => {
+      const eventDate = new Date(event.date);
+      const eventDateString = eventDate.toDateString();
+      
+      // Show events happening today or tomorrow
+      if (eventDateString === today || eventDateString === tomorrow) {
+        // Check if event is still upcoming or active
+        const status = getEventStatus(event);
+        return status === 'upcoming' || status === 'active';
+      }
+      return false;
+    });
+  };
+
+  const renderReminderBanner = () => {
+    const upcomingEvents = getUpcomingReminders();
+    
+    if (upcomingEvents.length === 0) return null;
+
+    return (
+      <div className="mb-6 p-4 bg-gray-800 border border-gray-700 rounded-lg">
+        <h4 className="text-sm font-medium text-white mb-2">🔔 Upcoming Events</h4>
+        {upcomingEvents.map(event => {
+          const timeUntil = getTimeUntilEvent(event.date);
+          const isToday = new Date(event.date).toDateString() === new Date().toDateString();
+          
+          return (
+            <div key={event.id} className="flex items-center justify-between py-2">
+              <div className="flex items-center gap-3">
+                <span className="text-lg">{getActivityIcon(event.activity)}</span>
+                <div>
+                  <p className="text-white font-medium">{event.name}</p>
+                  <p className="text-xs text-gray-400">
+                    {event.distance}km {event.activity} • {isToday ? 'Today' : 'Tomorrow'}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-white">
+                  {timeUntil === 'starting soon' ? '🔥 Starting Soon!' : `Starts ${timeUntil}`}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const getEventStatus = (event: TeamEventDetails): string => {
     const now = new Date();
     const eventDate = new Date(event.date);
@@ -57,14 +111,50 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({ teamAIdentifier, isCaptai
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getTimeUntilEvent = (eventDate: string): string => {
+    const now = new Date();
+    const event = new Date(eventDate);
+    const diffMs = event.getTime() - now.getTime();
+    
+    if (diffMs < 0) return '';
+    
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (diffDays > 0) return `in ${diffDays} day${diffDays > 1 ? 's' : ''}`;
+    if (diffHours > 0) return `in ${diffHours} hour${diffHours > 1 ? 's' : ''}`;
+    if (diffMinutes > 0) return `in ${diffMinutes} min`;
+    return 'starting soon';
+  };
+
+  const getStatusBadge = (status: string, eventDate: string) => {
+    const timeUntil = status === 'upcoming' ? getTimeUntilEvent(eventDate) : '';
+    
     switch (status) {
       case 'completed':
-        return <span className="px-2 py-1 text-xs rounded-full bg-gray-600 text-gray-200">Completed</span>;
+        return (
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-gray-500"></div>
+            <span className="text-xs text-gray-400">Completed</span>
+          </div>
+        );
       case 'active':
-        return <span className="px-2 py-1 text-xs rounded-full bg-green-600 text-white animate-pulse">Active</span>;
+        return (
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+            <span className="text-xs text-green-400 font-medium">Live Now</span>
+          </div>
+        );
       case 'upcoming':
-        return <span className="px-2 py-1 text-xs rounded-full bg-blue-600 text-white">Upcoming</span>;
+        return (
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-white"></div>
+            <span className="text-xs text-white">
+              Starts {timeUntil}
+            </span>
+          </div>
+        );
       default:
         return null;
     }
@@ -103,6 +193,8 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({ teamAIdentifier, isCaptai
 
   return (
     <div className="space-y-6">
+      {renderReminderBanner()}
+      
       <div className="flex justify-between items-center">
         <h3 className="text-xl font-semibold text-gray-100">Team Events</h3>
         {isCaptain && (
@@ -140,9 +232,14 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({ teamAIdentifier, isCaptai
                       <p className="text-sm text-gray-400">
                         {event.distance}km {event.activity}
                       </p>
+                      {event.description && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          {event.description}
+                        </p>
+                      )}
                     </div>
                   </div>
-                  {getStatusBadge(status)}
+                  {getStatusBadge(status, event.date)}
                 </div>
                 <div className="flex justify-between items-center mt-3">
                   <p className="text-sm text-gray-400">
@@ -172,7 +269,12 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({ teamAIdentifier, isCaptai
         <EventDetailModal
           event={selectedEvent}
           teamAIdentifier={teamAIdentifier}
+          isCaptain={isCaptain}
           onClose={() => setSelectedEvent(null)}
+          onEventUpdated={() => {
+            setSelectedEvent(null);
+            loadEvents(); // Reload events after update
+          }}
         />
       )}
     </div>
