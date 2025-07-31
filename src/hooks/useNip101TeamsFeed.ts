@@ -75,7 +75,7 @@ export const useNip101TeamsFeed = () => {
       if (!ndkReady) {
         console.log("useNip101TeamsFeed: NDK not ready, waiting for context to be ready...");
         setError("Connecting to Nostr relays...");
-        setIsLoading(false);
+        // Keep loading true so component will retry when ndkReady becomes true
         return;
       }
 

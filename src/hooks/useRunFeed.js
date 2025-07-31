@@ -332,10 +332,10 @@ export const useRunFeed = (filterSource = null) => {
         timeoutRef.current = null;
       }
 
-      // Ensure NDK ready first
+      // Ensure NDK ready first  
       if (!ndkReady) {
         setError("Connecting to Nostr relays...");
-        setLoading(false);
+        // Keep loading true so the component will retry when ndkReady becomes true
         return;
       }
 
