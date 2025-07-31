@@ -65,8 +65,8 @@ export const CACHE_KEYS = {
 
 export const CACHE_TTL = {
   EVENT_DETAILS: 10, // 10 minutes - events rarely change
-  PARTICIPANTS: 3,   // 3 minutes - people join/leave occasionally
-  PARTICIPATION: 2,  // 2 minutes - completion data updates during events
+  PARTICIPANTS: 1,   // 1 minute - people join/leave should update quickly  
+  PARTICIPATION: 1,  // 1 minute - completion data updates during events
   ACTIVITIES: 1,     // 1 minute - new activities posted frequently
   TEAM_EVENTS: 5     // 5 minutes - event list doesn't change often
 };

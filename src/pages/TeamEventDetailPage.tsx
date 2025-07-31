@@ -136,7 +136,7 @@ const TeamEventDetailPage: React.FC = () => {
       console.error('Error loading event:', error);
       setLoadingState('error');
       setLoadingStatus(`Error: ${error.message}`);
-      toast.error('Failed to load event details');
+      // Remove automatic toast error - let the UI handle error display
       return null;
     } finally {
       setIsLoadingEvent(false);
@@ -292,6 +292,29 @@ const TeamEventDetailPage: React.FC = () => {
     }
   }, [event, participantPubkeys, loadActivities]);
 
+  // Check participation state when user comes back to tab (handles tab switching)
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (!document.hidden && publicKey && eventId && teamAIdentifier && event) {
+        // User returned to tab - refresh participation state
+        try {
+          const currentParticipation = await isUserParticipating(ndk, eventId, teamAIdentifier, publicKey);
+          if (currentParticipation !== isParticipating) {
+            setIsParticipating(currentParticipation);
+            
+            // Also refresh the participant list
+            await loadParticipants(event);
+          }
+        } catch (error) {
+          console.error('Error checking participation on tab focus:', error);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [publicKey, eventId, teamAIdentifier, event, isParticipating, ndk, loadParticipants]);
+
   // Remove timeout - it's causing false timeouts when the event actually loads
   // The event is loading properly, just slowly
 
@@ -305,18 +328,21 @@ const TeamEventDetailPage: React.FC = () => {
     try {
       const result = await joinTeamEvent(ndk, eventId!, teamAIdentifier, captainPubkey!);
       if (result) {
+        // Immediately update UI state
         setIsParticipating(true);
         toast.success('Successfully joined the event!');
         
-        // Clear cache and reload participants
+        // Clear all related cache
         teamEventsCache.delete(CACHE_KEYS.EVENT_PARTICIPANTS(teamAIdentifier, eventId!));
         teamEventsCache.delete(CACHE_KEYS.EVENT_PARTICIPATION(teamAIdentifier, eventId!));
         teamEventsCache.delete(CACHE_KEYS.EVENT_ACTIVITIES(teamAIdentifier, eventId!));
         
-        // Reload participants and activities
-        if (event) {
-          loadParticipants(event);
-        }
+        // Reload participants and activities with fresh data
+        setTimeout(async () => {
+          if (event) {
+            await loadParticipants(event);
+          }
+        }, 500); // Small delay to let the event propagate
       } else {
         toast.error('Failed to join event');
       }
@@ -338,18 +364,21 @@ const TeamEventDetailPage: React.FC = () => {
     try {
       const success = await leaveTeamEvent(ndk, eventId!, teamAIdentifier);
       if (success) {
+        // Immediately update UI state
         setIsParticipating(false);
         toast.success('Left the event');
         
-        // Clear cache and reload participants
+        // Clear all related cache
         teamEventsCache.delete(CACHE_KEYS.EVENT_PARTICIPANTS(teamAIdentifier, eventId!));
         teamEventsCache.delete(CACHE_KEYS.EVENT_PARTICIPATION(teamAIdentifier, eventId!));
         teamEventsCache.delete(CACHE_KEYS.EVENT_ACTIVITIES(teamAIdentifier, eventId!));
         
-        // Reload participants and activities
-        if (event) {
-          loadParticipants(event);
-        }
+        // Reload participants and activities with fresh data
+        setTimeout(async () => {
+          if (event) {
+            await loadParticipants(event);
+          }
+        }, 500); // Small delay to let the event propagate
       } else {
         toast.error('Failed to leave event');
       }
@@ -666,7 +695,15 @@ const TeamEventDetailPage: React.FC = () => {
         {/* Header */}
         <div className="mb-6">
           <button
-            onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}`)}
+            onClick={() => {
+              // Clear any event-specific cache before navigating
+              teamEventsCache.delete(CACHE_KEYS.EVENT_DETAILS(teamAIdentifier, eventId!));
+              teamEventsCache.delete(CACHE_KEYS.EVENT_PARTICIPANTS(teamAIdentifier, eventId!));
+              teamEventsCache.delete(CACHE_KEYS.EVENT_PARTICIPATION(teamAIdentifier, eventId!));
+              teamEventsCache.delete(CACHE_KEYS.EVENT_ACTIVITIES(teamAIdentifier, eventId!));
+              
+              navigate(`/teams/${captainPubkey}/${teamUUID}`, { replace: true });
+            }}
             className="flex items-center text-white hover:text-gray-300 transition-colors mb-4"
           >
             <span className="mr-2">←</span>

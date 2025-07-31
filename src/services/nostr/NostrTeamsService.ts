@@ -1580,16 +1580,23 @@ export async function joinTeamEvent(
   teamAIdentifier: string,
   captainPubkey: string
 ): Promise<NDKEvent | null> {
+  const userPubkey = ndk.activeUser?.pubkey;
+  if (!userPubkey) {
+    console.error("No active user found");
+    return null;
+  }
+
+  // Create replaceable event with unique d tag per user per event
   const eventTemplate = {
     kind: KIND_EVENT_PARTICIPATION as NDKKind,
     created_at: Math.floor(Date.now() / 1000),
     tags: [
-      ['d', eventId], // Event identifier
+      ['d', `${eventId}:${userPubkey}`], // Replaceable identifier: eventId:userPubkey
       ['a', teamAIdentifier], // Team identifier
       ['e', eventId], // Event reference
       ['p', captainPubkey] // Captain reference
     ],
-    content: 'Joined team event'
+    content: 'participating' // Simple participation status
   };
 
   try {
@@ -1623,16 +1630,22 @@ export async function leaveTeamEvent(
   eventId: string,
   teamAIdentifier: string
 ): Promise<boolean> {
+  const userPubkey = ndk.activeUser?.pubkey;
+  if (!userPubkey) {
+    console.error("No active user found");
+    return false;
+  }
+
+  // Update the same replaceable event with 'not participating' status
   const eventTemplate = {
     kind: KIND_EVENT_PARTICIPATION as NDKKind,
     created_at: Math.floor(Date.now() / 1000),
     tags: [
-      ['d', eventId], // Event identifier
+      ['d', `${eventId}:${userPubkey}`], // Same replaceable identifier
       ['a', teamAIdentifier], // Team identifier
       ['e', eventId], // Event reference
-      ['status', 'withdrawn'] // Withdrawal marker
     ],
-    content: 'Left team event'
+    content: 'not participating' // Updated participation status
   };
 
   try {
@@ -1666,34 +1679,29 @@ export async function fetchEventParticipants(
   eventId: string,
   teamAIdentifier: string
 ): Promise<string[]> {
+  // Query for all participation events for this event
+  // The d tag contains eventId:userPubkey pattern
   const filter: NDKFilter = {
     kinds: [KIND_EVENT_PARTICIPATION as NDKKind],
-    '#d': [eventId],
-    '#a': [teamAIdentifier]
+    '#a': [teamAIdentifier],
+    '#e': [eventId]
   };
 
   try {
     const events = await ndk.fetchEvents(filter);
-    const participants = new Map<string, boolean>(); // pubkey -> is active participant
-
-    // Process participation events chronologically
-    const sortedEvents = Array.from(events).sort((a, b) => a.created_at - b.created_at);
+    const participants: string[] = [];
     
-    for (const event of sortedEvents) {
-      const pubkey = event.pubkey;
-      const isWithdrawal = event.tags.some(tag => tag[0] === 'status' && tag[1] === 'withdrawn');
-      
-      if (isWithdrawal) {
-        participants.set(pubkey, false); // Mark as withdrawn
-      } else {
-        participants.set(pubkey, true); // Mark as joined
+    // With replaceable events, we only need to check the content
+    // Each user has at most one participation event per event
+    for (const event of events) {
+      if (event.content === 'participating') {
+        participants.push(event.pubkey);
       }
+      // Ignore events with content 'not participating'
     }
 
-    // Return only active participants
-    return Array.from(participants.entries())
-      .filter(([, isActive]) => isActive)
-      .map(([pubkey]) => pubkey);
+    console.log(`Found ${participants.length} active participants for event ${eventId}`);
+    return participants;
 
   } catch (error) {
     console.error('Error fetching event participants:', error);
@@ -1710,8 +1718,30 @@ export async function isUserParticipating(
   teamAIdentifier: string,
   userPubkey: string
 ): Promise<boolean> {
-  const participants = await fetchEventParticipants(ndk, eventId, teamAIdentifier);
-  return participants.includes(userPubkey);
+  // Query for the specific user's participation event
+  const filter: NDKFilter = {
+    kinds: [KIND_EVENT_PARTICIPATION as NDKKind],
+    authors: [userPubkey],
+    '#d': [`${eventId}:${userPubkey}`], // Specific replaceable event
+    '#a': [teamAIdentifier],
+    '#e': [eventId]
+  };
+
+  try {
+    const events = await ndk.fetchEvents(filter);
+    
+    // Check if user has a 'participating' event
+    for (const event of events) {
+      if (event.content === 'participating') {
+        return true;
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('Error checking user participation:', error);
+    return false;
+  }
 }
 
 
