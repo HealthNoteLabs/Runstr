@@ -1325,6 +1325,55 @@ export async function createTeamEvent(
 }
 
 /**
+ * Fetches a specific team event by ID
+ */
+export async function fetchTeamEventById(
+  ndk: NDK,
+  teamAIdentifier: string,
+  eventId: string
+): Promise<TeamEventDetails | null> {
+  if (!ndk) {
+    console.warn("NDK instance not provided to fetchTeamEventById.");
+    return null;
+  }
+
+  const filter: NDKFilter = {
+    kinds: [KIND_NIP101_TEAM_EVENT as NDKKind],
+    '#a': [teamAIdentifier],
+    '#d': [eventId],
+    limit: 1
+  };
+
+  try {
+    const eventsSet = await ndk.fetchEvents(filter, { cacheUsage: NDKSubscriptionCacheUsage.CACHE_FIRST });
+    if (eventsSet.size === 0) {
+      return null;
+    }
+
+    const ndkEvent = Array.from(eventsSet)[0];
+    const rawEvent = ndkEvent.rawEvent();
+    const tags = rawEvent.tags;
+    
+    return {
+      id: tags.find(t => t[0] === 'd')?.[1] || '',
+      teamAIdentifier: teamAIdentifier,
+      name: tags.find(t => t[0] === 'name')?.[1] || 'Unnamed Event',
+      description: tags.find(t => t[0] === 'description')?.[1],
+      activity: (tags.find(t => t[0] === 'activity')?.[1] || 'run') as 'run' | 'walk' | 'cycle',
+      distance: parseFloat(tags.find(t => t[0] === 'distance')?.[1] || '0'),
+      date: tags.find(t => t[0] === 'date')?.[1] || '',
+      startTime: tags.find(t => t[0] === 'start_time')?.[1],
+      endTime: tags.find(t => t[0] === 'end_time')?.[1],
+      creatorPubkey: rawEvent.pubkey,
+      createdAt: rawEvent.created_at
+    };
+  } catch (error) {
+    console.error("Error fetching team event by ID with NDK:", error);
+    return null;
+  }
+}
+
+/**
  * Fetches all events for a team
  */
 export async function fetchTeamEvents(

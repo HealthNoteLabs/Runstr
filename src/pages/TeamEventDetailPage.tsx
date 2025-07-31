@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useNostr } from '../hooks/useNostr';
 import { 
   fetchTeamEvents, 
+  fetchTeamEventById,
   TeamEventDetails, 
   joinTeamEvent, 
   leaveTeamEvent, 
@@ -111,22 +112,29 @@ const TeamEventDetailPage: React.FC = () => {
         }
 
         if (!isMounted) return;
-        setLoadingStatus('Fetching team events...');
+        setLoadingStatus('Fetching event details...');
         
-        // Use enhanced fetch with automatic timeout and cancellation
-        const teamEvents = await fetchWithTimeout(
-          (ndk) => fetchTeamEvents(ndk, teamAIdentifier),
-          12000 // 12 second timeout
-        );
+        // Use the more efficient fetchTeamEventById
+        let foundEvent = null;
+        try {
+          foundEvent = await fetchWithTimeout(
+            (ndk) => fetchTeamEventById(ndk, teamAIdentifier, eventId),
+            10000 // 10 second timeout for single event
+          );
+        } catch (fetchError) {
+          console.error('Error fetching team event:', fetchError);
+          foundEvent = null;
+        }
 
         if (!isMounted) return;
-        setLoadingStatus(`Found ${teamEvents.length} events, searching for ${eventId}...`);
         
-        const foundEvent = teamEvents.find(e => e.id === eventId);
+        // Handle case where event doesn't exist
         if (!foundEvent) {
+          console.log('Event not found, it may have been deleted or not synced yet');
+          setLoadingStatus('Event not found');
           if (isMounted) {
             setLoadingState('error');
-            setLoadingStatus('Event not found');
+            setLoadingStatus('Event not found - it may have been deleted or is still syncing');
             toast.error('Event not found');
             setTimeout(() => navigate(`/teams/${captainPubkey}/${teamUUID}`), 2000);
           }
@@ -138,37 +146,60 @@ const TeamEventDetailPage: React.FC = () => {
         setLoadingStatus('Loading participants...');
 
         // Load participants and participation data with timeout
-        const [eventParticipants, participationData] = await Promise.all([
-          fetchWithTimeout(
-            (ndk) => fetchEventParticipants(ndk, eventId, teamAIdentifier),
-            10000
-          ),
-          fetchWithTimeout(
-            (ndk) => fetchEventParticipation(ndk, eventId, teamAIdentifier, foundEvent.date),
-            10000
-          )
-        ]);
+        let eventParticipants = [];
+        let participationData = [];
+        
+        try {
+          [eventParticipants, participationData] = await Promise.all([
+            fetchWithTimeout(
+              (ndk) => fetchEventParticipants(ndk, eventId, teamAIdentifier),
+              10000
+            ),
+            fetchWithTimeout(
+              (ndk) => fetchEventParticipation(ndk, eventId, teamAIdentifier, foundEvent.date),
+              10000
+            )
+          ]);
+        } catch (error) {
+          console.error('Error loading participants:', error);
+          // Continue with empty arrays - the event exists but may have no participants yet
+          eventParticipants = [];
+          participationData = [];
+        }
 
         if (!isMounted) return;
-        setParticipantPubkeys(eventParticipants);
-        setParticipants(participationData);
+        setParticipantPubkeys(eventParticipants || []);
+        setParticipants(participationData || []);
 
         // Check if current user is participating
-        if (publicKey) {
+        if (publicKey && eventParticipants && eventParticipants.length > 0) {
           setLoadingStatus('Checking participation...');
-          const userIsParticipating = await fetchWithTimeout(
-            (ndk) => isUserParticipating(ndk, eventId, teamAIdentifier, publicKey),
-            8000
-          );
-          if (isMounted) {
-            setIsParticipating(userIsParticipating);
+          try {
+            const userIsParticipating = await fetchWithTimeout(
+              (ndk) => isUserParticipating(ndk, eventId, teamAIdentifier, publicKey),
+              8000
+            );
+            if (isMounted) {
+              setIsParticipating(userIsParticipating);
+            }
+          } catch (error) {
+            console.error('Error checking participation:', error);
+            setIsParticipating(false);
           }
+        } else {
+          // No participants yet, so user is not participating
+          setIsParticipating(false);
         }
 
         // Load event activities if we have participants
-        if (eventParticipants.length > 0) {
+        if (eventParticipants && eventParticipants.length > 0) {
           setLoadingStatus('Loading activities...');
-          await loadEventActivities(foundEvent, eventParticipants);
+          try {
+            await loadEventActivities(foundEvent, eventParticipants);
+          } catch (error) {
+            console.error('Error loading activities:', error);
+            // Continue without activities
+          }
         }
         
         if (isMounted) {

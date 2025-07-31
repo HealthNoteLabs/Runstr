@@ -225,11 +225,10 @@ export const NostrProvider = ({ children }) => {
 
         if (initialNdkConnectionSuccess) {
           console.log('>>> NostrProvider: Initial NDK connection reported success. Proceeding to attach signer. <<<');
-          // Some relay implementations may still report 0 connected immediately; ensure readiness flag is set explicitly
-          setNdkReady(true);
+          // Let updateNdkStatus handle setting ndkReady based on actual relay connections
           const relayCnt = ndk.pool?.stats()?.connected ?? 0;
           setCurrentRelayCount(relayCnt);
-          console.log(`[NostrProvider] Forced ndkReady=true (relayCnt=${relayCnt}).`);
+          console.log(`[NostrProvider] Initial connection success (relayCnt=${relayCnt}).`);
           setNdkError(null); // Clear any previous generic NDK errors if initial connect was ok
         } else if (!ndkError) { // Only set error if a more specific one isn't already there
           console.log('[NostrProvider] initialNdkConnectionSuccess is false and ndkError is not set. Setting NDK error.');
