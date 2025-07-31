@@ -419,15 +419,15 @@ const TeamEventDetailPage: React.FC = () => {
 
     if (sortedParticipants.length === 0) {
       return (
-        <div className="text-center py-12 bg-gray-800/50 rounded-lg">
-          <p className="text-gray-400">No participants yet</p>
-          <p className="text-sm text-gray-500 mt-2">Be the first to join!</p>
+        <div className="text-center py-12 bg-black rounded-lg border border-white">
+          <p className="text-white">No participants yet</p>
+          <p className="text-sm text-gray-300 mt-2">Be the first to join!</p>
         </div>
       );
     }
 
     return (
-      <div className="divide-y divide-gray-700">
+      <div className="divide-y divide-white/20">
         {sortedParticipants.map((participant, index) => {
             const rank = index + 1;
             
@@ -435,7 +435,7 @@ const TeamEventDetailPage: React.FC = () => {
               <div
                 key={participant.pubkey}
                 className={`flex items-center justify-between p-4 ${
-                  participant.isCurrentUser ? 'bg-white/5 border-l-4 border-white' : ''
+                  participant.isCurrentUser ? 'bg-white/10 border-l-4 border-white' : ''
                 }`}
               >
                 <div className="flex items-center space-x-3">
@@ -445,7 +445,7 @@ const TeamEventDetailPage: React.FC = () => {
                     ${rank === 1 ? 'bg-yellow-500 text-black' : ''}
                     ${rank === 2 ? 'bg-gray-400 text-black' : ''}
                     ${rank === 3 ? 'bg-orange-600 text-white' : ''}
-                    ${rank > 3 ? 'bg-gray-800 text-gray-400 border border-gray-600' : ''}
+                    ${rank > 3 ? 'bg-black text-white border border-white' : ''}
                   `}>
                     {rank}
                   </div>
@@ -460,7 +460,7 @@ const TeamEventDetailPage: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-gray-400">
+                    <div className="text-xs text-gray-300">
                       {participant.completed ? (
                         <>
                           Completed • {formatTime(participant.duration)}
@@ -479,10 +479,10 @@ const TeamEventDetailPage: React.FC = () => {
                 
                 {/* Stats */}
                 <div className="text-right">
-                  <div className={`font-semibold ${participant.completed ? 'text-white' : 'text-gray-400'}`}>
+                  <div className={`font-semibold ${participant.completed ? 'text-white' : 'text-gray-300'}`}>
                     {participant.distance.toFixed(1)} km
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-gray-400">
                     Rank #{rank}
                   </div>
                 </div>
@@ -608,7 +608,7 @@ const TeamEventDetailPage: React.FC = () => {
         <div className="mb-6">
           <button
             onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}`)}
-            className="flex items-center text-gray-400 hover:text-white transition-colors mb-4"
+            className="flex items-center text-white hover:text-gray-300 transition-colors mb-4"
           >
             <span className="mr-2">←</span>
             Back to Team
@@ -616,17 +616,17 @@ const TeamEventDetailPage: React.FC = () => {
         </div>
 
         {/* Event Details */}
-        <div className="bg-gray-900 rounded-lg border border-gray-700 p-6 mb-6">
+        <div className="bg-black rounded-lg border border-white p-6 mb-6">
           <div className="flex justify-between items-start mb-4">
             <div>
               <h1 className="text-2xl font-bold text-white mb-2">{event.name}</h1>
-              <p className="text-gray-400 mb-2">
+              <p className="text-gray-300 mb-2">
                 {event.distance}km {event.activity} • {new Date(event.date).toLocaleDateString()}
                 {event.startTime && ` • ${event.startTime}`}
                 {event.endTime && ` - ${event.endTime}`}
               </p>
               {event.description && (
-                <p className="text-gray-300 text-sm">
+                <p className="text-white text-sm">
                   {event.description}
                 </p>
               )}
@@ -645,7 +645,7 @@ const TeamEventDetailPage: React.FC = () => {
                   <button
                     onClick={handleLeaveEvent}
                     disabled={isJoining}
-                    className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg transition-colors disabled:opacity-50"
+                    className="px-4 py-2 bg-black hover:bg-gray-900 text-white border border-white rounded-lg transition-colors disabled:opacity-50"
                   >
                     {isJoining ? 'Leaving...' : 'Leave Event'}
                   </button>
@@ -653,7 +653,7 @@ const TeamEventDetailPage: React.FC = () => {
                   <button
                     onClick={handleJoinEvent}
                     disabled={isJoining || status === 'completed'}
-                    className="px-4 py-2 bg-white hover:bg-gray-200 text-black font-semibold rounded-lg transition-colors disabled:opacity-50 border-2 border-black focus:outline-none focus:ring-0"
+                    className="px-4 py-2 bg-white hover:bg-gray-200 text-black font-semibold rounded-lg transition-colors disabled:opacity-50 border-2 border-white focus:outline-none focus:ring-0"
                   >
                     {isJoining ? 'Joining...' : 'Join Event'}
                   </button>
@@ -665,7 +665,7 @@ const TeamEventDetailPage: React.FC = () => {
             {isCaptain && (
               <button
                 onClick={() => setShowEditModal(true)}
-                className="px-4 py-2 bg-gray-800 hover:bg-white hover:text-black text-white text-sm rounded-lg transition-colors border border-gray-700 hover:border-black focus:outline-none focus:ring-0"
+                className="px-4 py-2 bg-black hover:bg-white hover:text-black text-white text-sm rounded-lg transition-colors border border-white focus:outline-none focus:ring-0"
               >
                 Edit Event
               </button>
@@ -673,17 +673,17 @@ const TeamEventDetailPage: React.FC = () => {
             
             {/* Show message if user is not logged in */}
             {!publicKey && (
-              <p className="text-sm text-gray-400">Sign in to join this event</p>
+              <p className="text-sm text-gray-300">Sign in to join this event</p>
             )}
           </div>
         </div>
 
         {/* Participants Section */}
-        <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden focus:outline-none focus:ring-0" style={{backgroundColor: '#111827 !important', background: '#111827 !important'}}>
-          <div className="p-4 border-b border-gray-700 bg-gray-800 focus:outline-none focus:ring-0 focus:bg-gray-800" style={{backgroundColor: '#1f2937 !important', background: '#1f2937 !important'}}>
+        <div className="bg-black rounded-lg border border-white overflow-hidden focus:outline-none focus:ring-0">
+          <div className="p-4 border-b border-white bg-black focus:outline-none focus:ring-0">
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold text-white">Event Leaderboard</h2>
-              <span className="text-sm text-gray-400">
+              <span className="text-sm text-gray-300">
                 {participantPubkeys.length} participant{participantPubkeys.length !== 1 ? 's' : ''}
               </span>
             </div>
@@ -693,11 +693,11 @@ const TeamEventDetailPage: React.FC = () => {
         </div>
 
         {/* Activity Feed Section */}
-        <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden mt-6 focus:outline-none focus:ring-0" style={{backgroundColor: '#111827 !important', background: '#111827 !important'}}>
-          <div className="p-4 border-b border-gray-700 bg-gray-800 focus:outline-none focus:ring-0 focus:bg-gray-800" style={{backgroundColor: '#1f2937 !important', background: '#1f2937 !important'}}>
+        <div className="bg-black rounded-lg border border-white overflow-hidden mt-6 focus:outline-none focus:ring-0">
+          <div className="p-4 border-b border-white bg-black focus:outline-none focus:ring-0">
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold text-white">Event Activities</h2>
-              <span className="text-sm text-gray-400">
+              <span className="text-sm text-gray-300">
                 {activities.length} workout{activities.length !== 1 ? 's' : ''}
               </span>
             </div>
@@ -707,19 +707,19 @@ const TeamEventDetailPage: React.FC = () => {
             {isLoadingActivities ? (
               <div className="text-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
-                <p className="text-gray-400">Loading activities...</p>
+                <p className="text-white">Loading activities...</p>
               </div>
             ) : activities.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-gray-400 mb-2">No activities yet</p>
-                <p className="text-sm text-gray-500">
+                <p className="text-white mb-2">No activities yet</p>
+                <p className="text-sm text-gray-300">
                   Participant workouts during the event will appear here
                 </p>
               </div>
             ) : (
               <div className="space-y-4">
                 {activities.map((activity, index) => (
-                  <div key={activity.id || index} className="bg-gray-800 rounded-lg border border-gray-700">
+                  <div key={activity.id || index} className="bg-black rounded-lg border border-white">
                     <Post 
                       post={activity} 
                       handleZap={() => {}} 

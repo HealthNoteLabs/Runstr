@@ -95,15 +95,15 @@ const EditEventModal: React.FC<EditEventModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-800">
+      <div className="bg-black rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto border border-white">
+        <div className="p-6 border-b border-white">
           <h2 className="text-xl font-bold text-white">Edit Team Event</h2>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Event Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-white00 mb-2">
               Event Name *
             </label>
             <input
@@ -111,14 +111,14 @@ const EditEventModal: React.FC<EditEventModalProps> = ({
               value={eventName}
               onChange={(e) => setEventName(e.target.value)}
               placeholder="Saturday Morning 5K"
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white"
+              className="w-full px-4 py-2 bg-black00 border border-white00 rounded-lg text-white placeholder-gray-40000 focus:outline-none focus:border-gray-300"
               required
             />
           </div>
 
           {/* Event Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-white00 mb-2">
               Description (Optional)
             </label>
             <textarea
@@ -126,13 +126,13 @@ const EditEventModal: React.FC<EditEventModalProps> = ({
               onChange={(e) => setEventDescription(e.target.value)}
               placeholder="Meet at Central Park entrance, bring water..."
               rows={3}
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white resize-vertical"
+              className="w-full px-4 py-2 bg-black00 border border-white00 rounded-lg text-white placeholder-gray-40000 focus:outline-none focus:border-gray-300 resize-vertical"
             />
           </div>
 
           {/* Activity Type */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-white00 mb-2">
               Activity Type *
             </label>
             <div className="grid grid-cols-3 gap-3">
@@ -144,7 +144,7 @@ const EditEventModal: React.FC<EditEventModalProps> = ({
                   className={`px-4 py-2 rounded-lg capitalize transition-colors ${
                     activity === type
                       ? 'bg-white text-black border-2 border-black'
-                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border-2 border-gray-700'
+                      : 'bg-black00 text-white00 hover:bg-gray-90000 border-2 border-white00'
                   }`}
                 >
                   {type === 'run' ? '🏃 Run' : type === 'walk' ? '🚶 Walk' : '🚴 Cycle'}
@@ -155,7 +155,7 @@ const EditEventModal: React.FC<EditEventModalProps> = ({
 
           {/* Distance */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-white00 mb-2">
               Distance *
             </label>
             <div className="grid grid-cols-3 gap-3 mb-3">
@@ -167,7 +167,7 @@ const EditEventModal: React.FC<EditEventModalProps> = ({
                   className={`px-4 py-2 rounded-lg transition-colors ${
                     distance === preset.value
                       ? 'bg-white text-black border-2 border-black'
-                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border-2 border-gray-700'
+                      : 'bg-black00 text-white00 hover:bg-gray-90000 border-2 border-white00'
                   }`}
                 >
                   {preset.label}
@@ -182,7 +182,7 @@ const EditEventModal: React.FC<EditEventModalProps> = ({
                 placeholder="Enter distance in km"
                 step="0.1"
                 min="0.1"
-                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white"
+                className="w-full px-4 py-2 bg-black00 border border-white00 rounded-lg text-white placeholder-gray-40000 focus:outline-none focus:border-gray-300"
                 required
               />
             )}
@@ -190,7 +190,7 @@ const EditEventModal: React.FC<EditEventModalProps> = ({
 
           {/* Event Date */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-white00 mb-2">
               Event Date *
             </label>
             <input
@@ -198,14 +198,14 @@ const EditEventModal: React.FC<EditEventModalProps> = ({
               value={eventDate}
               onChange={(e) => setEventDate(e.target.value)}
               min={today}
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-white"
+              className="w-full px-4 py-2 bg-black00 border border-white00 rounded-lg text-white focus:outline-none focus:border-gray-300"
               required
             />
           </div>
 
           {/* Time Window (Optional) */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-white00 mb-2">
               Time Window (Optional)
             </label>
             <div className="grid grid-cols-2 gap-3">
@@ -214,14 +214,14 @@ const EditEventModal: React.FC<EditEventModalProps> = ({
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
                 placeholder="Start time"
-                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-white"
+                className="px-4 py-2 bg-black00 border border-white00 rounded-lg text-white focus:outline-none focus:border-gray-300"
               />
               <input
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
                 placeholder="End time"
-                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-white"
+                className="px-4 py-2 bg-black00 border border-white00 rounded-lg text-white focus:outline-none focus:border-gray-300"
               />
             </div>
             <p className="text-xs text-gray-500 mt-1">
@@ -235,14 +235,14 @@ const EditEventModal: React.FC<EditEventModalProps> = ({
               type="button"
               onClick={onClose}
               disabled={isUpdating}
-              className="px-6 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors disabled:opacity-50"
+              className="px-6 py-2 bg-black00 hover:bg-gray-90000 text-white rounded-lg transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isUpdating}
-              className="px-6 py-2 bg-black hover:bg-gray-900 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 border-2 border-white"
+              className="px-6 py-2 bg-black hover:bg-black text-white font-semibold rounded-lg transition-colors disabled:opacity-50 border-2 border-white"
             >
               {isUpdating ? 'Updating...' : 'Update Event'}
             </button>

@@ -132,15 +132,15 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-800">
+      <div className="bg-black rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto border border-white">
+        <div className="p-6 border-b border-white">
           <h2 className="text-xl font-bold text-white">Create Team Event</h2>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Quick Templates */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-white mb-2">
               Quick Templates
             </label>
             <div className="grid grid-cols-2 gap-2 mb-4">
@@ -149,7 +149,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   key={index}
                   type="button"
                   onClick={() => applyTemplate(template)}
-                  className="px-3 py-2 text-sm bg-gray-800 hover:bg-white hover:text-black text-gray-300 rounded-lg transition-colors border border-gray-700 hover:border-black"
+                  className="px-3 py-2 text-sm bg-black hover:bg-white hover:text-black text-white rounded-lg transition-colors border border-white"
                 >
                   {template.name}
                 </button>
@@ -159,7 +159,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
 
           {/* Event Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-white mb-2">
               Event Name *
             </label>
             <input
@@ -167,14 +167,14 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
               value={eventName}
               onChange={(e) => setEventName(e.target.value)}
               placeholder="Saturday Morning 5K"
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white"
+              className="w-full px-4 py-2 bg-black border border-white rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-gray-300"
               required
             />
           </div>
 
           {/* Event Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-white mb-2">
               Description (Optional)
             </label>
             <textarea
@@ -182,13 +182,13 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
               onChange={(e) => setEventDescription(e.target.value)}
               placeholder="Meet at Central Park entrance, bring water..."
               rows={3}
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white resize-vertical"
+              className="w-full px-4 py-2 bg-black border border-white rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-gray-300 resize-vertical"
             />
           </div>
 
           {/* Activity Type */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-white mb-2">
               Activity Type *
             </label>
             <div className="grid grid-cols-3 gap-3">
@@ -199,8 +199,8 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   onClick={() => setActivity(type)}
                   className={`px-4 py-2 rounded-lg capitalize font-semibold transition-colors ${
                     activity === type
-                      ? 'bg-white text-black border-2 border-black'
-                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border-2 border-gray-700'
+                      ? 'bg-white text-black border-2 border-white'
+                      : 'bg-black text-white hover:bg-gray-900 border-2 border-white'
                   }`}
                 >
                   {type === 'run' ? 'Run' : type === 'walk' ? 'Walk' : 'Cycle'}
@@ -211,7 +211,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
 
           {/* Distance */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-white mb-2">
               Distance *
             </label>
             <div className="grid grid-cols-3 gap-3 mb-3">
@@ -222,8 +222,8 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   onClick={() => setDistance(preset.value)}
                   className={`px-4 py-2 rounded-lg transition-colors ${
                     distance === preset.value
-                      ? 'bg-white text-black border-2 border-black'
-                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border-2 border-gray-700'
+                      ? 'bg-white text-black border-2 border-white'
+                      : 'bg-black text-white hover:bg-gray-900 border-2 border-white'
                   }`}
                 >
                   {preset.label}
@@ -239,17 +239,17 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   placeholder="Enter distance"
                   step="0.1"
                   min="0.1"
-                  className="w-full px-4 py-2 pr-12 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-white"
+                  className="w-full px-4 py-2 pr-12 bg-black border border-white rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-gray-300"
                   required
                 />
-                <span className="absolute right-3 top-2 text-gray-400 text-sm">km</span>
+                <span className="absolute right-3 top-2 text-white text-sm">km</span>
               </div>
             )}
           </div>
 
           {/* Event Date */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-white mb-2">
               Event Date *
             </label>
             <input
@@ -257,14 +257,14 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
               value={eventDate}
               onChange={(e) => setEventDate(e.target.value)}
               min={minDate}
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-white"
+              className="w-full px-4 py-2 bg-black border border-white rounded-lg text-white focus:outline-none focus:border-gray-300"
               required
             />
           </div>
 
           {/* Time Window (Optional) */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-white mb-2">
               Time Window (Optional)
             </label>
             <div className="grid grid-cols-2 gap-3">
@@ -273,17 +273,17 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
                 placeholder="Start time"
-                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-white"
+                className="px-4 py-2 bg-black border border-white rounded-lg text-white focus:outline-none focus:border-gray-300"
               />
               <input
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
                 placeholder="End time"
-                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-white"
+                className="px-4 py-2 bg-black border border-white rounded-lg text-white focus:outline-none focus:border-gray-300"
               />
             </div>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-400 mt-1">
               Leave empty to allow participation all day
             </p>
           </div>
@@ -294,7 +294,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
               type="button"
               onClick={onClose}
               disabled={isCreating}
-              className="px-6 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors disabled:opacity-50"
+              className="px-6 py-2 bg-black hover:bg-gray-900 text-white rounded-lg transition-colors disabled:opacity-50 border border-white"
             >
               Cancel
             </button>

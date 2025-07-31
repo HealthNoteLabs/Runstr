@@ -87,7 +87,7 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
     if (upcomingEvents.length === 0) return null;
 
     return (
-      <div className="mb-6 p-4 bg-bg-secondary border border-border-secondary rounded-lg">
+      <div className="mb-6 p-4 bg-black border border-white rounded-lg">
         <h4 className="text-sm font-medium text-text-primary mb-2">🔔 Upcoming Events</h4>
         {upcomingEvents.map(event => {
           const timeUntil = getTimeUntilEvent(event.date);
@@ -96,7 +96,7 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
           return (
             <div key={event.id} className="flex items-center justify-between py-2">
               <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-text-inverse bg-bg-tertiary px-2 py-1 rounded">
+                <span className="text-xs font-bold text-black bg-white px-2 py-1 rounded">
                   {getActivityLabel(event.activity)}
                 </span>
                 <div>
@@ -240,7 +240,7 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
         {isCaptain && (
           <button
             onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-bg-primary hover:bg-bg-tertiary text-text-primary font-semibold rounded-lg transition-colors border-2 border-border-primary focus:outline-none focus:ring-0"
+            className="px-4 py-2 bg-black hover:bg-gray-900 text-white font-semibold rounded-lg transition-colors border-2 border-white focus:outline-none focus:ring-0"
           >
             Create Event
           </button>
@@ -248,7 +248,7 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
       </div>
 
       {events.length === 0 ? (
-        <div className="text-center py-12 bg-bg-secondary/50 rounded-lg border border-border-secondary">
+        <div className="text-center py-12 bg-black rounded-lg border border-white">
           <p className="text-text-muted mb-2">No events created yet.</p>
           {isCaptain && (
             <p className="text-sm text-text-muted">Create your first team event to get started!</p>
@@ -262,11 +262,11 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
               <div
                 key={event.id}
                 onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}/event/${event.id}`)}
-                className="bg-bg-secondary border border-border-secondary rounded-lg p-4 hover:bg-bg-tertiary transition-colors cursor-pointer"
+                className="bg-black border border-white rounded-lg p-4 hover:bg-gray-900 transition-colors cursor-pointer"
               >
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex items-center space-x-3">
-                    <span className="text-sm font-bold text-text-inverse bg-bg-tertiary px-3 py-2 rounded">
+                    <span className="text-sm font-bold text-black bg-white px-3 py-2 rounded">
                       {getActivityLabel(event.activity)}
                     </span>
                     <div>
