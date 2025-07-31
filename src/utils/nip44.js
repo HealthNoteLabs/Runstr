@@ -12,7 +12,7 @@
 // If the signer is missing we throw, because encryption is mandatory by default
 // for health events.
 
-import { ndk } from '../lib/ndkSingleton.js';
+import { ndk } from '../lib/ndkSingleton';
 
 /**
  * Encrypt a plaintext string using NIP-44 (XChaCha20-Poly1305) to a single

@@ -1,4 +1,4 @@
-import { ndk, ndkReadyPromise } from '../lib/ndkSingleton.js';
+import { ndk, ndkReadyPromise } from '../lib/ndkSingleton';
 import { nip19 } from 'nostr-tools';
 import { NDKEvent, NDKRelaySet } from '@nostr-dev-kit/ndk';
 import { ensureRelays } from './relays.js';

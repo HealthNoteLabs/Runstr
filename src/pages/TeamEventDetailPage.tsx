@@ -97,11 +97,21 @@ const TeamEventDetailPage: React.FC = () => {
         setLoadingState('loading');
         setLoadingStatus('Checking NDK connection...');
         
-        // Ensure NDK is ready with timeout
-        if (!ndkStatus?.isConnected) {
+        // Ensure NDK is ready
+        if (!ndkReady) {
           setLoadingStatus('Connecting to Nostr relays...');
-          const connected = await ensureConnection(15000);
-          if (!connected) {
+          if (isMounted) {
+            setLoadingState('error');
+            setLoadingStatus('Not connected to Nostr relays');
+            toast.error('Unable to connect to Nostr network');
+          }
+          return;
+        }
+
+        // Additional check for ndkStatus if available
+        if (ndkStatus && !ndkStatus.isConnected) {
+          setLoadingStatus('Connecting to Nostr relays...');
+          if (!ndkReady) {
             if (isMounted) {
               setLoadingState('error');
               setLoadingStatus('Failed to connect to Nostr relays');
@@ -236,7 +246,7 @@ const TeamEventDetailPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [eventId, teamAIdentifier, fetchWithTimeout, ensureConnection, ndkStatus, publicKey, captainPubkey, teamUUID, navigate]);
+  }, [eventId, teamAIdentifier, fetchWithTimeout, ndkReady, ndkStatus, publicKey, captainPubkey, teamUUID, navigate]);
 
   // Remove timeout - it's causing false timeouts when the event actually loads
   // The event is loading properly, just slowly

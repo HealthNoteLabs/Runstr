@@ -134,13 +134,10 @@ const TeamDetailPage: React.FC = () => {
 
     try {
       // Ensure NDK connection before proceeding
-      if (!ndkStatus?.isConnected) {
-        console.log('[TeamDetailPage] Ensuring NDK connection...');
-        const connected = await ensureConnection(10000);
-        if (!connected) {
-          setError('Unable to connect to Nostr network');
-          return;
-        }
+      if (!ndkReady) {
+        console.log('[TeamDetailPage] NDK not ready');
+        setError('Unable to connect to Nostr network');
+        return;
       }
 
       if (!ndk) {
@@ -168,7 +165,7 @@ const TeamDetailPage: React.FC = () => {
     } finally {
       if (!forceRefetch) setIsLoading(false);
     }
-  }, [captainPubkey, teamUUID, ndk, ndkStatus, ensureConnection]);
+  }, [captainPubkey, teamUUID, ndk, ndkReady]);
 
   useEffect(() => {
     // Always attempt to load if we have the basic parameters

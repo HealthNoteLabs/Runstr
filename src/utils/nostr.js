@@ -9,7 +9,7 @@ import { getEventTargetId, chunkArray } from './eventHelpers.js';
 import { v4 as uuidv4 } from 'uuid'; // Import uuid
 
 // Import the NDK singleton
-import { ndk, ndkReadyPromise } from '../lib/ndkSingleton.js'; // Adjusted path
+import { ndk, ndkReadyPromise } from '../lib/ndkSingleton'; // Adjusted path
 
 // Storage for subscriptions
 const activeSubscriptions = new Set();

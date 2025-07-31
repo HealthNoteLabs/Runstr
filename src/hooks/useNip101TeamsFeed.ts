@@ -9,7 +9,6 @@ import {
   KIND_FITNESS_TEAM 
 } from '../services/nostr/NostrTeamsService';
 import { useNostr } from './useNostr'; 
-import { awaitNDKReady, ndk as ndkSingleton } from '../lib/ndkSingleton'; 
 
 export interface ProcessedNip101Team {
   id: string; 
@@ -27,7 +26,7 @@ export const useNip101TeamsFeed = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { ndk: ndkFromContext, ndkError: ndkErrorFromContext } = useNostr();
+  const { ndk: ndkFromContext, ndkReady, ndkError: ndkErrorFromContext } = useNostr();
 
   const processFetchedTeams = (fetchedTeams: NostrTeamEvent[]): ProcessedNip101Team[] => {
     return fetchedTeams.map(event => ({
@@ -72,24 +71,18 @@ export const useNip101TeamsFeed = () => {
       setTeams([]);
 
       console.log("useNip101TeamsFeed: Checking NDK readiness...");
-      let isNdkActuallyReady = await awaitNDKReady();
-      let attempt = 0;
-      const maxAttempts = 2; 
-
-      while(!isNdkActuallyReady && attempt < maxAttempts && isMounted) {
-        attempt++;
-        console.log(`useNip101TeamsFeed: NDK not ready, attempt ${attempt}/${maxAttempts}. Waiting 2s...`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        if (!isMounted) return;
-        isNdkActuallyReady = await awaitNDKReady();
-      }
       
-      const ndkToUse = (isNdkActuallyReady && ndkFromContext) ? ndkFromContext : (isNdkActuallyReady ? ndkSingleton : null);
+      if (!ndkReady) {
+        console.log("useNip101TeamsFeed: NDK not ready, waiting for context to be ready...");
+        setError("Connecting to Nostr relays...");
+        setIsLoading(false);
+        return;
+      }
 
-      if (isNdkActuallyReady && ndkToUse) {
+      if (ndkReady && ndkFromContext) {
         if (isMounted) {
            console.log("useNip101TeamsFeed: NDK is ready. Loading teams.");
-           loadTeams(ndkToUse);
+           loadTeams(ndkFromContext);
         }
       } else {
         console.warn("useNip101TeamsFeed: NDK not ready after all checks or NDK instance missing.");
@@ -105,7 +98,7 @@ export const useNip101TeamsFeed = () => {
     return () => {
       isMounted = false;
     };
-  }, [ndkFromContext, ndkErrorFromContext, loadTeams]);
+  }, [ndkFromContext, ndkReady, ndkErrorFromContext, loadTeams]);
 
-  return { teams, isLoading, error, refetchTeams: () => loadTeams(ndkFromContext || ndkSingleton) };
+  return { teams, isLoading, error, refetchTeams: () => loadTeams(ndkFromContext) };
 }; 

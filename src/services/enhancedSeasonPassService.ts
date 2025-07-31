@@ -8,7 +8,7 @@
  * The service prioritizes the Nostr list when available and falls back to localStorage.
  */
 
-import { ndk, ndkReadyPromise } from '../lib/ndkSingleton.js';
+import { ndk, ndkReadyPromise } from '../lib/ndkSingleton';
 import seasonPassService, { SeasonPassParticipant } from './seasonPassService';
 
 // Constants for the Nostr participant list

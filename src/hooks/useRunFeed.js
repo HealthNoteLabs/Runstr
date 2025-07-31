@@ -4,7 +4,8 @@ import {
   loadSupplementaryData, 
   processPostsWithData
 } from '../utils/nostr';
-import { awaitNDKReady, ndk } from '../lib/ndkSingleton';
+import { ndk } from '../lib/ndkSingleton';
+import { useNostr } from './useNostr';
 import { lightweightProcessPosts, mergeProcessedPosts } from '../utils/feedProcessor';
 import { NDKRelaySet } from '@nostr-dev-kit/ndk';
 import { getFastestRelays } from '../utils/feedFetcher';
@@ -26,6 +27,7 @@ const globalState = {
 
 export const useRunFeed = (filterSource = null) => {
   const { mode: activityMode } = useActivityMode();
+  const { ndkReady } = useNostr();
   // Initialize with empty array instead of getFeed() to prevent override
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,18 +49,12 @@ export const useRunFeed = (filterSource = null) => {
   // Re-use the shared profile cache that already works in ChatRoom
   const { fetchProfiles } = useProfileCache();
 
-  // Ensure NDK as soon as the hook is used
+  // Wait for NDK readiness from context
   useEffect(() => {
-    const initNostr = async () => {
-      // Only initialize once
-      if (!globalState.isInitialized) {
-        await awaitNDKReady();
-        globalState.isInitialized = true;
-      }
-    };
-    
-    initNostr();
-  }, []);
+    if (ndkReady && !globalState.isInitialized) {
+      globalState.isInitialized = true;
+    }
+  }, [ndkReady]);
 
   // Background fetch for new posts
   const setupBackgroundFetch = useCallback(() => {
@@ -337,7 +333,11 @@ export const useRunFeed = (filterSource = null) => {
       }
 
       // Ensure NDK ready first
-      await awaitNDKReady();
+      if (!ndkReady) {
+        setError("Connecting to Nostr relays...");
+        setLoading(false);
+        return;
+      }
 
       // Check if we have cached posts that are recent enough (less than 5 minutes old)
       const now = Date.now();
@@ -477,7 +477,7 @@ export const useRunFeed = (filterSource = null) => {
     } finally {
       setLoading(false);
     }
-  }, [page, displayLimit, updateUserInteractions, setupBackgroundFetch, filterSource, applyRunstrFilter]);
+  }, [page, displayLimit, updateUserInteractions, setupBackgroundFetch, filterSource, applyRunstrFilter, ndkReady]);
 
   // Load more posts function - increases the display limit
   const loadMorePosts = useCallback(() => {

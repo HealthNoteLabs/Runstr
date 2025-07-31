@@ -2,7 +2,7 @@
 // Implements NIP-96 HTTP File Storage Integration
 
 import { nip19 } from 'nostr-tools';
-import { ndk } from '../lib/ndkSingleton.js';
+import { ndk } from '../lib/ndkSingleton';
 import { getUserPublicKey } from '../utils/nostrClient.js';
 
 // Debug callback for UI logging - TEMPORARY FOR DEBUGGING
