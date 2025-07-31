@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useNostr } from '../hooks/useNostr';
 import { 
@@ -16,6 +16,7 @@ import {
 import { DisplayName } from '../components/shared/DisplayName';
 import { Post } from '../components/Post';
 import EditEventModal from '../components/modals/EditEventModal';
+import { teamEventsCache, CACHE_KEYS, CACHE_TTL } from '../utils/teamEventsCache.js';
 import toast from 'react-hot-toast';
 
 const TeamEventDetailPage: React.FC = () => {
@@ -32,7 +33,8 @@ const TeamEventDetailPage: React.FC = () => {
   const [participants, setParticipants] = useState<EventParticipation[]>([]);
   const [participantPubkeys, setParticipantPubkeys] = useState<string[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingEvent, setIsLoadingEvent] = useState(true);
+  const [isLoadingParticipants, setIsLoadingParticipants] = useState(false);
   const [isLoadingActivities, setIsLoadingActivities] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [isParticipating, setIsParticipating] = useState(false);
@@ -47,7 +49,7 @@ const TeamEventDetailPage: React.FC = () => {
   const isCaptain = publicKey === captainPubkey;
 
   // Load event activities
-  const loadEventActivities = async (eventDetails: TeamEventDetails, participantPubkeys: string[]) => {
+  const loadEventActivities = useCallback(async (eventDetails: TeamEventDetails, participantPubkeys: string[]) => {
     if (!ndk || participantPubkeys.length === 0) return;
 
     setIsLoadingActivities(true);
@@ -80,9 +82,181 @@ const TeamEventDetailPage: React.FC = () => {
     } finally {
       setIsLoadingActivities(false);
     }
-  };
+  }, [ndk, teamAIdentifier]);
 
-  // Enhanced event loading with proper timeout and cancellation
+  // Progressive loading functions
+  const loadEventDetails = useCallback(async () => {
+    if (!eventId || !teamAIdentifier || !ndk) return;
+
+    const cacheKey = CACHE_KEYS.EVENT_DETAILS(teamAIdentifier, eventId);
+    
+    // Check cache first
+    const cachedEvent = teamEventsCache.get<TeamEventDetails>(cacheKey);
+    if (cachedEvent) {
+      setEvent(cachedEvent);
+      setLoadingState('success');
+      setIsLoadingEvent(false);
+      return cachedEvent;
+    }
+
+    setIsLoadingEvent(true);
+    setLoadingStatus('Loading event details...');
+
+    try {
+      // Ensure connection
+      if (!ndkStatus?.isConnected) {
+        setLoadingStatus('Connecting to Nostr relays...');
+        const connected = await ensureConnection(15000);
+        if (!connected) {
+          throw new Error('Failed to connect to Nostr relays');
+        }
+      }
+
+      const foundEvent = await fetchWithTimeout(
+        (ndk) => fetchTeamEventById(ndk, teamAIdentifier, eventId),
+        10000
+      );
+
+      if (!foundEvent) {
+        setLoadingState('error');
+        setLoadingStatus('Event not found');
+        toast.error('Event not found');
+        setTimeout(() => navigate(`/teams/${captainPubkey}/${teamUUID}`), 2000);
+        return null;
+      }
+
+      // Cache and set event
+      teamEventsCache.set(cacheKey, foundEvent, CACHE_TTL.EVENT_DETAILS);
+      setEvent(foundEvent);
+      setLoadingState('success');
+      setLoadingStatus('Event loaded');
+      
+      return foundEvent;
+    } catch (error) {
+      console.error('Error loading event:', error);
+      setLoadingState('error');
+      setLoadingStatus(`Error: ${error.message}`);
+      toast.error('Failed to load event details');
+      return null;
+    } finally {
+      setIsLoadingEvent(false);
+    }
+  }, [eventId, teamAIdentifier, ndk, ndkStatus, ensureConnection, fetchWithTimeout, navigate, captainPubkey, teamUUID]);
+
+  const loadParticipants = useCallback(async (eventDetails: TeamEventDetails) => {
+    if (!ndk || !eventId || !teamAIdentifier) return;
+
+    const participantsCacheKey = CACHE_KEYS.EVENT_PARTICIPANTS(teamAIdentifier, eventId);
+    const participationCacheKey = CACHE_KEYS.EVENT_PARTICIPATION(teamAIdentifier, eventId);
+
+    // Check cache first
+    const cachedParticipants = teamEventsCache.get<string[]>(participantsCacheKey);
+    const cachedParticipation = teamEventsCache.get<EventParticipation[]>(participationCacheKey);
+
+    if (cachedParticipants && cachedParticipation) {
+      setParticipantPubkeys(cachedParticipants);
+      setParticipants(cachedParticipation);
+      
+      // Check user participation from cache
+      if (publicKey) {
+        setIsParticipating(cachedParticipants.includes(publicKey));
+      }
+      return;
+    }
+
+    setIsLoadingParticipants(true);
+
+    try {
+      const [eventParticipants, participationData] = await Promise.all([
+        fetchWithTimeout(
+          (ndk) => fetchEventParticipants(ndk, eventId, teamAIdentifier),
+          10000
+        ),
+        fetchWithTimeout(
+          (ndk) => fetchEventParticipation(ndk, eventId, teamAIdentifier, eventDetails.date),
+          10000
+        )
+      ]);
+
+      // Cache results
+      teamEventsCache.set(participantsCacheKey, eventParticipants || [], CACHE_TTL.PARTICIPANTS);
+      teamEventsCache.set(participationCacheKey, participationData || [], CACHE_TTL.PARTICIPATION);
+
+      // Set state
+      setParticipantPubkeys(eventParticipants || []);
+      setParticipants(participationData || []);
+
+      // Check user participation
+      if (publicKey && eventParticipants?.length > 0) {
+        const userIsParticipating = await fetchWithTimeout(
+          (ndk) => isUserParticipating(ndk, eventId, teamAIdentifier, publicKey),
+          8000
+        );
+        setIsParticipating(userIsParticipating);
+      } else {
+        setIsParticipating(false);
+      }
+
+    } catch (error) {
+      console.error('Error loading participants:', error);
+      // Set empty arrays but don't show error - participants might just be loading
+      setParticipantPubkeys([]);
+      setParticipants([]);
+      setIsParticipating(false);
+    } finally {
+      setIsLoadingParticipants(false);
+    }
+  }, [ndk, eventId, teamAIdentifier, publicKey, fetchWithTimeout]);
+
+  const loadActivities = useCallback(async (eventDetails: TeamEventDetails, participantPubkeys: string[]) => {
+    if (!ndk || participantPubkeys.length === 0) return;
+
+    const cacheKey = CACHE_KEYS.EVENT_ACTIVITIES(teamAIdentifier, eventId);
+    
+    // Check cache first
+    const cachedActivities = teamEventsCache.get<any[]>(cacheKey);
+    if (cachedActivities) {
+      setActivities(cachedActivities);
+      return;
+    }
+
+    setIsLoadingActivities(true);
+
+    try {
+      const eventActivities = await fetchEventActivities(
+        ndk, 
+        eventDetails.id, 
+        teamAIdentifier, 
+        participantPubkeys, 
+        eventDetails.date,
+        eventDetails.endTime ? eventDetails.date : undefined
+      );
+
+      const formattedActivities = eventActivities.map(activity => ({
+        ...activity,
+        kind: activity.kind,
+        content: activity.content,
+        created_at: activity.created_at,
+        pubkey: activity.pubkey,
+        tags: activity.tags,
+        author: {
+          pubkey: activity.pubkey
+        }
+      }));
+
+      // Cache and set activities
+      teamEventsCache.set(cacheKey, formattedActivities, CACHE_TTL.ACTIVITIES);
+      setActivities(formattedActivities);
+
+    } catch (error) {
+      console.error('Error loading activities:', error);
+      setActivities([]);
+    } finally {
+      setIsLoadingActivities(false);
+    }
+  }, [ndk, teamAIdentifier, eventId]);
+
+  // Main loading effect - progressive loading
   useEffect(() => {
     if (!eventId || !teamAIdentifier) {
       setLoadingState('error');
@@ -91,152 +265,32 @@ const TeamEventDetailPage: React.FC = () => {
     }
 
     let isMounted = true;
-    
-    const loadEvent = async () => {
-      try {
-        setLoadingState('loading');
-        setLoadingStatus('Checking NDK connection...');
-        
-        // Ensure NDK is ready with timeout
-        if (!ndkStatus?.isConnected) {
-          setLoadingStatus('Connecting to Nostr relays...');
-          const connected = await ensureConnection(15000);
-          if (!connected) {
-            if (isMounted) {
-              setLoadingState('error');
-              setLoadingStatus('Failed to connect to Nostr relays');
-              toast.error('Unable to connect to Nostr network');
-            }
-            return;
-          }
-        }
 
-        if (!isMounted) return;
-        setLoadingStatus('Fetching event details...');
-        
-        // Use the more efficient fetchTeamEventById
-        let foundEvent = null;
-        try {
-          foundEvent = await fetchWithTimeout(
-            (ndk) => fetchTeamEventById(ndk, teamAIdentifier, eventId),
-            10000 // 10 second timeout for single event
-          );
-        } catch (fetchError) {
-          console.error('Error fetching team event:', fetchError);
-          foundEvent = null;
-        }
+    const progressiveLoad = async () => {
+      // Step 1: Load event details (show page immediately)
+      const eventDetails = await loadEventDetails();
+      
+      if (!isMounted || !eventDetails) return;
 
-        if (!isMounted) return;
-        
-        // Handle case where event doesn't exist
-        if (!foundEvent) {
-          console.log('Event not found, it may have been deleted or not synced yet');
-          setLoadingStatus('Event not found');
-          if (isMounted) {
-            setLoadingState('error');
-            setLoadingStatus('Event not found - it may have been deleted or is still syncing');
-            toast.error('Event not found');
-            setTimeout(() => navigate(`/teams/${captainPubkey}/${teamUUID}`), 2000);
-          }
-          return;
-        }
+      // Step 2: Load participants in background
+      loadParticipants(eventDetails);
 
-        if (!isMounted) return;
-        setEvent(foundEvent);
-        setLoadingStatus('Loading participants...');
-
-        // Load participants and participation data with timeout
-        let eventParticipants = [];
-        let participationData = [];
-        
-        try {
-          [eventParticipants, participationData] = await Promise.all([
-            fetchWithTimeout(
-              (ndk) => fetchEventParticipants(ndk, eventId, teamAIdentifier),
-              10000
-            ),
-            fetchWithTimeout(
-              (ndk) => fetchEventParticipation(ndk, eventId, teamAIdentifier, foundEvent.date),
-              10000
-            )
-          ]);
-        } catch (error) {
-          console.error('Error loading participants:', error);
-          // Continue with empty arrays - the event exists but may have no participants yet
-          eventParticipants = [];
-          participationData = [];
-        }
-
-        if (!isMounted) return;
-        setParticipantPubkeys(eventParticipants || []);
-        setParticipants(participationData || []);
-
-        // Check if current user is participating
-        if (publicKey && eventParticipants && eventParticipants.length > 0) {
-          setLoadingStatus('Checking participation...');
-          try {
-            const userIsParticipating = await fetchWithTimeout(
-              (ndk) => isUserParticipating(ndk, eventId, teamAIdentifier, publicKey),
-              8000
-            );
-            if (isMounted) {
-              setIsParticipating(userIsParticipating);
-            }
-          } catch (error) {
-            console.error('Error checking participation:', error);
-            setIsParticipating(false);
-          }
-        } else {
-          // No participants yet, so user is not participating
-          setIsParticipating(false);
-        }
-
-        // Load event activities if we have participants
-        if (eventParticipants && eventParticipants.length > 0) {
-          setLoadingStatus('Loading activities...');
-          try {
-            await loadEventActivities(foundEvent, eventParticipants);
-          } catch (error) {
-            console.error('Error loading activities:', error);
-            // Continue without activities
-          }
-        }
-        
-        if (isMounted) {
-          setLoadingState('success');
-          setLoadingStatus('Complete');
-        }
-
-      } catch (error) {
-        console.error('Error loading event:', error);
-        
-        if (!isMounted) return;
-        
-        if (error.message === 'Request cancelled') {
-          setLoadingState('cancelled');
-          setLoadingStatus('Request cancelled');
-        } else if (error.message.includes('timeout')) {
-          setLoadingState('timeout');
-          setLoadingStatus('Request timed out');
-          toast.error('Loading timed out. Please try again.');
-        } else {
-          setLoadingState('error');
-          setLoadingStatus(`Error: ${error.message}`);
-          toast.error('Failed to load event details');
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
+      // Step 3: Load activities after participants (will auto-trigger when participants load)
     };
 
-    loadEvent();
-    
+    progressiveLoad();
+
     return () => {
       isMounted = false;
     };
-  }, [eventId, teamAIdentifier, fetchWithTimeout, ensureConnection, ndkStatus, publicKey, captainPubkey, teamUUID, navigate]);
+  }, [eventId, teamAIdentifier, loadEventDetails, loadParticipants]);
+
+  // Load activities when participants change
+  useEffect(() => {
+    if (event && participantPubkeys.length > 0) {
+      loadActivities(event, participantPubkeys);
+    }
+  }, [event, participantPubkeys, loadActivities]);
 
   // Remove timeout - it's causing false timeouts when the event actually loads
   // The event is loading properly, just slowly
@@ -254,13 +308,14 @@ const TeamEventDetailPage: React.FC = () => {
         setIsParticipating(true);
         toast.success('Successfully joined the event!');
         
-        // Refresh participant list
-        const updatedParticipants = await fetchEventParticipants(ndk, eventId!, teamAIdentifier);
-        setParticipantPubkeys(updatedParticipants);
+        // Clear cache and reload participants
+        teamEventsCache.delete(CACHE_KEYS.EVENT_PARTICIPANTS(teamAIdentifier, eventId!));
+        teamEventsCache.delete(CACHE_KEYS.EVENT_PARTICIPATION(teamAIdentifier, eventId!));
+        teamEventsCache.delete(CACHE_KEYS.EVENT_ACTIVITIES(teamAIdentifier, eventId!));
         
-        // Refresh activities if event details are available
-        if (event && updatedParticipants.length > 0) {
-          await loadEventActivities(event, updatedParticipants);
+        // Reload participants and activities
+        if (event) {
+          loadParticipants(event);
         }
       } else {
         toast.error('Failed to join event');
@@ -286,13 +341,14 @@ const TeamEventDetailPage: React.FC = () => {
         setIsParticipating(false);
         toast.success('Left the event');
         
-        // Refresh participant list
-        const updatedParticipants = await fetchEventParticipants(ndk, eventId!, teamAIdentifier);
-        setParticipantPubkeys(updatedParticipants);
+        // Clear cache and reload participants
+        teamEventsCache.delete(CACHE_KEYS.EVENT_PARTICIPANTS(teamAIdentifier, eventId!));
+        teamEventsCache.delete(CACHE_KEYS.EVENT_PARTICIPATION(teamAIdentifier, eventId!));
+        teamEventsCache.delete(CACHE_KEYS.EVENT_ACTIVITIES(teamAIdentifier, eventId!));
         
-        // Refresh activities if event details are available
-        if (event && updatedParticipants.length > 0) {
-          await loadEventActivities(event, updatedParticipants);
+        // Reload participants and activities
+        if (event) {
+          loadParticipants(event);
         }
       } else {
         toast.error('Failed to leave event');
@@ -388,7 +444,7 @@ const TeamEventDetailPage: React.FC = () => {
     return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
   };
 
-  const renderLeaderboard = () => {
+  const sortedParticipants = useMemo(() => {
     // Combine participants and their completion data
     const allParticipants = participantPubkeys.map(pubkey => {
       const participation = participants.find(p => p.pubkey === pubkey);
@@ -403,7 +459,7 @@ const TeamEventDetailPage: React.FC = () => {
     });
 
     // Sort by completion status, then by distance/time
-    const sortedParticipants = allParticipants.sort((a, b) => {
+    return allParticipants.sort((a, b) => {
       // Completed participants first
       if (a.completed && !b.completed) return -1;
       if (!a.completed && b.completed) return 1;
@@ -416,6 +472,9 @@ const TeamEventDetailPage: React.FC = () => {
       // Among non-completed participants, sort by distance (highest first)
       return b.distance - a.distance;
     });
+  }, [participantPubkeys, participants, event?.distance, publicKey]);
+
+  const renderLeaderboard = () => {
 
     if (sortedParticipants.length === 0) {
       return (
@@ -494,7 +553,7 @@ const TeamEventDetailPage: React.FC = () => {
   };
 
   // Enhanced loading states with proper error handling
-  if (loadingState === 'loading' || isLoading) {
+  if (loadingState === 'loading' || isLoadingEvent) {
     return (
       <div className="min-h-screen bg-bg-primary text-text-primary p-4">
         <div className="max-w-4xl mx-auto">
@@ -684,12 +743,19 @@ const TeamEventDetailPage: React.FC = () => {
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold text-white">Event Leaderboard</h2>
               <span className="text-sm text-gray-300">
-                {participantPubkeys.length} participant{participantPubkeys.length !== 1 ? 's' : ''}
+                {isLoadingParticipants ? 'Loading...' : `${participantPubkeys.length} participant${participantPubkeys.length !== 1 ? 's' : ''}`}
               </span>
             </div>
           </div>
           
-          {renderLeaderboard()}
+          {isLoadingParticipants ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mx-auto mb-4"></div>
+              <p className="text-white text-sm">Loading participants...</p>
+            </div>
+          ) : (
+            renderLeaderboard()
+          )}
         </div>
 
         {/* Activity Feed Section */}

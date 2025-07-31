@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useNostr } from '../../hooks/useNostr';
 import { fetchTeamEvents, TeamEventDetails } from '../../services/nostr/NostrTeamsService';
+import { teamEventsCache, CACHE_KEYS, CACHE_TTL } from '../../utils/teamEventsCache.js';
 import CreateEventModal from '../modals/CreateEventModal';
 import toast from 'react-hot-toast';
 
@@ -23,32 +24,90 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
   const [events, setEvents] = useState<TeamEventDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [loadingTimeout, setLoadingTimeout] = useState<NodeJS.Timeout | null>(null);
 
-  const loadEvents = async () => {
+  const loadEvents = useCallback(async () => {
     if (!ndk || !ndkReady || !teamAIdentifier) return;
+    
+    const cacheKey = CACHE_KEYS.TEAM_EVENTS(teamAIdentifier);
+    
+    // Check cache first
+    const cachedEvents = teamEventsCache.get<TeamEventDetails[]>(cacheKey);
+    if (cachedEvents) {
+      setEvents(cachedEvents);
+      setIsLoading(false);
+      return;
+    }
+    
+    // Clear any existing timeout
+    if (loadingTimeout) {
+      clearTimeout(loadingTimeout);
+    }
     
     setIsLoading(true);
     try {
       const teamEvents = await fetchTeamEvents(ndk, teamAIdentifier);
+      
+      // Cache the results
+      teamEventsCache.set(cacheKey, teamEvents, CACHE_TTL.TEAM_EVENTS);
       setEvents(teamEvents);
     } catch (error) {
       console.error('Error fetching team events:', error);
       toast.error('Failed to load team events');
     } finally {
-      setIsLoading(false);
+      // Add a small delay to prevent loading flicker for very fast requests
+      const timeout = setTimeout(() => {
+        setIsLoading(false);
+      }, 100);
+      setLoadingTimeout(timeout);
     }
-  };
+  }, [ndk, ndkReady, teamAIdentifier, loadingTimeout]);
 
   useEffect(() => {
     loadEvents();
-  }, [ndk, ndkReady, teamAIdentifier]);
+  }, [loadEvents]);
 
   const handleEventCreated = () => {
     setShowCreateModal(false);
-    loadEvents(); // Reload events after creation
+    // Clear cache and reload events after creation
+    teamEventsCache.delete(CACHE_KEYS.TEAM_EVENTS(teamAIdentifier));
+    loadEvents();
   };
 
-  const getUpcomingReminders = () => {
+  const getEventStatus = useCallback((event: TeamEventDetails): string => {
+    const now = new Date();
+    const eventDate = new Date(event.date);
+    
+    // If event has start/end times, use them for precise timing
+    if (event.startTime && event.endTime) {
+      const eventStart = new Date(event.date + 'T' + event.startTime);
+      const eventEnd = new Date(event.date + 'T' + event.endTime);
+      
+      if (now > eventEnd) {
+        return 'completed';
+      } else if (now >= eventStart && now <= eventEnd) {
+        return 'active';
+      } else {
+        return 'upcoming';
+      }
+    }
+    
+    // For all-day events, use more precise timing
+    const eventStart = new Date(event.date);
+    eventStart.setHours(0, 0, 0, 0);
+    const eventEnd = new Date(event.date);
+    eventEnd.setHours(23, 59, 59, 999);
+    
+    if (now > eventEnd) {
+      return 'completed';
+    } else if (now >= eventStart && now <= eventEnd) {
+      return 'active';
+    } else {
+      return 'upcoming';
+    }
+  }, []);
+
+  const upcomingReminders = useMemo(() => {
     const now = new Date();
     const today = now.toDateString();
     const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toDateString();
@@ -79,10 +138,10 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
       
       return false;
     });
-  };
+  }, [events, getEventStatus]);
 
   const renderReminderBanner = () => {
-    const upcomingEvents = getUpcomingReminders();
+    const upcomingEvents = upcomingReminders;
     
     if (upcomingEvents.length === 0) return null;
 
@@ -118,40 +177,8 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
     );
   };
 
-  const getEventStatus = (event: TeamEventDetails): string => {
-    const now = new Date();
-    const eventDate = new Date(event.date);
-    
-    // If event has start/end times, use them for precise timing
-    if (event.startTime && event.endTime) {
-      const eventStart = new Date(event.date + 'T' + event.startTime);
-      const eventEnd = new Date(event.date + 'T' + event.endTime);
-      
-      if (now > eventEnd) {
-        return 'completed';
-      } else if (now >= eventStart && now <= eventEnd) {
-        return 'active';
-      } else {
-        return 'upcoming';
-      }
-    }
-    
-    // For all-day events, use more precise timing
-    const eventStart = new Date(event.date);
-    eventStart.setHours(0, 0, 0, 0);
-    const eventEnd = new Date(event.date);
-    eventEnd.setHours(23, 59, 59, 999);
-    
-    if (now > eventEnd) {
-      return 'completed';
-    } else if (now >= eventStart && now <= eventEnd) {
-      return 'active';
-    } else {
-      return 'upcoming';
-    }
-  };
 
-  const getTimeUntilEvent = (eventDate: string): string => {
+  const getTimeUntilEvent = useCallback((eventDate: string): string => {
     const now = new Date();
     const event = new Date(eventDate);
     const diffMs = event.getTime() - now.getTime();
@@ -166,7 +193,7 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
     if (diffHours > 0) return `in ${diffHours} hour${diffHours > 1 ? 's' : ''}`;
     if (diffMinutes > 0) return `in ${diffMinutes} min`;
     return 'starting soon';
-  };
+  }, []);
 
   const getStatusBadge = (status: string, eventDate: string) => {
     const timeUntil = status === 'upcoming' ? getTimeUntilEvent(eventDate) : '';
