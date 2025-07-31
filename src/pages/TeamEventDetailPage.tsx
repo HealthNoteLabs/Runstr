@@ -326,7 +326,7 @@ const TeamEventDetailPage: React.FC = () => {
 
     setIsJoining(true);
     try {
-      const result = await joinTeamEvent(ndk, eventId!, teamAIdentifier, captainPubkey!);
+      const result = await joinTeamEvent(ndk, eventId!, teamAIdentifier, captainPubkey!, publicKey);
       if (result) {
         // Immediately update UI state
         setIsParticipating(true);
@@ -362,7 +362,7 @@ const TeamEventDetailPage: React.FC = () => {
 
     setIsJoining(true);
     try {
-      const success = await leaveTeamEvent(ndk, eventId!, teamAIdentifier);
+      const success = await leaveTeamEvent(ndk, eventId!, teamAIdentifier, publicKey);
       if (success) {
         // Immediately update UI state
         setIsParticipating(false);

@@ -11,7 +11,7 @@ export const KIND_WORKOUT_RECORD = 1301; // Define Kind 1301
 export const KIND_TEAM_MEMBERSHIP = 33406; // New kind: membership join event
 export const KIND_TEAM_SUBSCRIPTION_RECEIPT = 33408; // Kind for subscription receipt events
 export const KIND_TEAM_AUTO_REMOVE = 33407; // Kind for auto-removal (grace period exceeded)
-export const KIND_EVENT_PARTICIPATION = 33409; // New kind: event participation
+export const KIND_EVENT_PARTICIPATION = 30009; // Replaceable event participation (30000-39999 range)
 
 // NIP-29 Kinds - to be removed or repurposed if NIP-29 integration is fully removed
 // export const KIND_NIP29_GROUP_METADATA = 10009;
@@ -1578,11 +1578,11 @@ export async function joinTeamEvent(
   ndk: NDK,
   eventId: string,
   teamAIdentifier: string,
-  captainPubkey: string
+  captainPubkey: string,
+  userPubkey: string
 ): Promise<NDKEvent | null> {
-  const userPubkey = ndk.activeUser?.pubkey;
   if (!userPubkey) {
-    console.error("No active user found");
+    console.error("No user pubkey provided");
     return null;
   }
 
@@ -1628,11 +1628,11 @@ export async function joinTeamEvent(
 export async function leaveTeamEvent(
   ndk: NDK,
   eventId: string,
-  teamAIdentifier: string
+  teamAIdentifier: string,
+  userPubkey: string
 ): Promise<boolean> {
-  const userPubkey = ndk.activeUser?.pubkey;
   if (!userPubkey) {
-    console.error("No active user found");
+    console.error("No user pubkey provided");
     return false;
   }
 
