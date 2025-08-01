@@ -76,12 +76,12 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
 
   const getEventStatus = useCallback((event: TeamEventDetails): string => {
     const now = new Date();
-    const eventDate = new Date(event.date);
     
     // If event has start/end times, use them for precise timing
     if (event.startTime && event.endTime) {
-      const eventStart = new Date(event.date + 'T' + event.startTime);
-      const eventEnd = new Date(event.date + 'T' + event.endTime);
+      // Fix: Use UTC dates to avoid timezone issues
+      const eventStart = new Date(event.date + 'T' + event.startTime + ':00.000Z');
+      const eventEnd = new Date(event.date + 'T' + event.endTime + ':00.000Z');
       
       if (now > eventEnd) {
         return 'completed';
@@ -92,11 +92,10 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
       }
     }
     
-    // For all-day events, use more precise timing
-    const eventStart = new Date(event.date);
-    eventStart.setHours(0, 0, 0, 0);
-    const eventEnd = new Date(event.date);
-    eventEnd.setHours(23, 59, 59, 999);
+    // For all-day events, use UTC midnight to midnight to ensure consistency
+    // This ensures all users see the same event status regardless of timezone
+    const eventStart = new Date(event.date + 'T00:00:00.000Z');
+    const eventEnd = new Date(event.date + 'T23:59:59.999Z');
     
     if (now > eventEnd) {
       return 'completed';

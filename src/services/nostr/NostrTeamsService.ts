@@ -1466,10 +1466,9 @@ export async function fetchEventParticipation(
   const teamUUID = teamParts[teamParts.length - 1];
 
   // Fetch workouts for the event date with team tag
-  const startOfDay = new Date(eventDate);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(eventDate);
-  endOfDay.setHours(23, 59, 59, 999);
+  // Fix: Use UTC dates to ensure consistent event date handling across timezones
+  const startOfDay = new Date(eventDate + 'T00:00:00.000Z');
+  const endOfDay = new Date(eventDate + 'T23:59:59.999Z');
 
   const filter: NDKFilter = {
     kinds: [KIND_WORKOUT_RECORD as NDKKind],
