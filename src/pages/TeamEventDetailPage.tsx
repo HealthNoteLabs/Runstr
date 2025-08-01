@@ -42,7 +42,24 @@ const TeamEventDetailPage: React.FC = () => {
     );
   }
 
-  const [event, setEvent] = useState<TeamEventDetails | null>(null);
+  // Initialize with skeleton event to prevent black screen
+  const [event, setEvent] = useState<TeamEventDetails | null>(() => {
+    if (!eventId || !captainPubkey || !teamUUID) return null;
+    
+    return {
+      id: eventId,
+      name: 'Loading Event...',
+      description: '',
+      date: new Date().toISOString().split('T')[0],
+      startTime: null,
+      endTime: null,
+      distance: 0,
+      activity: 'run',
+      teamAIdentifier: `33404:${captainPubkey}:${teamUUID}`,
+      captainPubkey: captainPubkey,
+      isLoading: true
+    };
+  });
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
@@ -110,75 +127,15 @@ const TeamEventDetailPage: React.FC = () => {
     'all' // Show all activity types
   );
 
-  // LEAGUE PATTERN: Progressive loading with immediate skeleton display
-  const loadEventDetails = useCallback(async () => {
-    if (!eventId || !teamAIdentifier) return;
-
-    const cacheKey = CACHE_KEYS.EVENT_DETAILS(teamAIdentifier, eventId);
-    
-    // LEAGUE PATTERN: Always show skeleton event immediately for faster perceived performance
-    if (!event && skeletonEvent) {
-      console.log('[TeamEventDetailPage] Showing skeleton event immediately');
-      setEvent(skeletonEvent);
-      setIsLoadingEvent(true);
-      setLoadingStatus('Loading event details...');
-    }
-    
-    // LEAGUE PATTERN: Check cache first for real data
-    const cachedEvent = teamEventsCache.get<TeamEventDetails>(cacheKey);
-    if (cachedEvent) {
-      console.log('[TeamEventDetailPage] Found cached event, upgrading from skeleton');
-      setEvent(cachedEvent);
-      setLoadingState('success');
-      setIsLoadingEvent(false);
-      return cachedEvent;
-    }
-
-    // LEAGUE PATTERN: Progressive enhancement with Nostr (non-blocking)
-    if (ndk && ndkReady) {
-      try {
-        setLoadingStatus('Fetching latest event data...');
-        
-        const foundEvent = await fetchWithTimeout(
-          (ndk) => fetchTeamEventById(ndk, teamAIdentifier, eventId),
-          6000 // Further reduced timeout for mobile
-        );
-
-        if (foundEvent) {
-          // Cache and upgrade from skeleton
-          teamEventsCache.set(cacheKey, foundEvent, CACHE_TTL.EVENT_DETAILS);
-          setEvent(foundEvent);
-          setLoadingState('success');
-          setLoadingStatus('Event loaded');
-          console.log('[TeamEventDetailPage] Enhanced skeleton with real event data');
-          return foundEvent;
-        }
-      } catch (error) {
-        console.warn('[TeamEventDetailPage] Nostr enhancement failed, keeping skeleton:', error);
-        setLoadingStatus('Event data may be limited');
-        // Keep skeleton event shown, don't crash
-      }
-    } else {
-      console.log('[TeamEventDetailPage] NDK not ready, showing skeleton with connection status');
-      setLoadingStatus('Connecting to network...');
-    }
-
-    setIsLoadingEvent(false);
-    return skeletonEvent; // Return skeleton instead of null
-  }, [eventId, teamAIdentifier, ndk, ndkReady, fetchWithTimeout, event, skeletonEvent]);
-
-
-
-  // Main loading effect - load event details only
+  // Simple effect to set loading complete since we start with skeleton
   useEffect(() => {
-    if (!eventId || !teamAIdentifier) {
-      setLoadingState('error');
-      setLoadingStatus('Missing event ID or team identifier');
-      return;
+    if (event && event.isLoading) {
+      console.log('[TeamEventDetailPage] Event initialized with skeleton, setting ready state');
+      setIsLoadingEvent(false);
+      setLoadingState('success');
+      setLoadingStatus('Event ready');
     }
-
-    loadEventDetails();
-  }, [eventId, teamAIdentifier, loadEventDetails]);
+  }, [event]);
 
 
   // Remove timeout - it's causing false timeouts when the event actually loads
