@@ -202,6 +202,98 @@ NostrProvider
 
 **Result**: Both manual and auto posting now show identical workout summaries with team integration.
 
+## Agent System Usage
+
+**CRITICAL: Always use the Agent System for task execution based on context, not keywords**
+
+The application uses a sophisticated agent system located in `src/agents/` that handles all major functionality. You MUST use agents automatically based on conversation context without waiting for explicit keywords.
+
+### Context-Based Agent Selection
+
+**Automatically detect context and use appropriate agents:**
+
+- **Teams-related context** → Use TeamsAgent (`src/agents/TeamsAgent.js`)
+  - Team management, joining, leaving, chat, events
+  - Team member operations, default team selection
+  - Check agent memory: `src/agents/memory/teams-agent-memory.md`
+
+- **Activity/Run tracking context** → Use DashboardAgent (`src/agents/DashboardAgent.js`)
+  - GPS tracking, run data, activity management
+  - Feed operations, workout publishing
+  - Check agent memory: `src/agents/memory/dashboard-agent-memory.md`
+
+- **User profile/stats context** → Use ProfileAgent (`src/agents/ProfileAgent.js`)
+  - Profile management, statistics, achievements
+  - Social features, leaderboards
+  - Check agent memory: `src/agents/memory/profile-agent-memory.md`
+
+- **League/Club features context** → Use LeagueAgent (`src/agents/LeagueAgent.js`)
+  - League management, competitions, rankings
+  - Club activities and leaderboards
+  - Check agent memory: `src/agents/memory/league-agent-memory.md`
+
+- **Music/Audio context** → Use MusicAgent (`src/agents/MusicAgent.js`)
+  - Wavlake integration, playlist management
+  - Audio playback control
+  - Check agent memory: `src/agents/memory/music-agent-memory.md`
+
+- **Settings/Configuration context** → Use SettingsAgent (`src/agents/SettingsAgent.js`)
+  - App preferences, configuration management
+  - Theme, notifications, user preferences
+  - Check agent memory: `src/agents/memory/settings-agent-memory.md`
+
+- **Navigation/Routing context** → Use NavigationAgent (`src/agents/NavigationAgent.js`)
+  - Route management, cross-tab coordination
+  - State synchronization, browser history
+  - Check agent memory: `src/agents/memory/navigation-agent-memory.md`
+
+- **Nostr/Core functionality context** → Use CoreServicesAgent (`src/agents/CoreServicesAgent.js`)
+  - Nostr connections, authentication, relay management
+  - Data fetching and publishing
+  - Check agent memory: `src/agents/memory/core-services-agent-memory.md`
+
+### Agent Usage Pattern
+
+```javascript
+import { agentManager } from './src/agents';
+
+// Initialize system first (if not already done)
+await agentManager.initialize();
+
+// Use agents based on context
+const response = await agentManager.sendMessage('Teams', 'team.list', {});
+```
+
+### Memory System
+
+Each agent has a living memory document that tracks:
+- **Successes**: What worked well and should be repeated
+- **Failures**: What didn't work and lessons learned
+- **Key Files**: Important files the agent should reference
+- **Best Practices**: Patterns that have proven effective
+- **Known Issues**: Current limitations and workarounds
+
+**ALWAYS** check the agent's memory file before using it to understand context and avoid repeating mistakes.
+
+### Task Execution Rules
+
+1. **Automatic Agent Selection**: Detect context from conversation and select appropriate agent
+2. **Memory Consultation**: Always read agent memory before executing tasks
+3. **Success/Failure Tracking**: Update agent memory after significant operations
+4. **Cross-Agent Coordination**: Use message bus for agent communication
+5. **Error Recovery**: Use agent memory to handle known failure patterns
+
+### Examples of Context Detection
+
+- User mentions "team", "join team", "team chat" → TeamsAgent
+- User mentions "run", "track activity", "GPS" → DashboardAgent  
+- User mentions "profile", "stats", "achievements" → ProfileAgent
+- User mentions "music", "playlist", "Wavlake" → MusicAgent
+- User mentions "settings", "preferences", "theme" → SettingsAgent
+- User mentions navigation, routing, tabs → NavigationAgent
+
+**Remember**: Use agents proactively based on context, not reactively based on keywords.
+
 ## Version Information
 
 **IMPORTANT: Current Active Version is v0.6.0 based on feed-0.6.0-20250728-205524**

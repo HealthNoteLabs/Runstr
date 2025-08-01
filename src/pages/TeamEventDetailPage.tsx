@@ -4,15 +4,10 @@ import { useNostr } from '../hooks/useNostr';
 import { 
   fetchTeamEvents, 
   fetchTeamEventById,
-  TeamEventDetails, 
-  joinTeamEvent, 
-  leaveTeamEvent, 
-  fetchEventParticipants,
-  isUserParticipating,
-  fetchEventParticipation, 
-  fetchEventActivities,
-  EventParticipation 
+  TeamEventDetails
 } from '../services/nostr/NostrTeamsService';
+import { useEventParticipants } from '../hooks/useEventParticipants';
+import { useEventLeaderboard } from '../hooks/useEventLeaderboard';
 import { DisplayName } from '../components/shared/DisplayName';
 import { Post } from '../components/Post';
 import EditEventModal from '../components/modals/EditEventModal';
@@ -30,59 +25,47 @@ const TeamEventDetailPage: React.FC = () => {
 
 
   const [event, setEvent] = useState<TeamEventDetails | null>(null);
-  const [participants, setParticipants] = useState<EventParticipation[]>([]);
-  const [participantPubkeys, setParticipantPubkeys] = useState<string[]>([]);
-  const [activities, setActivities] = useState<any[]>([]);
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
-  const [isLoadingParticipants, setIsLoadingParticipants] = useState(false);
-  const [isLoadingActivities, setIsLoadingActivities] = useState(false);
-  const [isJoining, setIsJoining] = useState(false);
-  const [isParticipating, setIsParticipating] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
   const [loadingState, setLoadingState] = useState<'loading' | 'success' | 'error' | 'timeout' | 'cancelled'>('loading');
+  
+  // Use new simplified participation system
+  const {
+    participants,
+    participantCount,
+    isUserParticipating,
+    isUserParticipatingLocally,
+    isLoading: isLoadingParticipants,
+    isJoining,
+    isLeaving,
+    error: participantsError,
+    joinEvent,
+    leaveEvent,
+    refresh: refreshParticipants,
+    dataSource: participantsDataSource
+  } = useEventParticipants(eventId, captainPubkey, event?.name, teamAIdentifier);
+
+  // Use new event leaderboard system
+  const {
+    leaderboard,
+    workoutActivities,
+    stats: leaderboardStats,
+    isLoading: isLoadingActivities,
+    error: leaderboardError,
+    refresh: refreshLeaderboard
+  } = useEventLeaderboard(
+    participants,
+    event?.date,
+    event?.endTime,
+    'all' // Show all activity types
+  );
   
   // Construct team identifier from URL params
   const teamAIdentifier = `33404:${captainPubkey}:${teamUUID}`;
 
   // Check if current user is team captain
   const isCaptain = publicKey === captainPubkey;
-
-  // Load event activities
-  const loadEventActivities = useCallback(async (eventDetails: TeamEventDetails, participantPubkeys: string[]) => {
-    if (!ndk || participantPubkeys.length === 0) return;
-
-    setIsLoadingActivities(true);
-    try {
-      const eventActivities = await fetchEventActivities(
-        ndk, 
-        eventDetails.id, 
-        teamAIdentifier, 
-        participantPubkeys, 
-        eventDetails.date,
-        eventDetails.endTime ? eventDetails.date : undefined
-      );
-
-      // Convert NDK events to a format compatible with Post component
-      const formattedActivities = eventActivities.map(activity => ({
-        ...activity,
-        kind: activity.kind,
-        content: activity.content,
-        created_at: activity.created_at,
-        pubkey: activity.pubkey,
-        tags: activity.tags,
-        author: {
-          pubkey: activity.pubkey
-        }
-      }));
-
-      setActivities(formattedActivities);
-    } catch (error) {
-      console.error('Error loading event activities:', error);
-    } finally {
-      setIsLoadingActivities(false);
-    }
-  }, [ndk, teamAIdentifier]);
 
   // Progressive loading functions
   const loadEventDetails = useCallback(async () => {
@@ -143,120 +126,9 @@ const TeamEventDetailPage: React.FC = () => {
     }
   }, [eventId, teamAIdentifier, ndk, ndkStatus, ensureConnection, fetchWithTimeout, navigate, captainPubkey, teamUUID]);
 
-  const loadParticipants = useCallback(async (eventDetails: TeamEventDetails) => {
-    if (!ndk || !eventId || !teamAIdentifier) return;
 
-    const participantsCacheKey = CACHE_KEYS.EVENT_PARTICIPANTS(teamAIdentifier, eventId);
-    const participationCacheKey = CACHE_KEYS.EVENT_PARTICIPATION(teamAIdentifier, eventId);
 
-    // Check cache first
-    const cachedParticipants = teamEventsCache.get<string[]>(participantsCacheKey);
-    const cachedParticipation = teamEventsCache.get<EventParticipation[]>(participationCacheKey);
-
-    if (cachedParticipants && cachedParticipation) {
-      setParticipantPubkeys(cachedParticipants);
-      setParticipants(cachedParticipation);
-      
-      // Check user participation from cache
-      if (publicKey) {
-        setIsParticipating(cachedParticipants.includes(publicKey));
-      }
-      return;
-    }
-
-    setIsLoadingParticipants(true);
-
-    try {
-      const [eventParticipants, participationData] = await Promise.all([
-        fetchWithTimeout(
-          (ndk) => fetchEventParticipants(ndk, eventId, teamAIdentifier),
-          10000
-        ),
-        fetchWithTimeout(
-          (ndk) => fetchEventParticipation(ndk, eventId, teamAIdentifier, eventDetails.date),
-          10000
-        )
-      ]);
-
-      // Cache results
-      teamEventsCache.set(participantsCacheKey, eventParticipants || [], CACHE_TTL.PARTICIPANTS);
-      teamEventsCache.set(participationCacheKey, participationData || [], CACHE_TTL.PARTICIPATION);
-
-      // Set state
-      setParticipantPubkeys(eventParticipants || []);
-      setParticipants(participationData || []);
-
-      // Check user participation
-      if (publicKey && eventParticipants?.length > 0) {
-        const userIsParticipating = await fetchWithTimeout(
-          (ndk) => isUserParticipating(ndk, eventId, teamAIdentifier, publicKey),
-          8000
-        );
-        setIsParticipating(userIsParticipating);
-      } else {
-        setIsParticipating(false);
-      }
-
-    } catch (error) {
-      console.error('Error loading participants:', error);
-      // Set empty arrays but don't show error - participants might just be loading
-      setParticipantPubkeys([]);
-      setParticipants([]);
-      setIsParticipating(false);
-    } finally {
-      setIsLoadingParticipants(false);
-    }
-  }, [ndk, eventId, teamAIdentifier, publicKey, fetchWithTimeout]);
-
-  const loadActivities = useCallback(async (eventDetails: TeamEventDetails, participantPubkeys: string[]) => {
-    if (!ndk || participantPubkeys.length === 0) return;
-
-    const cacheKey = CACHE_KEYS.EVENT_ACTIVITIES(teamAIdentifier, eventId);
-    
-    // Check cache first
-    const cachedActivities = teamEventsCache.get<any[]>(cacheKey);
-    if (cachedActivities) {
-      setActivities(cachedActivities);
-      return;
-    }
-
-    setIsLoadingActivities(true);
-
-    try {
-      const eventActivities = await fetchEventActivities(
-        ndk, 
-        eventDetails.id, 
-        teamAIdentifier, 
-        participantPubkeys, 
-        eventDetails.date,
-        eventDetails.endTime ? eventDetails.date : undefined
-      );
-
-      const formattedActivities = eventActivities.map(activity => ({
-        ...activity,
-        kind: activity.kind,
-        content: activity.content,
-        created_at: activity.created_at,
-        pubkey: activity.pubkey,
-        tags: activity.tags,
-        author: {
-          pubkey: activity.pubkey
-        }
-      }));
-
-      // Cache and set activities
-      teamEventsCache.set(cacheKey, formattedActivities, CACHE_TTL.ACTIVITIES);
-      setActivities(formattedActivities);
-
-    } catch (error) {
-      console.error('Error loading activities:', error);
-      setActivities([]);
-    } finally {
-      setIsLoadingActivities(false);
-    }
-  }, [ndk, teamAIdentifier, eventId]);
-
-  // Main loading effect - progressive loading
+  // Main loading effect - load event details only
   useEffect(() => {
     if (!eventId || !teamAIdentifier) {
       setLoadingState('error');
@@ -264,131 +136,50 @@ const TeamEventDetailPage: React.FC = () => {
       return;
     }
 
-    let isMounted = true;
+    loadEventDetails();
+  }, [eventId, teamAIdentifier, loadEventDetails]);
 
-    const progressiveLoad = async () => {
-      // Step 1: Load event details (show page immediately)
-      const eventDetails = await loadEventDetails();
-      
-      if (!isMounted || !eventDetails) return;
-
-      // Step 2: Load participants in background
-      loadParticipants(eventDetails);
-
-      // Step 3: Load activities after participants (will auto-trigger when participants load)
-    };
-
-    progressiveLoad();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [eventId, teamAIdentifier, loadEventDetails, loadParticipants]);
-
-  // Load activities when participants change
-  useEffect(() => {
-    if (event && participantPubkeys.length > 0) {
-      loadActivities(event, participantPubkeys);
-    }
-  }, [event, participantPubkeys, loadActivities]);
-
-  // Check participation state when user comes back to tab (handles tab switching)
-  useEffect(() => {
-    const handleVisibilityChange = async () => {
-      if (!document.hidden && publicKey && eventId && teamAIdentifier && event) {
-        // User returned to tab - refresh participation state
-        try {
-          const currentParticipation = await isUserParticipating(ndk, eventId, teamAIdentifier, publicKey);
-          if (currentParticipation !== isParticipating) {
-            setIsParticipating(currentParticipation);
-            
-            // Also refresh the participant list
-            await loadParticipants(event);
-          }
-        } catch (error) {
-          console.error('Error checking participation on tab focus:', error);
-        }
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [publicKey, eventId, teamAIdentifier, event, isParticipating, ndk, loadParticipants]);
 
   // Remove timeout - it's causing false timeouts when the event actually loads
   // The event is loading properly, just slowly
 
   const handleJoinEvent = async () => {
-    if (!ndk || !publicKey || !event) {
-      toast.error('Unable to join event');
+    if (!publicKey) {
+      toast.error('Please sign in to join events');
       return;
     }
 
-    setIsJoining(true);
+    if (!event) {
+      toast.error('Event information unavailable');
+      return;
+    }
+
     try {
-      const result = await joinTeamEvent(ndk, eventId!, teamAIdentifier, captainPubkey!, publicKey);
-      if (result) {
-        // Immediately update UI state
-        setIsParticipating(true);
-        toast.success('Successfully joined the event!');
-        
-        // Clear all related cache
-        teamEventsCache.delete(CACHE_KEYS.EVENT_PARTICIPANTS(teamAIdentifier, eventId!));
-        teamEventsCache.delete(CACHE_KEYS.EVENT_PARTICIPATION(teamAIdentifier, eventId!));
-        teamEventsCache.delete(CACHE_KEYS.EVENT_ACTIVITIES(teamAIdentifier, eventId!));
-        
-        // Reload participants and activities with fresh data
-        setTimeout(async () => {
-          if (event) {
-            console.log('[handleJoinEvent] Reloading participants after join...');
-            await loadParticipants(event);
-          }
-        }, 2000); // Increased delay to let the event propagate to relays
-      } else {
-        toast.error('Failed to join event');
-      }
+      await joinEvent();
+      toast.success('Successfully joined the event! 🎉');
     } catch (error) {
       console.error('Error joining event:', error);
-      toast.error('Failed to join event');
-    } finally {
-      setIsJoining(false);
+      toast.error(error.message || 'Failed to join event - please try again');
     }
   };
 
   const handleLeaveEvent = async () => {
-    if (!ndk || !publicKey || !event) {
-      toast.error('Unable to leave event');
+    if (!publicKey) {
+      toast.error('Please sign in to leave events');
       return;
     }
 
-    setIsJoining(true);
+    if (!event) {
+      toast.error('Event information unavailable');
+      return;
+    }
+
     try {
-      const success = await leaveTeamEvent(ndk, eventId!, teamAIdentifier, publicKey);
-      if (success) {
-        // Immediately update UI state
-        setIsParticipating(false);
-        toast.success('Left the event');
-        
-        // Clear all related cache
-        teamEventsCache.delete(CACHE_KEYS.EVENT_PARTICIPANTS(teamAIdentifier, eventId!));
-        teamEventsCache.delete(CACHE_KEYS.EVENT_PARTICIPATION(teamAIdentifier, eventId!));
-        teamEventsCache.delete(CACHE_KEYS.EVENT_ACTIVITIES(teamAIdentifier, eventId!));
-        
-        // Reload participants and activities with fresh data
-        setTimeout(async () => {
-          if (event) {
-            console.log('[handleJoinEvent] Reloading participants after join...');
-            await loadParticipants(event);
-          }
-        }, 2000); // Increased delay to let the event propagate to relays
-      } else {
-        toast.error('Failed to leave event');
-      }
+      await leaveEvent();
+      toast.success('Left the event');
     } catch (error) {
       console.error('Error leaving event:', error);
-      toast.error('Failed to leave event');
-    } finally {
-      setIsJoining(false);
+      toast.error(error.message || 'Failed to leave event - please try again');
     }
   };
 
@@ -476,18 +267,43 @@ const TeamEventDetailPage: React.FC = () => {
   };
 
   const sortedParticipants = useMemo(() => {
-    // Combine participants and their completion data
-    const allParticipants = participantPubkeys.map(pubkey => {
-      const participation = participants.find(p => p.pubkey === pubkey);
-      return {
-        pubkey,
-        distance: participation?.distance || 0,
-        duration: participation?.duration || 0,
-        pace: participation?.pace || 0,
-        completed: participation ? participation.distance >= (event?.distance || 0) * 0.8 : false,
-        isCurrentUser: pubkey === publicKey
-      };
+    if (!event) return [];
+    
+    // Use leaderboard data if available, otherwise show participants without activity
+    const participantMap = new Map();
+    
+    // Add all participants first
+    participants.forEach(participant => {
+      participantMap.set(participant.pubkey, {
+        pubkey: participant.pubkey,
+        distance: 0,
+        duration: 0,
+        pace: 0,
+        completed: false,
+        isCurrentUser: participant.pubkey === publicKey,
+        workoutCount: 0,
+        rank: 0
+      });
     });
+    
+    // Overlay leaderboard data
+    leaderboard.forEach(entry => {
+      const eventDistance = event?.distance || 0;
+      const completed = eventDistance > 0 ? entry.totalDistance >= eventDistance * 0.8 : false;
+      
+      participantMap.set(entry.pubkey, {
+        pubkey: entry.pubkey,
+        distance: entry.totalDistance,
+        duration: entry.totalDuration,
+        pace: entry.averagePace,
+        completed,
+        isCurrentUser: entry.pubkey === publicKey,
+        workoutCount: entry.workoutCount,
+        rank: entry.rank
+      });
+    });
+
+    const allParticipants = Array.from(participantMap.values());
 
     // Sort by completion status, then by distance/time
     return allParticipants.sort((a, b) => {
@@ -503,7 +319,7 @@ const TeamEventDetailPage: React.FC = () => {
       // Among non-completed participants, sort by distance (highest first)
       return b.distance - a.distance;
     });
-  }, [participantPubkeys, participants, event?.distance, publicKey]);
+  }, [participants, leaderboard, event?.distance, publicKey]);
 
   const renderLeaderboard = () => {
 
@@ -737,26 +553,28 @@ const TeamEventDetailPage: React.FC = () => {
           {/* Action Buttons */}
           <div className="flex items-center gap-3">
             {/* Show join/leave button for all logged-in users (including captains) */}
-            {publicKey && (
+            {publicKey ? (
               <>
-                {isParticipating ? (
+                {isUserParticipating || isUserParticipatingLocally ? (
                   <button
                     onClick={handleLeaveEvent}
-                    disabled={isJoining}
+                    disabled={isJoining || isLeaving}
                     className="px-4 py-2 bg-black hover:bg-gray-900 text-white border border-white rounded-lg transition-colors disabled:opacity-50"
                   >
-                    {isJoining ? 'Leaving...' : 'Leave Event'}
+                    {isLeaving ? 'Leaving...' : 'Leave Event'}
                   </button>
                 ) : (
                   <button
                     onClick={handleJoinEvent}
-                    disabled={isJoining || status === 'completed'}
+                    disabled={isJoining || isLeaving || status === 'completed'}
                     className="px-4 py-2 bg-white hover:bg-gray-200 text-black font-semibold rounded-lg transition-colors disabled:opacity-50 border-2 border-white focus:outline-none focus:ring-0"
                   >
                     {isJoining ? 'Joining...' : 'Join Event'}
                   </button>
                 )}
               </>
+            ) : (
+              <p className="text-sm text-gray-300">Sign in to join this event</p>
             )}
             
             {/* Show edit button for captains */}
@@ -768,11 +586,6 @@ const TeamEventDetailPage: React.FC = () => {
                 Edit Event
               </button>
             )}
-            
-            {/* Show message if user is not logged in */}
-            {!publicKey && (
-              <p className="text-sm text-gray-300">Sign in to join this event</p>
-            )}
           </div>
         </div>
 
@@ -782,7 +595,7 @@ const TeamEventDetailPage: React.FC = () => {
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold text-white">Event Leaderboard</h2>
               <span className="text-sm text-gray-300">
-                {isLoadingParticipants ? 'Loading...' : `${participantPubkeys.length} participant${participantPubkeys.length !== 1 ? 's' : ''}`}
+                {isLoadingParticipants ? 'Loading...' : `${participantCount} participant${participantCount !== 1 ? 's' : ''}`}
               </span>
             </div>
           </div>
@@ -803,7 +616,7 @@ const TeamEventDetailPage: React.FC = () => {
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold text-white">Event Activities</h2>
               <span className="text-sm text-gray-300">
-                {activities.length} workout{activities.length !== 1 ? 's' : ''}
+                {workoutActivities.length} workout{workoutActivities.length !== 1 ? 's' : ''}
               </span>
             </div>
           </div>
@@ -814,7 +627,7 @@ const TeamEventDetailPage: React.FC = () => {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
                 <p className="text-white">Loading activities...</p>
               </div>
-            ) : activities.length === 0 ? (
+            ) : workoutActivities.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-white mb-2">No activities yet</p>
                 <p className="text-sm text-gray-300">
@@ -823,15 +636,30 @@ const TeamEventDetailPage: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {activities.map((activity, index) => (
-                  <div key={activity.id || index} className="bg-black rounded-lg border border-white">
-                    <Post 
-                      post={activity} 
-                      handleZap={() => {}} 
-                      wallet={null} 
-                    />
-                  </div>
-                ))}
+                {workoutActivities.map((activity, index) => {
+                  // Format activity for Post component
+                  const formattedActivity = {
+                    ...activity,
+                    kind: activity.kind,
+                    content: activity.content,
+                    created_at: activity.created_at,
+                    pubkey: activity.pubkey,
+                    tags: activity.tags || [],
+                    author: {
+                      pubkey: activity.pubkey
+                    }
+                  };
+
+                  return (
+                    <div key={activity.id || index} className="bg-black rounded-lg border border-white">
+                      <Post 
+                        post={formattedActivity} 
+                        handleZap={() => {}} 
+                        wallet={null} 
+                      />
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

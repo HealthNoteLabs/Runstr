@@ -1,3 +1,27 @@
+/**
+ * NostrTeamsService.ts
+ * 
+ * NOTICE: Event Participation System Refactored
+ * ============================================
+ * 
+ * The event participation functions in this file (joinTeamEvent, leaveTeamEvent, 
+ * fetchEventParticipants, isUserParticipating) have been replaced by a simplified
+ * system following the successful league leaderboard pattern.
+ * 
+ * New Event Participation System:
+ * - EventParticipationService.js: Core localStorage + Nostr list management
+ * - useEventParticipants.js: Hook for hybrid participant management
+ * - useEventLeaderboard.js: Hook for event workout leaderboards
+ * 
+ * Key improvements:
+ * - Immediate localStorage joins for optimistic UI
+ * - Captain maintains official participant lists via Kind 30001 Nostr lists
+ * - Hybrid queries combine local + official data
+ * - Simple leaderboard queries 1301 workout events during event timeframe
+ * 
+ * The old functions are marked @deprecated but remain for backward compatibility.
+ */
+
 import { Event as NostrEvent, EventTemplate } from 'nostr-tools'; // Added EventTemplate
 import { v4 as uuidv4 } from 'uuid';
 import NDK, { NDKEvent, NDKFilter, NDKKind, NDKSubscription, NDKSubscriptionCacheUsage } from '@nostr-dev-kit/ndk'; // Import NDK
@@ -1572,19 +1596,31 @@ export async function updateTeamEvent(
 }
 
 /**
- * Join a team event - publishes a participation event
+ * @deprecated Use EventParticipationService.joinEventLocally() instead
+ * 
+ * Legacy team event join function - replaced by simplified localStorage + Nostr list system.
+ * New system: 
+ * - Immediate localStorage joins for optimistic UI
+ * - Captain manages official participant lists via Kind 30001 Nostr lists
+ * - See: src/services/EventParticipationService.js and src/hooks/useEventParticipants.js
  */
 export async function joinTeamEvent(
   ndk: NDK,
   eventId: string,
   teamAIdentifier: string,
-  captainPubkey: string,
-  userPubkey: string
+  captainPubkey: string
 ): Promise<NDKEvent | null> {
-  if (!userPubkey) {
-    console.error("No user pubkey provided");
-    return null;
+  console.log(`[joinTeamEvent] Starting join process for eventId: ${eventId}, teamAIdentifier: ${teamAIdentifier}`);
+  
+  if (!ndk.signer) {
+    console.error('[joinTeamEvent] No signer available');
+    throw new Error('No signer available to publish event');
   }
+
+  // Get user pubkey from NDK signer
+  const user = await ndk.signer.user();
+  const userPubkey = user.pubkey;
+  console.log(`[joinTeamEvent] Using userPubkey from signer: ${userPubkey}`);
 
   // Create replaceable event with unique d tag per user per event
   const eventTemplate = {
@@ -1637,18 +1673,28 @@ export async function joinTeamEvent(
 }
 
 /**
- * Leave a team event - publishes a withdrawal event
+ * @deprecated Use EventParticipationService.leaveEventLocally() instead
+ * 
+ * Legacy team event leave function - replaced by simplified localStorage + Nostr list system.
+ * New system uses local storage for immediate UI updates.
+ * See: src/services/EventParticipationService.js and src/hooks/useEventParticipants.js
  */
 export async function leaveTeamEvent(
   ndk: NDK,
   eventId: string,
-  teamAIdentifier: string,
-  userPubkey: string
+  teamAIdentifier: string
 ): Promise<boolean> {
-  if (!userPubkey) {
-    console.error("No user pubkey provided");
-    return false;
+  console.log(`[leaveTeamEvent] Starting leave process for eventId: ${eventId}, teamAIdentifier: ${teamAIdentifier}`);
+  
+  if (!ndk.signer) {
+    console.error('[leaveTeamEvent] No signer available');
+    throw new Error('No signer available to publish event');
   }
+
+  // Get user pubkey from NDK signer
+  const user = await ndk.signer.user();
+  const userPubkey = user.pubkey;
+  console.log(`[leaveTeamEvent] Using userPubkey from signer: ${userPubkey}`);
 
   // Update the same replaceable event with 'not participating' status
   const eventTemplate = {
@@ -1686,7 +1732,11 @@ export async function leaveTeamEvent(
 }
 
 /**
- * Fetch event participants - returns list of pubkeys who joined the event
+ * @deprecated Use EventParticipationService.fetchHybridEventParticipants() instead
+ * 
+ * Legacy event participants fetch - replaced by simplified localStorage + Nostr list system.
+ * New system combines local joins with captain-managed official lists.
+ * See: src/hooks/useEventParticipants.js
  */
 export async function fetchEventParticipants(
   ndk: NDK,
@@ -1737,14 +1787,29 @@ export async function fetchEventParticipants(
 }
 
 /**
- * Check if current user is participating in an event
+ * @deprecated Use EventParticipationService.isUserParticipatingLocally() or useEventParticipants hook instead
+ * 
+ * Legacy user participation check - replaced by simplified localStorage + Nostr list system.
+ * New system provides both local and hybrid participation status.
+ * See: src/hooks/useEventParticipants.js
  */
 export async function isUserParticipating(
   ndk: NDK,
   eventId: string,
-  teamAIdentifier: string,
-  userPubkey: string
+  teamAIdentifier: string
 ): Promise<boolean> {
+  console.log(`[isUserParticipating] Starting participation check for eventId: ${eventId}, teamAIdentifier: ${teamAIdentifier}`);
+  
+  if (!ndk.signer) {
+    console.log('[isUserParticipating] No signer available - user not participating');
+    return false;
+  }
+
+  // Get user pubkey from NDK signer
+  const user = await ndk.signer.user();
+  const userPubkey = user.pubkey;
+  console.log(`[isUserParticipating] Using userPubkey from signer: ${userPubkey}`);
+
   // Query for the specific user's participation event
   const filter: NDKFilter = {
     kinds: [KIND_EVENT_PARTICIPATION as NDKKind],
