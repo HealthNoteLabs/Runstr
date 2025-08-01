@@ -52,7 +52,7 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
   const [dataSource, setDataSource] = useState('loading');
 
   /**
-   * Fetch participants from both local storage and official Nostr list
+   * Fetch participants using league-pattern cache-first approach
    */
   const fetchParticipants = useCallback(async () => {
     if (!eventId) {
@@ -65,37 +65,49 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
       console.log(`[useEventParticipants] Fetching participants for event ${eventId}`);
       setError(null);
       
+      // LEAGUE PATTERN: Always start with local data immediately (cache-first)
+      const localParticipants = EventParticipationService.getLocalEventParticipants(eventId);
+      setParticipants(localParticipants);
+      setDataSource('local');
+      console.log(`[useEventParticipants] Showing ${localParticipants.length} local participants immediately`);
+      
+      // LEAGUE PATTERN: Progressive enhancement with Nostr data (non-blocking)
       if (ndkReady && ndk && captainPubkey) {
-        // Hybrid mode: localStorage + official Nostr list
-        const hybridParticipants = await EventParticipationService.fetchHybridEventParticipants(
-          ndk, 
-          eventId, 
-          captainPubkey
-        );
-        
-        setParticipants(hybridParticipants);
-        setDataSource(hybridParticipants.some(p => p.source === 'official') ? 'hybrid' : 'local');
-        console.log(`[useEventParticipants] Loaded ${hybridParticipants.length} hybrid participants`);
+        try {
+          const hybridParticipants = await EventParticipationService.fetchHybridEventParticipants(
+            ndk, 
+            eventId, 
+            captainPubkey
+          );
+          
+          // Only update if we got more/different data
+          if (hybridParticipants.length >= localParticipants.length) {
+            setParticipants(hybridParticipants);
+            setDataSource(hybridParticipants.some(p => p.source === 'official') ? 'hybrid' : 'local_enhanced');
+            console.log(`[useEventParticipants] Enhanced with ${hybridParticipants.length} hybrid participants`);
+          }
+        } catch (nostrError) {
+          console.warn('[useEventParticipants] Nostr enhancement failed, keeping local data:', nostrError);
+          setError('Limited participant data - network issues');
+          // Keep the local data we already set
+        }
       } else {
-        // Local-only mode
-        const localParticipants = EventParticipationService.getLocalEventParticipants(eventId);
-        setParticipants(localParticipants);
-        setDataSource('local');
-        console.log(`[useEventParticipants] Loaded ${localParticipants.length} local participants`);
+        console.log('[useEventParticipants] NDK not ready, showing local data only');
       }
       
       setLastUpdated(new Date());
     } catch (err) {
-      console.error('[useEventParticipants] Error fetching participants:', err);
+      console.error('[useEventParticipants] Error in fetchParticipants:', err);
       setError(err.message || 'Failed to load participants');
       
-      // Fallback to local participants
+      // LEAGUE PATTERN: Final fallback ensures we always show something
       try {
-        const localParticipants = EventParticipationService.getLocalEventParticipants(eventId);
-        setParticipants(localParticipants);
-        setDataSource('local_fallback');
+        const fallbackParticipants = EventParticipationService.getLocalEventParticipants(eventId);
+        setParticipants(fallbackParticipants);
+        setDataSource('fallback');
       } catch (fallbackError) {
-        console.error('[useEventParticipants] Fallback to local also failed:', fallbackError);
+        console.error('[useEventParticipants] Complete fallback failed:', fallbackError);
+        setParticipants([]); // Show empty state rather than crash
       }
     } finally {
       setIsLoading(false);
@@ -219,13 +231,16 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
     fetchParticipants();
   }, [fetchParticipants]);
 
-  // Auto-refresh when NDK status changes
+  // LEAGUE PATTERN: Less aggressive auto-refresh, don't depend on NDK state
   useEffect(() => {
     if (ndkReady && !isLoading) {
-      console.log('[useEventParticipants] NDK ready, refreshing participants');
-      fetchParticipants();
+      console.log('[useEventParticipants] NDK ready, enhancing participants with Nostr data');
+      // Only refresh if we haven't already, to avoid repeated network calls
+      if (dataSource === 'local') {
+        fetchParticipants();
+      }
     }
-  }, [ndkReady, fetchParticipants, isLoading]);
+  }, [ndkReady]); // Removed fetchParticipants dependency to prevent loops
 
   return {
     // Participant data

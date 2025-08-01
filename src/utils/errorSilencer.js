@@ -1,5 +1,5 @@
 // Global error silencer — prevents red error overlays / banners
-/* eslint-disable no-console */
+ 
 if (typeof window !== 'undefined') {
   // Suppress unhandled promise rejection banners
   window.addEventListener('unhandledrejection', (e) => {

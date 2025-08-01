@@ -42,7 +42,7 @@ export const TeamDetail = () => {
   const [admins, setAdmins] = useState([]);
   const { fetchProfiles } = useProfileCache();
   // Silence unused variable warnings while Members feature is disabled
-  // eslint-disable-next-line no-unused-vars
+   
   const _unusedStateDeps = [members, admins];
   void _unusedStateDeps;
 

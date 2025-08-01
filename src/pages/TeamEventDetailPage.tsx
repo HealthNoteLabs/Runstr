@@ -49,13 +49,32 @@ const TeamEventDetailPage: React.FC = () => {
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
   const [loadingState, setLoadingState] = useState<'loading' | 'success' | 'error' | 'timeout' | 'cancelled'>('loading');
   
+  // LEAGUE PATTERN: Create skeleton event structure for immediate display
+  const skeletonEvent = useMemo(() => {
+    if (!eventId || !captainPubkey || !teamUUID) return null;
+    
+    return {
+      id: eventId,
+      name: 'Loading Event...',
+      description: '',
+      date: new Date().toISOString().split('T')[0],
+      startTime: null,
+      endTime: null,
+      distance: 0,
+      activity: 'run',
+      teamAIdentifier: teamAIdentifier,
+      captainPubkey: captainPubkey,
+      isLoading: true
+    };
+  }, [eventId, captainPubkey, teamUUID, teamAIdentifier]);
+  
   // Construct team identifier from URL params (needed for hooks)
   const teamAIdentifier = `33404:${captainPubkey}:${teamUUID}`;
 
   // Check if current user is team captain
   const isCaptain = publicKey === captainPubkey;
   
-  // Use new simplified participation system
+  // Use new simplified participation system - only when we have basic event data
   const {
     participants,
     participantCount,
@@ -69,9 +88,14 @@ const TeamEventDetailPage: React.FC = () => {
     leaveEvent,
     refresh: refreshParticipants,
     dataSource: participantsDataSource
-  } = useEventParticipants(eventId, captainPubkey, event?.name, teamAIdentifier);
+  } = useEventParticipants(
+    eventId, 
+    captainPubkey, 
+    event?.name || 'Event', // Provide fallback name
+    teamAIdentifier
+  );
 
-  // Use new event leaderboard system
+  // Use new event leaderboard system - only when we have participants and event date
   const {
     leaderboard,
     workoutActivities,
@@ -80,70 +104,68 @@ const TeamEventDetailPage: React.FC = () => {
     error: leaderboardError,
     refresh: refreshLeaderboard
   } = useEventLeaderboard(
-    participants,
-    event?.date,
-    event?.endTime,
+    participants || [], // Ensure array
+    event?.date || new Date().toISOString().split('T')[0], // Provide fallback date
+    event?.endTime || null,
     'all' // Show all activity types
   );
 
-  // Progressive loading functions
+  // LEAGUE PATTERN: Progressive loading with immediate skeleton display
   const loadEventDetails = useCallback(async () => {
-    if (!eventId || !teamAIdentifier || !ndk) return;
+    if (!eventId || !teamAIdentifier) return;
 
     const cacheKey = CACHE_KEYS.EVENT_DETAILS(teamAIdentifier, eventId);
     
-    // Check cache first
+    // LEAGUE PATTERN: Always show skeleton event immediately for faster perceived performance
+    if (!event && skeletonEvent) {
+      console.log('[TeamEventDetailPage] Showing skeleton event immediately');
+      setEvent(skeletonEvent);
+      setIsLoadingEvent(true);
+      setLoadingStatus('Loading event details...');
+    }
+    
+    // LEAGUE PATTERN: Check cache first for real data
     const cachedEvent = teamEventsCache.get<TeamEventDetails>(cacheKey);
     if (cachedEvent) {
+      console.log('[TeamEventDetailPage] Found cached event, upgrading from skeleton');
       setEvent(cachedEvent);
       setLoadingState('success');
       setIsLoadingEvent(false);
       return cachedEvent;
     }
 
-    setIsLoadingEvent(true);
-    setLoadingStatus('Loading event details...');
+    // LEAGUE PATTERN: Progressive enhancement with Nostr (non-blocking)
+    if (ndk && ndkReady) {
+      try {
+        setLoadingStatus('Fetching latest event data...');
+        
+        const foundEvent = await fetchWithTimeout(
+          (ndk) => fetchTeamEventById(ndk, teamAIdentifier, eventId),
+          6000 // Further reduced timeout for mobile
+        );
 
-    try {
-      // Ensure connection
-      if (!ndkStatus?.isConnected) {
-        setLoadingStatus('Connecting to Nostr relays...');
-        const connected = await ensureConnection(15000);
-        if (!connected) {
-          throw new Error('Failed to connect to Nostr relays');
+        if (foundEvent) {
+          // Cache and upgrade from skeleton
+          teamEventsCache.set(cacheKey, foundEvent, CACHE_TTL.EVENT_DETAILS);
+          setEvent(foundEvent);
+          setLoadingState('success');
+          setLoadingStatus('Event loaded');
+          console.log('[TeamEventDetailPage] Enhanced skeleton with real event data');
+          return foundEvent;
         }
+      } catch (error) {
+        console.warn('[TeamEventDetailPage] Nostr enhancement failed, keeping skeleton:', error);
+        setLoadingStatus('Event data may be limited');
+        // Keep skeleton event shown, don't crash
       }
-
-      const foundEvent = await fetchWithTimeout(
-        (ndk) => fetchTeamEventById(ndk, teamAIdentifier, eventId),
-        10000
-      );
-
-      if (!foundEvent) {
-        setLoadingState('error');
-        setLoadingStatus('Event not found');
-        toast.error('Event not found');
-        setTimeout(() => navigate(`/teams/${captainPubkey}/${teamUUID}`), 2000);
-        return null;
-      }
-
-      // Cache and set event
-      teamEventsCache.set(cacheKey, foundEvent, CACHE_TTL.EVENT_DETAILS);
-      setEvent(foundEvent);
-      setLoadingState('success');
-      setLoadingStatus('Event loaded');
-      
-      return foundEvent;
-    } catch (error) {
-      console.error('Error loading event:', error);
-      setLoadingState('error');
-      setLoadingStatus(`Error: ${error.message}`);
-      // Remove automatic toast error - let the UI handle error display
-      return null;
-    } finally {
-      setIsLoadingEvent(false);
+    } else {
+      console.log('[TeamEventDetailPage] NDK not ready, showing skeleton with connection status');
+      setLoadingStatus('Connecting to network...');
     }
-  }, [eventId, teamAIdentifier, ndk, ndkStatus, ensureConnection, fetchWithTimeout, navigate, captainPubkey, teamUUID]);
+
+    setIsLoadingEvent(false);
+    return skeletonEvent; // Return skeleton instead of null
+  }, [eventId, teamAIdentifier, ndk, ndkReady, fetchWithTimeout, event, skeletonEvent]);
 
 
 
@@ -418,8 +440,10 @@ const TeamEventDetailPage: React.FC = () => {
     );
   };
 
-  // Enhanced loading states with proper error handling
-  if (loadingState === 'loading' || isLoadingEvent) {
+  // Show loading ONLY if we have no event data AND are actively loading for the first time
+  const shouldShowLoading = isLoadingEvent && !event && loadingState === 'loading';
+  
+  if (shouldShowLoading) {
     return (
       <div className="min-h-screen bg-bg-primary text-text-primary p-4">
         <div className="max-w-4xl mx-auto">
@@ -526,8 +550,10 @@ const TeamEventDetailPage: React.FC = () => {
   
   const status = getEventStatus();
 
-  // Show error state if there are critical errors
-  if (participantsError || leaderboardError) {
+  // Only show critical error if we can't show any UI at all
+  const hasCriticalError = !event && loadingState === 'error' && !isLoadingEvent;
+  
+  if (hasCriticalError) {
     return (
       <div className="min-h-screen bg-bg-primary text-text-primary">
         <div className="max-w-4xl mx-auto p-4">
@@ -538,38 +564,27 @@ const TeamEventDetailPage: React.FC = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 15.5c-.77.833.192 2.5 1.732 2.5z" />
                 </svg>
               </div>
-              <h2 className="text-xl font-bold text-white mb-2">Error Loading Event</h2>
-              <p className="text-gray-400 mb-4">{participantsError || leaderboardError}</p>
+              <h2 className="text-xl font-bold text-white mb-2">Event Not Available</h2>
+              <p className="text-gray-400 mb-4">{loadingStatus}</p>
+              {!ndkReady && (
+                <p className="text-yellow-400 text-sm mb-4">
+                  ⚠️ Still connecting to network...
+                </p>
+              )}
               <div className="flex justify-center gap-3">
                 <button
                   onClick={() => window.location.reload()}
                   className="px-4 py-2 bg-white text-black rounded-lg"
                 >
-                  Refresh Page
+                  Retry
                 </button>
                 <button 
-                  onClick={() => navigate('/teams')}
+                  onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}`)}
                   className="px-4 py-2 bg-gray-700 text-white rounded-lg"
                 >
-                  Back to Teams
+                  ← Back to Team
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Show loading state while event is loading
-  if (isLoadingEvent || !event) {
-    return (
-      <div className="min-h-screen bg-bg-primary text-text-primary">
-        <div className="max-w-4xl mx-auto p-4">
-          <div className="flex items-center justify-center min-h-[50vh]">
-            <div className="text-center">
-              <div className="animate-spin w-8 h-8 border-2 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
-              <p className="text-white">{loadingStatus}</p>
             </div>
           </div>
         </div>
@@ -603,20 +618,31 @@ const TeamEventDetailPage: React.FC = () => {
         <div className="bg-black rounded-lg border border-white p-6 mb-6">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <h1 className="text-2xl font-bold text-white mb-2">{event.name}</h1>
+              <h1 className="text-2xl font-bold text-white mb-2">
+                {event?.name || 'Loading Event...'}
+                {event?.isLoading && (
+                  <span className="ml-2 text-sm text-gray-400">(loading details...)</span>
+                )}
+              </h1>
               <p className="text-gray-300 mb-2">
-                {event.distance}km {event.activity} • {new Date(event.date).toLocaleDateString()}
-                {event.startTime && ` • ${event.startTime}`}
-                {event.endTime && ` - ${event.endTime}`}
+                {event?.distance || 0}km {event?.activity || 'run'} • {new Date(event?.date || Date.now()).toLocaleDateString()}
+                {event?.startTime && ` • ${event.startTime}`}
+                {event?.endTime && ` - ${event.endTime}`}
               </p>
-              {event.description && (
+              {event?.description && (
                 <p className="text-white text-sm">
                   {event.description}
                 </p>
               )}
             </div>
             <div className="flex items-center gap-3">
-              {getStatusBadge(status)}
+              {event && getStatusBadge(status)}
+              {!ndkReady && (
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div>
+                  <span className="text-xs text-yellow-400">Connecting...</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -673,10 +699,20 @@ const TeamEventDetailPage: React.FC = () => {
           <div className="p-4 border-b border-white bg-black focus:outline-none focus:ring-0">
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold text-white">Event Leaderboard</h2>
-              <span className="text-sm text-gray-300">
-                {isLoadingParticipants ? 'Loading...' : `${participantCount} participant${participantCount !== 1 ? 's' : ''}`}
-              </span>
+              <div className="flex items-center gap-2">
+                {participantsError && (
+                  <span className="text-xs text-yellow-400" title={participantsError}>⚠️</span>
+                )}
+                <span className="text-sm text-gray-300">
+                  {isLoadingParticipants ? 'Loading...' : `${participantCount} participant${participantCount !== 1 ? 's' : ''}`}
+                </span>
+              </div>
             </div>
+            {participantsError && (
+              <p className="text-xs text-yellow-400 mt-1">
+                Participant data may be limited - {participantsDataSource} only
+              </p>
+            )}
           </div>
           
           {isLoadingParticipants ? (
@@ -694,10 +730,20 @@ const TeamEventDetailPage: React.FC = () => {
           <div className="p-4 border-b border-white bg-black focus:outline-none focus:ring-0">
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold text-white">Event Activities</h2>
-              <span className="text-sm text-gray-300">
-                {workoutActivities.length} workout{workoutActivities.length !== 1 ? 's' : ''}
-              </span>
+              <div className="flex items-center gap-2">
+                {leaderboardError && (
+                  <span className="text-xs text-yellow-400" title={leaderboardError}>⚠️</span>
+                )}
+                <span className="text-sm text-gray-300">
+                  {workoutActivities.length} workout{workoutActivities.length !== 1 ? 's' : ''}
+                </span>
+              </div>
             </div>
+            {leaderboardError && (
+              <p className="text-xs text-yellow-400 mt-1">
+                Activity feed may be limited - network connection issues
+              </p>
+            )}
           </div>
           
           <div className="p-4">

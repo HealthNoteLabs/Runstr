@@ -8,12 +8,12 @@ import { Crypto as WebCrypto } from '@peculiar/webcrypto';
 if (typeof window !== 'undefined') {
   if (!window.Buffer) {
     window.Buffer = BufferPolyfill;
-    // eslint-disable-next-line no-console
+     
     console.info('[nostr-polyfill] Buffer shim applied');
   }
   if (typeof window.TextEncoder === 'undefined' || typeof window.TextDecoder === 'undefined') {
     // text-encoding-polyfill adds these globally
-    // eslint-disable-next-line no-console
+     
     console.info('[nostr-polyfill] TextEncoder/TextDecoder shim applied');
   }
   if (!window.crypto) {
@@ -21,7 +21,7 @@ if (typeof window !== 'undefined') {
   }
   if (!window.crypto.subtle) {
     window.crypto.subtle = new WebCrypto().subtle;
-    // eslint-disable-next-line no-console
+     
     console.info('[nostr-polyfill] WebCrypto.subtle shim applied');
   }
 }
@@ -30,7 +30,7 @@ if (typeof window !== 'undefined') {
 // The shim opens a temporary subscription with `closeOnEose` semantics and
 // resolves once EOSE is received or the optional timeout is reached.
 if (SimplePool && typeof SimplePool.prototype.list !== 'function') {
-  // eslint-disable-next-line no-param-reassign
+   
   SimplePool.prototype.list = async function list(relays, filters, opts = {}) {
     const { timeout = 10000 } = opts;
 
@@ -69,6 +69,6 @@ if (SimplePool && typeof SimplePool.prototype.list !== 'function') {
     });
   };
 
-  // eslint-disable-next-line no-console
+   
   console.info('[nostr-polyfill] SimplePool.list shim applied');
 } 
