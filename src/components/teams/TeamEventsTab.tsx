@@ -2,7 +2,13 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useNostr } from '../../hooks/useNostr';
 import { fetchTeamEvents, TeamEventDetails } from '../../services/nostr/NostrTeamsService';
-import { teamEventsCache, CACHE_KEYS, CACHE_TTL } from '../../utils/teamEventsCache.js';
+import { 
+  CACHE_KEYS, 
+  CACHE_TTL, 
+  loadCachedData, 
+  saveCachedData, 
+  clearCachedData 
+} from '../../utils/teamEventsCache.js';
 import CreateEventModal from '../modals/CreateEventModal';
 import toast from 'react-hot-toast';
 
@@ -24,54 +30,144 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
   const [events, setEvents] = useState<TeamEventDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [loadingTimeout, setLoadingTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  
+  // Enhanced loading states following League's progressive loading pattern
+  const [loadingProgress, setLoadingProgress] = useState({
+    phase: 'initializing',
+    message: 'Loading team events...',
+    fromCache: false
+  });
 
-  const loadEvents = useCallback(async () => {
-    if (!ndk || !ndkReady || !teamAIdentifier) return;
+  /**
+   * Load cached data immediately - League's cache-first pattern
+   */
+  const loadCachedEvents = useCallback(() => {
+    if (!teamAIdentifier) return false;
     
-    const cacheKey = CACHE_KEYS.TEAM_EVENTS(teamAIdentifier);
-    
-    // Check cache first
-    const cachedEvents = teamEventsCache.get<TeamEventDetails[]>(cacheKey);
-    if (cachedEvents) {
-      setEvents(cachedEvents);
-      setIsLoading(false);
+    try {
+      const cacheKey = CACHE_KEYS.TEAM_EVENTS(teamAIdentifier);
+      const cached = loadCachedData(cacheKey, CACHE_TTL.TEAM_EVENTS);
+      
+      if (cached) {
+        setEvents(cached.data);
+        setLastUpdated(cached.timestamp);
+        setLoadingProgress({
+          phase: 'complete',
+          message: 'Using cached team events',
+          fromCache: true
+        });
+        setIsLoading(false);
+        return true;
+      }
+    } catch (err) {
+      console.error('Error loading cached team events:', err);
+    }
+    return false;
+  }, [teamAIdentifier]);
+
+  /**
+   * Fetch fresh events data - League's background refresh pattern
+   */
+  const fetchEventsData = useCallback(async () => {
+    if (!ndk || !teamAIdentifier) {
+      setError('Nostr connection not available');
       return;
     }
-    
-    // Clear any existing timeout
-    if (loadingTimeout) {
-      clearTimeout(loadingTimeout);
-    }
-    
-    setIsLoading(true);
+
     try {
+      setError(null);
+      setLoadingProgress({
+        phase: 'fetching',
+        message: 'Fetching latest team events...',
+        fromCache: false
+      });
+
       const teamEvents = await fetchTeamEvents(ndk, teamAIdentifier);
       
       // Cache the results
-      teamEventsCache.set(cacheKey, teamEvents, CACHE_TTL.TEAM_EVENTS);
+      const cacheKey = CACHE_KEYS.TEAM_EVENTS(teamAIdentifier);
+      saveCachedData(cacheKey, teamEvents);
+      
       setEvents(teamEvents);
-    } catch (error) {
-      console.error('Error fetching team events:', error);
-      toast.error('Failed to load team events');
-    } finally {
-      // Add a small delay to prevent loading flicker for very fast requests
-      const timeout = setTimeout(() => {
-        setIsLoading(false);
-      }, 100);
-      setLoadingTimeout(timeout);
-    }
-  }, [ndk, ndkReady, teamAIdentifier, loadingTimeout]);
+      setLastUpdated(new Date());
+      setLoadingProgress({
+        phase: 'complete',
+        message: 'Team events loaded successfully',
+        fromCache: false
+      });
 
+    } catch (err) {
+      console.error('Error fetching team events:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load team events';
+      setError(errorMessage);
+      
+      // Show toast only if we don't have cached data to fall back to
+      if (events.length === 0) {
+        toast.error('Failed to load team events');
+      }
+      
+      setLoadingProgress({
+        phase: 'complete',
+        message: 'Error loading team events',
+        fromCache: false
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [ndk, teamAIdentifier, events.length]);
+
+  /**
+   * Refresh events data with cache clearing
+   */
+  const refreshEvents = useCallback(async () => {
+    if (!teamAIdentifier) return;
+    
+    setIsLoading(true);
+    setLoadingProgress({
+      phase: 'initializing',
+      message: 'Refreshing team events...',
+      fromCache: false
+    });
+    
+    // Clear cache to force fresh fetch
+    const cacheKey = CACHE_KEYS.TEAM_EVENTS(teamAIdentifier);
+    clearCachedData(cacheKey);
+    
+    await fetchEventsData();
+  }, [teamAIdentifier, fetchEventsData]);
+
+  // Load cached data immediately on mount - League's cache-first pattern
   useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
+    const hasCachedData = loadCachedEvents();
+    if (!hasCachedData) {
+      fetchEventsData();
+    }
+  }, [loadCachedEvents, fetchEventsData]);
+
+  // Fetch fresh data when NDK becomes ready (if we haven't already)
+  useEffect(() => {
+    if (ndk && ndkReady && events.length === 0 && !isLoading) {
+      fetchEventsData();
+    }
+  }, [ndk, ndkReady, events.length, isLoading, fetchEventsData]);
+
+  // Auto-refresh every 15 minutes like League
+  useEffect(() => {
+    const refreshInterval = 15 * 60 * 1000; // 15 minutes
+    const interval = setInterval(() => {
+      console.log('[TeamEventsTab] Auto-refreshing team events');
+      fetchEventsData();
+    }, refreshInterval);
+
+    return () => clearInterval(interval);
+  }, [fetchEventsData]);
 
   const handleEventCreated = () => {
     setShowCreateModal(false);
-    // Clear cache and reload events after creation
-    teamEventsCache.delete(CACHE_KEYS.TEAM_EVENTS(teamAIdentifier));
-    loadEvents();
+    // Clear cache and reload events after creation using new refresh method
+    refreshEvents();
   };
 
   const getEventStatus = useCallback((event: TeamEventDetails): string => {
@@ -249,10 +345,15 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
     }
   };
 
-  if (isLoading) {
+  if (isLoading && events.length === 0) {
     return (
       <div className="text-center py-8">
-        <p className="text-text-muted">Loading team events...</p>
+        <p className="text-text-muted">{loadingProgress.message}</p>
+        {loadingProgress.phase === 'fetching' && (
+          <div className="mt-2">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mx-auto"></div>
+          </div>
+        )}
       </div>
     );
   }
@@ -260,6 +361,37 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
   return (
     <div className="space-y-6">
       {renderReminderBanner()}
+      
+      {/* Status indicator for cached data or background loading - League pattern */}
+      {(loadingProgress.fromCache || error) && (
+        <div className="flex items-center justify-between px-3 py-2 bg-gray-900 border border-gray-700 rounded text-sm">
+          <div className="flex items-center gap-2">
+            {loadingProgress.fromCache && (
+              <>
+                <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                <span className="text-yellow-400">Using cached data</span>
+                {lastUpdated && (
+                  <span className="text-text-muted">
+                    • Updated {lastUpdated.toLocaleTimeString()}
+                  </span>
+                )}
+              </>
+            )}
+            {error && !loadingProgress.fromCache && (
+              <>
+                <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                <span className="text-red-400">Network error</span>
+              </>
+            )}
+          </div>
+          {isLoading && events.length > 0 && (
+            <div className="flex items-center gap-2">
+              <div className="animate-spin rounded-full h-3 w-3 border-b border-white"></div>
+              <span className="text-text-muted text-xs">Refreshing...</span>
+            </div>
+          )}
+        </div>
+      )}
       
       <div className="flex justify-between items-center">
         <h3 className="text-xl font-semibold text-text-primary">Team Events</h3>

@@ -1400,51 +1400,148 @@ export async function fetchTeamEventById(
 /**
  * Fetches all events for a team
  */
+/**
+ * Enhanced team events fetching with League's resilience patterns
+ * - Retry logic with exponential backoff
+ * - Better error handling and recovery  
+ * - Batch processing for large datasets
+ * - Consistent async patterns like League's fetchFeedData
+ */
 export async function fetchTeamEvents(
   ndk: NDK,
   teamAIdentifier: string
 ): Promise<TeamEventDetails[]> {
   if (!ndk) {
-    console.warn("NDK instance not provided to fetchTeamEvents.");
-    return [];
+    const error = new Error("NDK instance not provided to fetchTeamEvents");
+    console.error(error.message);
+    throw error;
   }
 
+  if (!teamAIdentifier) {
+    const error = new Error("Team identifier is required for fetchTeamEvents");
+    console.error(error.message);  
+    throw error;
+  }
+
+  const MAX_RETRIES = 3;
+  const INITIAL_DELAY = 1000; // 1 second
+  const MAX_EVENTS = 500; // Increased limit for better data coverage
+  
   const filter: NDKFilter = {
     kinds: [KIND_NIP101_TEAM_EVENT as NDKKind],
     '#a': [teamAIdentifier],
-    limit: 100
+    limit: MAX_EVENTS
   };
 
-  try {
-    const eventsSet = await ndk.fetchEvents(filter, { cacheUsage: NDKSubscriptionCacheUsage.CACHE_FIRST });
-    const events = Array.from(eventsSet).map(ndkEvent => {
-      const rawEvent = ndkEvent.rawEvent();
-      const tags = rawEvent.tags;
-      
-      return {
-        id: tags.find(t => t[0] === 'd')?.[1] || '',
-        teamAIdentifier: teamAIdentifier,
-        name: tags.find(t => t[0] === 'name')?.[1] || 'Unnamed Event',
-        description: tags.find(t => t[0] === 'description')?.[1],
-        activity: (tags.find(t => t[0] === 'activity')?.[1] || 'run') as 'run' | 'walk' | 'cycle',
-        distance: parseFloat(tags.find(t => t[0] === 'distance')?.[1] || '0'),
-        date: tags.find(t => t[0] === 'date')?.[1] || '',
-        startTime: tags.find(t => t[0] === 'start_time')?.[1],
-        endTime: tags.find(t => t[0] === 'end_time')?.[1],
-        creatorPubkey: rawEvent.pubkey,
-        createdAt: rawEvent.created_at
-      };
-    });
+  let lastError: Error | null = null;
 
-    // Sort by date (newest first)
-    events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    
-    console.log(`Fetched ${events.length} events for team`);
-    return events;
-  } catch (error) {
-    console.error("Error fetching team events:", error);
-    return [];
+  // Retry logic with exponential backoff - League pattern
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`[fetchTeamEvents] Attempt ${attempt + 1}/${MAX_RETRIES + 1} for team ${teamAIdentifier}`);
+      
+      const eventsSet = await ndk.fetchEvents(filter, { 
+        cacheUsage: NDKSubscriptionCacheUsage.CACHE_FIRST,
+        closeOnEose: true // Close subscription after EOSE for better performance
+      });
+      
+      if (!eventsSet || eventsSet.size === 0) {
+        console.log(`[fetchTeamEvents] No events found for team ${teamAIdentifier}`);
+        return [];
+      }
+
+      // Process events in batches for better performance - League pattern
+      const BATCH_SIZE = 50;
+      const allEvents = Array.from(eventsSet);
+      const processedEvents: TeamEventDetails[] = [];
+      
+      for (let i = 0; i < allEvents.length; i += BATCH_SIZE) {
+        const batch = allEvents.slice(i, i + BATCH_SIZE);
+        
+        const batchEvents = batch.map(ndkEvent => {
+          try {
+            const rawEvent = ndkEvent.rawEvent();
+            const tags = rawEvent.tags;
+            
+            // Enhanced validation and error handling
+            const eventId = tags.find(t => t[0] === 'd')?.[1];
+            if (!eventId) {
+              console.warn(`[fetchTeamEvents] Event missing required 'd' tag, skipping:`, rawEvent.id);
+              return null;
+            }
+
+            const eventDate = tags.find(t => t[0] === 'date')?.[1];
+            if (!eventDate) {
+              console.warn(`[fetchTeamEvents] Event missing required date, skipping:`, eventId);
+              return null;
+            }
+
+            return {
+              id: eventId,
+              teamAIdentifier: teamAIdentifier,
+              name: tags.find(t => t[0] === 'name')?.[1] || 'Unnamed Event',
+              description: tags.find(t => t[0] === 'description')?.[1],
+              activity: (tags.find(t => t[0] === 'activity')?.[1] || 'run') as 'run' | 'walk' | 'cycle',
+              distance: Math.max(0, parseFloat(tags.find(t => t[0] === 'distance')?.[1] || '0')), // Ensure positive
+              date: eventDate,
+              startTime: tags.find(t => t[0] === 'start_time')?.[1],
+              endTime: tags.find(t => t[0] === 'end_time')?.[1],
+              creatorPubkey: rawEvent.pubkey,
+              createdAt: rawEvent.created_at,
+              participantCount: 0 // Will be populated by other services
+            };
+          } catch (err) {
+            console.error(`[fetchTeamEvents] Error processing event:`, err);
+            return null;
+          }
+        }).filter((event): event is TeamEventDetails => event !== null);
+
+        processedEvents.push(...batchEvents);
+      }
+
+      // Sort by date (newest first) with enhanced date parsing
+      processedEvents.sort((a, b) => {
+        try {
+          const dateA = new Date(a.date).getTime();
+          const dateB = new Date(b.date).getTime();
+          
+          // If dates are equal, sort by creation time
+          if (dateA === dateB) {
+            return b.createdAt - a.createdAt;
+          }
+          
+          return dateB - dateA;
+        } catch (err) {
+          console.error(`[fetchTeamEvents] Error sorting events:`, err);
+          return 0;
+        }
+      });
+      
+      console.log(`[fetchTeamEvents] Successfully fetched ${processedEvents.length} events for team ${teamAIdentifier}`);
+      return processedEvents;
+
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.error(`[fetchTeamEvents] Attempt ${attempt + 1} failed:`, lastError.message);
+      
+      // If this is the last attempt, don't wait
+      if (attempt === MAX_RETRIES) {
+        break;
+      }
+      
+      // Exponential backoff - League pattern
+      const delay = INITIAL_DELAY * Math.pow(2, attempt);
+      console.log(`[fetchTeamEvents] Retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
+
+  // All retries failed - throw the last error with context
+  const finalError = new Error(
+    `Failed to fetch team events after ${MAX_RETRIES + 1} attempts: ${lastError?.message || 'Unknown error'}`
+  );
+  console.error(`[fetchTeamEvents] Final failure for team ${teamAIdentifier}:`, finalError.message);
+  throw finalError;
 }
 
 /**
