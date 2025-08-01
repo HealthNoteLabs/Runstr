@@ -142,21 +142,41 @@ const TeamEventDetailPage: React.FC = () => {
   // The event is loading properly, just slowly
 
   const handleJoinEvent = async () => {
+    console.log('🔵 [TeamEventDetailPage] JOIN BUTTON CLICKED');
+    console.log('🔵 [TeamEventDetailPage] Current state:', {
+      publicKey: publicKey ? `${publicKey.slice(0, 8)}...` : null,
+      eventId,
+      captainPubkey: captainPubkey ? `${captainPubkey.slice(0, 8)}...` : null,
+      teamUUID,
+      eventName: event?.name,
+      hasEvent: !!event,
+      isJoining,
+      isUserParticipating,
+      isUserParticipatingLocally,
+      ndkReady,
+      participantCount
+    });
+
     if (!publicKey) {
+      console.log('🔴 [TeamEventDetailPage] No publicKey, aborting');
       toast.error('Please sign in to join events');
       return;
     }
 
     if (!event) {
+      console.log('🔴 [TeamEventDetailPage] No event data, aborting');
       toast.error('Event information unavailable');
       return;
     }
 
     try {
-      await joinEvent();
+      console.log('🟡 [TeamEventDetailPage] Calling joinEvent()...');
+      const result = await joinEvent();
+      console.log('🟢 [TeamEventDetailPage] joinEvent() returned:', result);
       toast.success('Successfully joined the event! 🎉');
     } catch (error) {
-      console.error('Error joining event:', error);
+      console.error('🔴 [TeamEventDetailPage] Error in handleJoinEvent:', error);
+      console.error('🔴 [TeamEventDetailPage] Error stack:', error.stack);
       toast.error(error.message || 'Failed to join event - please try again');
     }
   };
@@ -594,7 +614,10 @@ const TeamEventDetailPage: React.FC = () => {
                   </button>
                 ) : (
                   <button
-                    onClick={handleJoinEvent}
+                    onClick={() => {
+                      console.log('🔵 [TeamEventDetailPage] JOIN BUTTON PHYSICALLY CLICKED');
+                      handleJoinEvent();
+                    }}
                     disabled={isJoining || isLeaving || status === 'completed'}
                     className="px-4 py-2 bg-white text-black font-semibold border border-white hover:bg-white/90 transition-colors disabled:opacity-50"
                   >
