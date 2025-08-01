@@ -767,6 +767,7 @@ const TeamEventDetailPage: React.FC = () => {
           captainPubkey={captainPubkey!}
           eventId={eventId!}
           eventName={event?.name}
+          teamUUID={teamUUID!}
         />
       )}
     </div>

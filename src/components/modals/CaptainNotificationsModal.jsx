@@ -14,7 +14,8 @@ const CaptainNotificationsModal = ({
   onClose, 
   captainPubkey, 
   eventId = null, 
-  eventName = null 
+  eventName = null,
+  teamUUID = null 
 }) => {
   const [processingId, setProcessingId] = useState(null);
   
@@ -27,7 +28,7 @@ const CaptainNotificationsModal = ({
     approveJoinRequest,
     denyJoinRequest,
     refresh
-  } = useCaptainNotifications(captainPubkey, eventId);
+  } = useCaptainNotifications(captainPubkey, eventId, teamUUID);
 
   if (!isOpen) return null;
 

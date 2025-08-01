@@ -7,12 +7,14 @@ import EventNotificationService from '../services/EventNotificationService';
  * 
  * Manages join request notifications for team captains.
  * Provides real-time updates when users request to join events.
+ * Uses team member targeting for optimized queries when team context is available.
  * 
  * @param {string} captainPubkey - The captain's pubkey (should match current user)
  * @param {string} eventId - Optional: filter notifications for specific event
+ * @param {string} teamUUID - Optional: team UUID for targeted member queries (optimization)
  * @returns {Object} Hook state and methods
  */
-export const useCaptainNotifications = (captainPubkey, eventId = null) => {
+export const useCaptainNotifications = (captainPubkey, eventId = null, teamUUID = null) => {
   const { ndk, ndkReady, publicKey } = useNostr();
   
   // State
@@ -43,7 +45,8 @@ export const useCaptainNotifications = (captainPubkey, eventId = null) => {
       const notifications = await EventNotificationService.fetchJoinRequestNotifications(
         ndk, 
         captainPubkey, 
-        eventId
+        eventId,
+        teamUUID // OPTIMIZATION: Pass team UUID for targeted queries
       );
       
       setNotifications(notifications);
@@ -55,7 +58,7 @@ export const useCaptainNotifications = (captainPubkey, eventId = null) => {
     } finally {
       setIsLoading(false);
     }
-  }, [ndk, ndkReady, captainPubkey, eventId, isCurrentUserCaptain]);
+  }, [ndk, ndkReady, captainPubkey, eventId, teamUUID, isCurrentUserCaptain]);
 
   /**
    * Approve a join request - add user to official participant list

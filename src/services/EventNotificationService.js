@@ -10,6 +10,7 @@ import { NDKEvent } from '@nostr-dev-kit/ndk';
 // Nostr kinds
 const KIND_JOIN_REQUEST = 31001; // Custom kind for join requests
 const KIND_DIRECT_MESSAGE = 4; // Standard DM kind
+const KIND_FITNESS_TEAM = 33404; // NIP-101e Team Kind
 
 /**
  * Send join request notification to team captain
@@ -102,9 +103,58 @@ export async function sendDirectMessageNotification(ndk, {
 }
 
 /**
- * Fetch join request notifications for a captain
+ * Get team members from a team event for targeted queries
+ * Fetches the team event and extracts member pubkeys from 'member' tags
  */
-export async function fetchJoinRequestNotifications(ndk, captainPubkey, eventId = null) {
+async function getEventTeamMembers(ndk, captainPubkey, teamUUID) {
+  if (!ndk || !captainPubkey || !teamUUID) {
+    console.warn('[EventNotificationService] Missing parameters for team member lookup');
+    return [];
+  }
+
+  try {
+    console.log(`[EventNotificationService] Fetching team members for team ${teamUUID} by captain ${captainPubkey}`);
+
+    // Query for the team event (Kind 33404)
+    const filter = {
+      kinds: [KIND_FITNESS_TEAM],
+      authors: [captainPubkey],
+      '#d': [teamUUID] // d-tag identifies the specific team
+    };
+
+    const events = await ndk.fetchEvents(filter);
+    console.log(`[EventNotificationService] Found ${events.size} team events`);
+
+    if (events.size === 0) {
+      console.log('[EventNotificationService] No team event found, returning empty member list');
+      return [];
+    }
+
+    // Get the most recent team event
+    const sortedEvents = Array.from(events).sort((a, b) => b.created_at - a.created_at);
+    const latestTeam = sortedEvents[0];
+
+    // Extract team members from 'member' tags
+    const members = [];
+    for (const tag of latestTeam.tags) {
+      if (tag[0] === 'member' && tag[1]) {
+        members.push(tag[1]);
+      }
+    }
+
+    console.log(`[EventNotificationService] Found ${members.length} team members:`, members);
+    return members;
+  } catch (error) {
+    console.error('[EventNotificationService] Error fetching team members:', error);
+    return [];
+  }
+}
+
+/**
+ * Fetch join request notifications for a captain (OPTIMIZED)
+ * Uses team member targeting to query only from known team members instead of globally
+ */
+export async function fetchJoinRequestNotifications(ndk, captainPubkey, eventId = null, teamUUID = null) {
   if (!ndk || !captainPubkey) {
     console.warn('[EventNotificationService] Missing parameters for fetching notifications');
     return [];
@@ -112,12 +162,39 @@ export async function fetchJoinRequestNotifications(ndk, captainPubkey, eventId 
 
   try {
     console.log(`[EventNotificationService] Fetching join requests for captain ${captainPubkey}`);
+    
+    let useTargetedQuery = false;
+    let teamMemberPubkeys = [];
 
+    // OPTIMIZATION: Try team member targeted query first if we have team context
+    if (teamUUID) {
+      try {
+        teamMemberPubkeys = await getEventTeamMembers(ndk, captainPubkey, teamUUID);
+        if (teamMemberPubkeys.length > 0) {
+          useTargetedQuery = true;
+          console.log(`[EventNotificationService] Using team member targeted query with ${teamMemberPubkeys.length} members`);
+        } else {
+          console.log('[EventNotificationService] No team members found, falling back to global query');
+        }
+      } catch (teamError) {
+        console.warn('[EventNotificationService] Team member lookup failed, falling back to global query:', teamError.message);
+      }
+    }
+
+    // Build query filter
     const filter = {
       kinds: [KIND_JOIN_REQUEST],
       '#p': [captainPubkey],
       '#request_type': ['event_join']
     };
+
+    // OPTIMIZATION: Use authors field for targeted query instead of global search
+    if (useTargetedQuery) {
+      filter.authors = teamMemberPubkeys;
+      console.log('[EventNotificationService] Querying join requests from team members only');
+    } else {
+      console.log('[EventNotificationService] Using global join request query (fallback)');
+    }
 
     // If specific event, filter by event ID
     if (eventId) {
@@ -125,7 +202,7 @@ export async function fetchJoinRequestNotifications(ndk, captainPubkey, eventId 
     }
 
     const events = await ndk.fetchEvents(filter);
-    console.log(`[EventNotificationService] Found ${events.size} join request notifications`);
+    console.log(`[EventNotificationService] Found ${events.size} join request notifications (${useTargetedQuery ? 'targeted' : 'global'} query)`);
 
     const notifications = Array.from(events).map(event => {
       try {
@@ -150,6 +227,7 @@ export async function fetchJoinRequestNotifications(ndk, captainPubkey, eventId 
     // Sort by timestamp (newest first)
     notifications.sort((a, b) => b.timestamp - a.timestamp);
 
+    console.log(`[EventNotificationService] Returning ${notifications.length} processed notifications`);
     return notifications;
   } catch (error) {
     console.error('[EventNotificationService] Error fetching join request notifications:', error);
