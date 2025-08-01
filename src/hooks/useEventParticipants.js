@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNostr } from './useNostr';
 import EventParticipationService from '../services/EventParticipationService';
+import EventNotificationService from '../services/EventNotificationService';
 
 /**
  * Hook: useEventParticipants
@@ -139,6 +140,25 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
         if (prev.some(p => p.pubkey === publicKey)) return prev;
         return [...prev, newParticipant];
       });
+      
+      // Send notification to captain (if NDK is ready)
+      try {
+        if (ndk && ndkReady && captainPubkey && captainPubkey !== publicKey) {
+          console.log(`[useEventParticipants] Sending join request notification to captain`);
+          await EventNotificationService.sendJoinRequestNotification(ndk, {
+            eventId,
+            eventName,
+            teamAIdentifier,
+            captainPubkey,
+            requesterPubkey: publicKey,
+            requesterName: null // Could be enhanced to get user's display name
+          });
+          console.log(`[useEventParticipants] Join request notification sent`);
+        }
+      } catch (notificationError) {
+        // Don't fail the join if notification fails
+        console.warn('[useEventParticipants] Failed to send join notification:', notificationError);
+      }
       
       console.log(`[useEventParticipants] Successfully joined event ${eventId}`);
       return true;

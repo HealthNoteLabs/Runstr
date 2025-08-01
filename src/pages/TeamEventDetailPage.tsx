@@ -11,6 +11,7 @@ import { useEventLeaderboard } from '../hooks/useEventLeaderboard';
 import { DisplayName } from '../components/shared/DisplayName';
 import { Post } from '../components/Post';
 import EditEventModal from '../components/modals/EditEventModal';
+import CaptainNotificationsModal from '../components/modals/CaptainNotificationsModal';
 import { teamEventsCache, CACHE_KEYS, CACHE_TTL } from '../utils/teamEventsCache.js';
 import toast from 'react-hot-toast';
 
@@ -27,6 +28,7 @@ const TeamEventDetailPage: React.FC = () => {
   const [event, setEvent] = useState<TeamEventDetails | null>(null);
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
   const [loadingState, setLoadingState] = useState<'loading' | 'success' | 'error' | 'timeout' | 'cancelled'>('loading');
   
@@ -577,14 +579,23 @@ const TeamEventDetailPage: React.FC = () => {
               <p className="text-sm text-gray-300">Sign in to join this event</p>
             )}
             
-            {/* Show edit button for captains */}
+            {/* Show captain buttons */}
             {isCaptain && (
-              <button
-                onClick={() => setShowEditModal(true)}
-                className="px-4 py-2 bg-black hover:bg-white hover:text-black text-white text-sm rounded-lg transition-colors border border-white focus:outline-none focus:ring-0"
-              >
-                Edit Event
-              </button>
+              <>
+                <button
+                  onClick={() => setShowNotificationsModal(true)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors focus:outline-none focus:ring-0"
+                  title="View join requests"
+                >
+                  Join Requests
+                </button>
+                <button
+                  onClick={() => setShowEditModal(true)}
+                  className="px-4 py-2 bg-black hover:bg-white hover:text-black text-white text-sm rounded-lg transition-colors border border-white focus:outline-none focus:ring-0"
+                >
+                  Edit Event
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -675,6 +686,16 @@ const TeamEventDetailPage: React.FC = () => {
             // Reload event data
             window.location.reload();
           }}
+        />
+      )}
+
+      {showNotificationsModal && (
+        <CaptainNotificationsModal
+          isOpen={showNotificationsModal}
+          onClose={() => setShowNotificationsModal(false)}
+          captainPubkey={captainPubkey!}
+          eventId={eventId!}
+          eventName={event?.name}
         />
       )}
     </div>
