@@ -65,6 +65,7 @@ const TeamEventDetailPage: React.FC = () => {
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
   const [loadingState, setLoadingState] = useState<'loading' | 'success' | 'error' | 'timeout' | 'cancelled'>('loading');
+  const [joinDebugInfo, setJoinDebugInfo] = useState<string[]>([]);
   
   // Construct team identifier from URL params (needed for hooks) - MUST be before skeleton
   const teamAIdentifier = `33404:${captainPubkey}:${teamUUID}`;
@@ -143,7 +144,11 @@ const TeamEventDetailPage: React.FC = () => {
 
   const handleJoinEvent = async () => {
     console.log('🔵 [TeamEventDetailPage] JOIN BUTTON CLICKED');
-    console.log('🔵 [TeamEventDetailPage] Current state:', {
+    
+    // Clear previous debug info
+    setJoinDebugInfo(['Join button clicked...']);
+    
+    const debugState = {
       publicKey: publicKey ? `${publicKey.slice(0, 8)}...` : null,
       eventId,
       captainPubkey: captainPubkey ? `${captainPubkey.slice(0, 8)}...` : null,
@@ -155,28 +160,56 @@ const TeamEventDetailPage: React.FC = () => {
       isUserParticipatingLocally,
       ndkReady,
       participantCount
-    });
+    };
+    
+    console.log('🔵 [TeamEventDetailPage] Current state:', debugState);
+    setJoinDebugInfo(prev => [...prev, `State: ${JSON.stringify(debugState, null, 2)}`]);
 
     if (!publicKey) {
       console.log('🔴 [TeamEventDetailPage] No publicKey, aborting');
+      setJoinDebugInfo(prev => [...prev, '❌ ERROR: Not signed in']);
       toast.error('Please sign in to join events');
       return;
     }
 
     if (!event) {
       console.log('🔴 [TeamEventDetailPage] No event data, aborting');
+      setJoinDebugInfo(prev => [...prev, '❌ ERROR: Event data unavailable']);
       toast.error('Event information unavailable');
       return;
     }
 
     try {
       console.log('🟡 [TeamEventDetailPage] Calling joinEvent()...');
+      setJoinDebugInfo(prev => [...prev, '🟡 Calling joinEvent()...']);
+      
       const result = await joinEvent();
+      
       console.log('🟢 [TeamEventDetailPage] joinEvent() returned:', result);
-      toast.success('Successfully joined the event! 🎉');
+      
+      if (result === 'already-joined') {
+        setJoinDebugInfo(prev => [...prev, '⚠️ Already joined this event']);
+        toast.info('You are already participating in this event');
+      } else if (result && result.startsWith('success|')) {
+        const steps = result.split('|').slice(1);
+        setJoinDebugInfo(prev => [...prev, ...steps]);
+        toast.success('Successfully joined the event! 🎉');
+      } else {
+        setJoinDebugInfo(prev => [...prev, `✅ joinEvent returned: ${result}`]);
+        toast.success('Successfully joined the event! 🎉');
+      }
+      
+      // Clear debug info after success
+      setTimeout(() => setJoinDebugInfo([]), 10000);
     } catch (error) {
       console.error('🔴 [TeamEventDetailPage] Error in handleJoinEvent:', error);
       console.error('🔴 [TeamEventDetailPage] Error stack:', error.stack);
+      
+      setJoinDebugInfo(prev => [...prev, `❌ ERROR: ${error.message}`]);
+      if (error.stack) {
+        setJoinDebugInfo(prev => [...prev, `Stack: ${error.stack}`]);
+      }
+      
       toast.error(error.message || 'Failed to join event - please try again');
     }
   };
@@ -648,6 +681,28 @@ const TeamEventDetailPage: React.FC = () => {
               </>
             )}
           </div>
+          
+          {/* Debug Info Panel - Only shows when there's debug info */}
+          {joinDebugInfo.length > 0 && (
+            <div className="mt-4 p-4 bg-yellow-900/20 border border-yellow-500/50 rounded-lg">
+              <div className="flex justify-between items-start mb-2">
+                <h3 className="text-yellow-400 font-semibold">Join Debug Info:</h3>
+                <button
+                  onClick={() => setJoinDebugInfo([])}
+                  className="text-yellow-400 hover:text-yellow-300 text-sm"
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="space-y-1">
+                {joinDebugInfo.map((info, index) => (
+                  <pre key={index} className="text-xs text-yellow-200 whitespace-pre-wrap break-words">
+                    {info}
+                  </pre>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Participants Section */}

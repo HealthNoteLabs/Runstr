@@ -97,30 +97,20 @@ function saveUserJoinedEvents(joinedEvents) {
  * Join an event - immediately stored in localStorage
  */
 export function joinEventLocally(eventId, teamAIdentifier, eventName, userPubkey) {
-  console.log('🔵 [EventParticipationService] joinEventLocally called');
-  console.log('🔵 [EventParticipationService] Parameters:', {
-    eventId,
-    teamAIdentifier,
-    eventName,
-    userPubkey: userPubkey ? `${userPubkey.slice(0, 8)}...` : null
-  });
-
   if (!eventId || !userPubkey) {
-    console.log('🔴 [EventParticipationService] Missing eventId or userPubkey');
     throw new Error('EventId and userPubkey are required');
   }
+
+  console.log(`[EventParticipationService] Joining event ${eventId} for user ${userPubkey}`);
 
   const now = Date.now();
 
   try {
     // Update event participants
-    console.log('🟡 [EventParticipationService] Getting stored participants');
     const participants = getStoredEventParticipants();
-    console.log('🟡 [EventParticipationService] Current participants:', participants);
     
     if (!participants[eventId]) {
       participants[eventId] = {};
-      console.log('🟡 [EventParticipationService] Created new event entry');
     }
     
     participants[eventId][userPubkey] = {
@@ -128,30 +118,24 @@ export function joinEventLocally(eventId, teamAIdentifier, eventName, userPubkey
       status: 'active',
       source: 'localStorage'
     };
-    console.log('🟡 [EventParticipationService] Updated participants data:', participants[eventId]);
     
     saveStoredEventParticipants(participants);
-    console.log('🟢 [EventParticipationService] Saved participants to localStorage');
 
     // Update user's joined events
-    console.log('🟡 [EventParticipationService] Getting user joined events');
     const userJoined = getUserJoinedEvents();
-    console.log('🟡 [EventParticipationService] Current user joined events:', userJoined);
     
     userJoined[eventId] = {
       joinedAt: now,
       teamAIdentifier,
       eventName: eventName || 'Team Event'
     };
-    console.log('🟡 [EventParticipationService] Updated user joined events:', userJoined);
     
     saveUserJoinedEvents(userJoined);
-    console.log('🟢 [EventParticipationService] Saved user joined events to localStorage');
 
-    console.log(`🟢 [EventParticipationService] Successfully joined event ${eventId}`);
+    console.log(`[EventParticipationService] Successfully joined event ${eventId}`);
     return true;
   } catch (error) {
-    console.error('🔴 [EventParticipationService] Error in joinEventLocally:', error);
+    console.error('[EventParticipationService] Error in joinEventLocally:', error);
     throw error;
   }
 }

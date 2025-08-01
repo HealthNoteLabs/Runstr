@@ -29,16 +29,7 @@ export async function sendJoinRequestNotification(ndk, {
   }
 
   try {
-    console.log('🟡 [EventNotificationService] Creating join request notification for event', eventId);
-    console.log('🟡 [EventNotificationService] Parameters:', {
-      hasNdk: !!ndk,
-      eventId,
-      eventName,
-      teamAIdentifier,
-      captainPubkey: captainPubkey ? `${captainPubkey.slice(0, 8)}...` : null,
-      requesterPubkey: requesterPubkey ? `${requesterPubkey.slice(0, 8)}...` : null,
-      requesterName
-    });
+    console.log(`[EventNotificationService] Sending join request notification for event ${eventId}`);
 
     // Create notification event (Kind 31001)
     const notificationEvent = new NDKEvent(ndk);
@@ -63,21 +54,12 @@ export async function sendJoinRequestNotification(ndk, {
     });
     notificationEvent.created_at = Math.floor(Date.now() / 1000);
 
-    console.log('🟡 [EventNotificationService] Publishing notification event to Nostr...');
-    console.log('🟡 [EventNotificationService] Event details:', {
-      kind: notificationEvent.kind,
-      tags: notificationEvent.tags,
-      contentLength: notificationEvent.content.length
-    });
-
     await notificationEvent.publish();
-    console.log(`🟢 [EventNotificationService] Join request notification published successfully`);
-    console.log(`🟢 [EventNotificationService] Notification sent to captain ${captainPubkey.slice(0, 8)}...`);
+    console.log(`[EventNotificationService] Join request notification sent to captain ${captainPubkey}`);
     
     return notificationEvent;
   } catch (error) {
-    console.error('🔴 [EventNotificationService] Error sending join request notification:', error);
-    console.error('🔴 [EventNotificationService] Error stack:', error.stack);
+    console.error('[EventNotificationService] Error sending join request notification:', error);
     throw error;
   }
 }
