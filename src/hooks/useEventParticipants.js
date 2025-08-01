@@ -43,7 +43,7 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
   const isUserParticipatingLocally = useMemo(() => {
     if (!publicKey || !eventId) return false;
     return EventParticipationService.isUserParticipatingLocally(eventId, publicKey);
-  }, [eventId, publicKey]);
+  }, [eventId, publicKey, participants.length]); // Re-check when participants change
 
   // Participant count
   const participantCount = useMemo(() => participants.length, [participants]);
@@ -122,9 +122,15 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
       throw new Error('EventId and user authentication required');
     }
 
-    if (isJoining || isUserParticipatingLocally) {
-      console.log('[useEventParticipants] Already joining or already participating');
+    if (isJoining) {
+      console.log('[useEventParticipants] Already joining');
       return false;
+    }
+    
+    // Check if already participating (but allow re-joining if needed)
+    if (isUserParticipatingLocally) {
+      console.log('[useEventParticipants] User already participating locally, skipping join');
+      return true; // Return success since they're already joined
     }
 
     setIsJoining(true);
