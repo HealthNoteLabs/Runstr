@@ -49,6 +49,9 @@ const TeamEventDetailPage: React.FC = () => {
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
   const [loadingState, setLoadingState] = useState<'loading' | 'success' | 'error' | 'timeout' | 'cancelled'>('loading');
   
+  // Construct team identifier from URL params (needed for hooks) - MUST be before skeleton
+  const teamAIdentifier = `33404:${captainPubkey}:${teamUUID}`;
+  
   // LEAGUE PATTERN: Create skeleton event structure for immediate display
   const skeletonEvent = useMemo(() => {
     if (!eventId || !captainPubkey || !teamUUID) return null;
@@ -67,9 +70,6 @@ const TeamEventDetailPage: React.FC = () => {
       isLoading: true
     };
   }, [eventId, captainPubkey, teamUUID, teamAIdentifier]);
-  
-  // Construct team identifier from URL params (needed for hooks)
-  const teamAIdentifier = `33404:${captainPubkey}:${teamUUID}`;
 
   // Check if current user is team captain
   const isCaptain = publicKey === captainPubkey;
