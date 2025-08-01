@@ -220,22 +220,22 @@ const TeamEventDetailPage: React.FC = () => {
       case 'completed':
         return (
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-text-muted"></div>
-            <span className="text-sm text-text-muted">Completed</span>
+            <span className="text-sm text-white">✓</span>
+            <span className="text-sm text-white/60">Completed</span>
           </div>
         );
       case 'active':
         return (
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-success animate-pulse"></div>
-            <span className="text-sm text-success font-medium">Live Now</span>
+            <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
+            <span className="text-sm text-white font-medium">Live Now</span>
           </div>
         );
       case 'upcoming':
         return (
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-text-secondary"></div>
-            <span className="text-sm text-text-secondary">Upcoming</span>
+            <div className="w-2 h-2 rounded-full border border-white/60"></div>
+            <span className="text-sm text-white/60">Upcoming</span>
           </div>
         );
       default:
@@ -323,9 +323,9 @@ const TeamEventDetailPage: React.FC = () => {
 
     if (sortedParticipants.length === 0) {
       return (
-        <div className="text-center py-12 bg-black rounded-lg border border-white">
+        <div className="text-center py-12 bg-black border border-white/20">
           <p className="text-white">No participants yet</p>
-          <p className="text-sm text-gray-300 mt-2">Be the first to join!</p>
+          <p className="text-sm text-white/60 mt-2">Be the first to join!</p>
         </div>
       );
     }
@@ -339,18 +339,12 @@ const TeamEventDetailPage: React.FC = () => {
               <div
                 key={participant.pubkey}
                 className={`flex items-center justify-between p-4 ${
-                  participant.isCurrentUser ? 'bg-white/10 border-l-4 border-white' : ''
+                  participant.isCurrentUser ? 'bg-white/10 border-l-2 border-white' : ''
                 }`}
               >
                 <div className="flex items-center space-x-3">
-                  {/* League-Style Rank Badge */}
-                  <div className={`
-                    flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold
-                    ${rank === 1 ? 'bg-yellow-500 text-black' : ''}
-                    ${rank === 2 ? 'bg-gray-400 text-black' : ''}
-                    ${rank === 3 ? 'bg-orange-600 text-white' : ''}
-                    ${rank > 3 ? 'bg-black text-white border border-white' : ''}
-                  `}>
+                  {/* Minimalist Rank Badge */}
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold bg-white text-black">
                     {rank}
                   </div>
                   
@@ -359,12 +353,12 @@ const TeamEventDetailPage: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <DisplayName pubkey={participant.pubkey} />
                       {participant.isCurrentUser && (
-                        <span className="px-2 py-1 bg-white text-black text-xs rounded-full font-bold">
+                        <span className="px-2 py-1 bg-white text-black text-xs font-bold">
                           YOU
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-gray-300">
+                    <div className="text-xs text-white/60">
                       {participant.completed ? (
                         <>
                           Completed • {formatTime(participant.duration)}
@@ -383,10 +377,10 @@ const TeamEventDetailPage: React.FC = () => {
                 
                 {/* Stats */}
                 <div className="text-right">
-                  <div className={`font-semibold ${participant.completed ? 'text-white' : 'text-gray-300'}`}>
+                  <div className={`font-semibold ${participant.completed ? 'text-white' : 'text-white/60'}`}>
                     {participant.distance.toFixed(1)} km
                   </div>
-                  <div className="text-xs text-gray-400">
+                  <div className="text-xs text-white/60">
                     Rank #{rank}
                   </div>
                 </div>
@@ -554,22 +548,22 @@ const TeamEventDetailPage: React.FC = () => {
       <div className="max-w-4xl mx-auto p-4">
 
         {/* Event Details */}
-        <div className="bg-black rounded-lg border border-white p-6 mb-6">
+        <div className="bg-black border border-white/20 p-6 mb-6">
           <div className="flex justify-between items-start mb-4">
             <div>
               <h1 className="text-2xl font-bold text-white mb-2">
                 {event?.name || 'Loading Event...'}
                 {event?.isLoading && (
-                  <span className="ml-2 text-sm text-gray-400">(loading details...)</span>
+                  <span className="ml-2 text-sm text-white/60">(loading details...)</span>
                 )}
               </h1>
-              <p className="text-gray-300 mb-2">
+              <p className="text-white/80 mb-2">
                 {event?.distance || 0}km {event?.activity || 'run'} • {new Date(event?.date || Date.now()).toLocaleDateString()}
                 {event?.startTime && ` • ${event.startTime}`}
                 {event?.endTime && ` - ${event.endTime}`}
               </p>
               {event?.description && (
-                <p className="text-white text-sm">
+                <p className="text-white/80 text-sm">
                   {event.description}
                 </p>
               )}
@@ -578,8 +572,8 @@ const TeamEventDetailPage: React.FC = () => {
               {event && getStatusBadge(status)}
               {!ndkReady && (
                 <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div>
-                  <span className="text-xs text-yellow-400">Connecting...</span>
+                  <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
+                  <span className="text-xs text-white/60">Connecting...</span>
                 </div>
               )}
             </div>
@@ -594,7 +588,7 @@ const TeamEventDetailPage: React.FC = () => {
                   <button
                     onClick={handleLeaveEvent}
                     disabled={isJoining || isLeaving}
-                    className="px-4 py-2 bg-black hover:bg-gray-900 text-white border border-white rounded-lg transition-colors disabled:opacity-50"
+                    className="px-4 py-2 bg-black text-white border border-white/40 hover:border-white transition-colors disabled:opacity-50"
                   >
                     {isLeaving ? 'Leaving...' : 'Leave Event'}
                   </button>
@@ -602,14 +596,14 @@ const TeamEventDetailPage: React.FC = () => {
                   <button
                     onClick={handleJoinEvent}
                     disabled={isJoining || isLeaving || status === 'completed'}
-                    className="px-4 py-2 bg-white hover:bg-gray-200 text-black font-semibold rounded-lg transition-colors disabled:opacity-50 border-2 border-white focus:outline-none focus:ring-0"
+                    className="px-4 py-2 bg-white text-black font-semibold border border-white hover:bg-white/90 transition-colors disabled:opacity-50"
                   >
                     {isJoining ? 'Joining...' : 'Join Event'}
                   </button>
                 )}
               </>
             ) : (
-              <p className="text-sm text-gray-300">Sign in to join this event</p>
+              <p className="text-sm text-white/60">Sign in to join this event</p>
             )}
             
             {/* Show captain buttons */}
@@ -617,14 +611,14 @@ const TeamEventDetailPage: React.FC = () => {
               <>
                 <button
                   onClick={() => setShowNotificationsModal(true)}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors focus:outline-none focus:ring-0"
+                  className="px-4 py-2 bg-black text-white text-sm border border-white/40 hover:border-white transition-colors"
                   title="View join requests"
                 >
                   Join Requests
                 </button>
                 <button
                   onClick={() => setShowEditModal(true)}
-                  className="px-4 py-2 bg-black hover:bg-white hover:text-black text-white text-sm rounded-lg transition-colors border border-white focus:outline-none focus:ring-0"
+                  className="px-4 py-2 bg-black text-white text-sm border border-white/40 hover:border-white transition-colors"
                 >
                   Edit Event
                 </button>
@@ -634,21 +628,21 @@ const TeamEventDetailPage: React.FC = () => {
         </div>
 
         {/* Participants Section */}
-        <div className="bg-black rounded-lg border border-white overflow-hidden focus:outline-none focus:ring-0">
-          <div className="p-4 border-b border-white bg-black focus:outline-none focus:ring-0">
+        <div className="bg-black border border-white/20 overflow-hidden">
+          <div className="p-4 border-b border-white/20 bg-black">
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold text-white">Event Leaderboard</h2>
               <div className="flex items-center gap-2">
                 {participantsError && (
-                  <span className="text-xs text-yellow-400" title={participantsError}>⚠️</span>
+                  <span className="text-xs text-white/60" title={participantsError}>⚠️</span>
                 )}
-                <span className="text-sm text-gray-300">
+                <span className="text-sm text-white/60">
                   {isLoadingParticipants ? 'Loading...' : `${participantCount} participant${participantCount !== 1 ? 's' : ''}`}
                 </span>
               </div>
             </div>
             {participantsError && (
-              <p className="text-xs text-yellow-400 mt-1">
+              <p className="text-xs text-white/60 mt-1">
                 Participant data may be limited - {participantsDataSource} only
               </p>
             )}
@@ -665,21 +659,21 @@ const TeamEventDetailPage: React.FC = () => {
         </div>
 
         {/* Activity Feed Section */}
-        <div className="bg-black rounded-lg border border-white overflow-hidden mt-6 focus:outline-none focus:ring-0">
-          <div className="p-4 border-b border-white bg-black focus:outline-none focus:ring-0">
+        <div className="bg-black border border-white/20 overflow-hidden mt-6">
+          <div className="p-4 border-b border-white/20 bg-black">
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold text-white">Event Activities</h2>
               <div className="flex items-center gap-2">
                 {leaderboardError && (
-                  <span className="text-xs text-yellow-400" title={leaderboardError}>⚠️</span>
+                  <span className="text-xs text-white/60" title={leaderboardError}>⚠️</span>
                 )}
-                <span className="text-sm text-gray-300">
+                <span className="text-sm text-white/60">
                   {workoutActivities.length} workout{workoutActivities.length !== 1 ? 's' : ''}
                 </span>
               </div>
             </div>
             {leaderboardError && (
-              <p className="text-xs text-yellow-400 mt-1">
+              <p className="text-xs text-white/60 mt-1">
                 Activity feed may be limited - network connection issues
               </p>
             )}
@@ -715,7 +709,7 @@ const TeamEventDetailPage: React.FC = () => {
                   };
 
                   return (
-                    <div key={activity.id || index} className="bg-black rounded-lg border border-white">
+                    <div key={activity.id || index} className="bg-black border border-white/20">
                       <Post 
                         post={formattedActivity} 
                         handleZap={() => {}} 

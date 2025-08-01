@@ -61,13 +61,13 @@ const CaptainNotificationsModal = ({
   if (!isCurrentUserCaptain) {
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className="bg-black rounded-lg max-w-md w-full border border-white">
+        <div className="bg-black max-w-md w-full border border-white">
           <div className="p-6 text-center">
             <h2 className="text-xl font-bold text-white mb-4">Access Denied</h2>
-            <p className="text-gray-300 mb-4">Only team captains can view join requests.</p>
+            <p className="text-white/80 mb-4">Only team captains can view join requests.</p>
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-white text-black rounded-lg font-semibold"
+              className="px-4 py-2 bg-white text-black font-semibold"
             >
               Close
             </button>
@@ -79,25 +79,25 @@ const CaptainNotificationsModal = ({
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-black rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-white">
-        <div className="p-6 border-b border-white">
+      <div className="bg-black max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-white">
+        <div className="p-6 border-b border-white/20">
           <div className="flex justify-between items-center">
             <div>
               <h2 className="text-xl font-bold text-white">Join Requests</h2>
               {eventName && (
-                <p className="text-gray-300 text-sm mt-1">for {eventName}</p>
+                <p className="text-white/80 text-sm mt-1">for {eventName}</p>
               )}
             </div>
             <div className="flex items-center gap-3">
               {unreadCount > 0 && (
-                <span className="px-2 py-1 bg-red-500 text-white text-xs rounded-full font-bold">
+                <span className="px-2 py-1 bg-white text-black text-xs font-bold">
                   {unreadCount}
                 </span>
               )}
               <button
                 onClick={refresh}
                 disabled={isLoading}
-                className="text-white hover:text-gray-300 transition-colors"
+                className="text-white hover:text-white/60 transition-colors"
                 title="Refresh notifications"
               >
                 <svg className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -106,7 +106,7 @@ const CaptainNotificationsModal = ({
               </button>
               <button
                 onClick={onClose}
-                className="text-white hover:text-gray-300 transition-colors"
+                className="text-white hover:text-white/60 transition-colors"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -156,12 +156,12 @@ const CaptainNotificationsModal = ({
           ) : (
             <div className="space-y-4">
               {notifications.map((notification) => (
-                <div key={notification.id} className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+                <div key={notification.id} className="bg-black p-4 border border-white/20">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
-                        <div className="w-10 h-10 bg-gray-700 rounded-full flex items-center justify-center">
-                          <span className="text-white font-semibold text-sm">
+                        <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center">
+                          <span className="text-black font-semibold text-sm">
                             {notification.requesterName?.charAt(0) || '?'}
                           </span>
                         </div>
@@ -170,13 +170,13 @@ const CaptainNotificationsModal = ({
                             pubkey={notification.requesterPubkey} 
                             className="font-semibold text-white"
                           />
-                          <p className="text-gray-400 text-sm">wants to join</p>
+                          <p className="text-white/60 text-sm">wants to join</p>
                         </div>
                       </div>
                       
                       <div className="ml-13">
                         <p className="text-white font-semibold">{notification.eventName}</p>
-                        <p className="text-gray-400 text-sm">
+                        <p className="text-white/60 text-sm">
                           {new Date(notification.timestamp).toLocaleDateString()} at{' '}
                           {new Date(notification.timestamp).toLocaleTimeString()}
                         </p>
@@ -187,14 +187,14 @@ const CaptainNotificationsModal = ({
                       <button
                         onClick={() => handleDeny(notification)}
                         disabled={processingId === notification.id}
-                        className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-3 py-1 bg-black text-white text-sm border border-white/40 hover:border-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {processingId === notification.id ? '...' : 'Deny'}
                       </button>
                       <button
                         onClick={() => handleApprove(notification)}
                         disabled={processingId === notification.id}
-                        className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-3 py-1 bg-white text-black text-sm hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {processingId === notification.id ? '...' : 'Approve'}
                       </button>
@@ -207,8 +207,8 @@ const CaptainNotificationsModal = ({
         </div>
 
         {notifications.length > 0 && (
-          <div className="p-6 border-t border-gray-700 text-center">
-            <p className="text-gray-400 text-sm">
+          <div className="p-6 border-t border-white/20 text-center">
+            <p className="text-white/60 text-sm">
               Approved users will be added to the official participant list.
             </p>
           </div>
