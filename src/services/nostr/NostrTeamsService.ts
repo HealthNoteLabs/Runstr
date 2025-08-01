@@ -1351,16 +1351,33 @@ export async function createTeamEvent(
 /**
  * Fetches a specific team event by ID
  */
+/**
+ * Enhanced single team event fetching with League's resilience patterns
+ * - Retry logic with exponential backoff
+ * - Better error handling and recovery
+ * - Enhanced validation like fetchTeamEvents
+ * - Prevents black screens on event detail pages
+ */
 export async function fetchTeamEventById(
   ndk: NDK,
   teamAIdentifier: string,
   eventId: string
 ): Promise<TeamEventDetails | null> {
   if (!ndk) {
-    console.warn("NDK instance not provided to fetchTeamEventById.");
-    return null;
+    const error = new Error("NDK instance not provided to fetchTeamEventById");
+    console.error(error.message);
+    throw error;
   }
 
+  if (!teamAIdentifier || !eventId) {
+    const error = new Error("Team identifier and event ID are required for fetchTeamEventById");
+    console.error(error.message);
+    throw error;
+  }
+
+  const MAX_RETRIES = 3;
+  const INITIAL_DELAY = 1000; // 1 second
+  
   const filter: NDKFilter = {
     kinds: [KIND_NIP101_TEAM_EVENT as NDKKind],
     '#a': [teamAIdentifier],
@@ -1368,33 +1385,80 @@ export async function fetchTeamEventById(
     limit: 1
   };
 
-  try {
-    const eventsSet = await ndk.fetchEvents(filter, { cacheUsage: NDKSubscriptionCacheUsage.CACHE_FIRST });
-    if (eventsSet.size === 0) {
-      return null;
-    }
+  let lastError: Error | null = null;
 
-    const ndkEvent = Array.from(eventsSet)[0];
-    const rawEvent = ndkEvent.rawEvent();
-    const tags = rawEvent.tags;
-    
-    return {
-      id: tags.find(t => t[0] === 'd')?.[1] || '',
-      teamAIdentifier: teamAIdentifier,
-      name: tags.find(t => t[0] === 'name')?.[1] || 'Unnamed Event',
-      description: tags.find(t => t[0] === 'description')?.[1],
-      activity: (tags.find(t => t[0] === 'activity')?.[1] || 'run') as 'run' | 'walk' | 'cycle',
-      distance: parseFloat(tags.find(t => t[0] === 'distance')?.[1] || '0'),
-      date: tags.find(t => t[0] === 'date')?.[1] || '',
-      startTime: tags.find(t => t[0] === 'start_time')?.[1],
-      endTime: tags.find(t => t[0] === 'end_time')?.[1],
-      creatorPubkey: rawEvent.pubkey,
-      createdAt: rawEvent.created_at
-    };
-  } catch (error) {
-    console.error("Error fetching team event by ID with NDK:", error);
-    return null;
+  // Retry logic with exponential backoff - League pattern
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`[fetchTeamEventById] Attempt ${attempt + 1}/${MAX_RETRIES + 1} for event ${eventId}`);
+      
+      const eventsSet = await ndk.fetchEvents(filter, { 
+        cacheUsage: NDKSubscriptionCacheUsage.CACHE_FIRST,
+        closeOnEose: true // Close subscription after EOSE for better performance
+      });
+      
+      if (!eventsSet || eventsSet.size === 0) {
+        console.log(`[fetchTeamEventById] No event found with ID ${eventId} in team ${teamAIdentifier}`);
+        return null; // Event legitimately doesn't exist
+      }
+
+      const ndkEvent = Array.from(eventsSet)[0];
+      const rawEvent = ndkEvent.rawEvent();
+      const tags = rawEvent.tags;
+      
+      // Enhanced validation like fetchTeamEvents
+      const eventIdFromTags = tags.find(t => t[0] === 'd')?.[1];
+      if (!eventIdFromTags) {
+        console.warn(`[fetchTeamEventById] Event missing required 'd' tag, skipping:`, rawEvent.id);
+        return null;
+      }
+
+      const eventDate = tags.find(t => t[0] === 'date')?.[1];
+      if (!eventDate) {
+        console.warn(`[fetchTeamEventById] Event missing required date, skipping:`, eventIdFromTags);
+        return null;
+      }
+
+      const eventDetails: TeamEventDetails = {
+        id: eventIdFromTags,
+        teamAIdentifier: teamAIdentifier,
+        name: tags.find(t => t[0] === 'name')?.[1] || 'Unnamed Event',
+        description: tags.find(t => t[0] === 'description')?.[1],
+        activity: (tags.find(t => t[0] === 'activity')?.[1] || 'run') as 'run' | 'walk' | 'cycle',
+        distance: Math.max(0, parseFloat(tags.find(t => t[0] === 'distance')?.[1] || '0')), // Ensure positive
+        date: eventDate,
+        startTime: tags.find(t => t[0] === 'start_time')?.[1],
+        endTime: tags.find(t => t[0] === 'end_time')?.[1],
+        creatorPubkey: rawEvent.pubkey,
+        createdAt: rawEvent.created_at,
+        participantCount: 0 // Will be populated by other services
+      };
+      
+      console.log(`[fetchTeamEventById] Successfully fetched event ${eventId}: "${eventDetails.name}"`);
+      return eventDetails;
+
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.error(`[fetchTeamEventById] Attempt ${attempt + 1} failed:`, lastError.message);
+      
+      // If this is the last attempt, don't wait
+      if (attempt === MAX_RETRIES) {
+        break;
+      }
+      
+      // Exponential backoff - League pattern
+      const delay = INITIAL_DELAY * Math.pow(2, attempt);
+      console.log(`[fetchTeamEventById] Retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
+
+  // All retries failed - throw the last error with context
+  const finalError = new Error(
+    `Failed to fetch team event ${eventId} after ${MAX_RETRIES + 1} attempts: ${lastError?.message || 'Unknown error'}`
+  );
+  console.error(`[fetchTeamEventById] Final failure for event ${eventId}:`, finalError.message);
+  throw finalError;
 }
 
 /**
@@ -1547,6 +1611,13 @@ export async function fetchTeamEvents(
 /**
  * Fetches participation data for a specific event
  */
+/**
+ * Enhanced event participation fetching with League's resilience patterns
+ * - Retry logic with exponential backoff
+ * - Better error handling and recovery
+ * - Enhanced validation for workout data
+ * - Prevents participation data loading failures
+ */
 export async function fetchEventParticipation(
   ndk: NDK,
   eventId: string,
@@ -1554,13 +1625,30 @@ export async function fetchEventParticipation(
   eventDate: string
 ): Promise<EventParticipation[]> {
   if (!ndk) {
-    console.warn("NDK instance not provided to fetchEventParticipation.");
-    return [];
+    const error = new Error("NDK instance not provided to fetchEventParticipation");
+    console.error(error.message);
+    throw error;
   }
+
+  if (!eventId || !teamAIdentifier || !eventDate) {
+    const error = new Error("Event ID, team identifier, and event date are required for fetchEventParticipation");
+    console.error(error.message);
+    throw error;
+  }
+
+  const MAX_RETRIES = 3;
+  const INITIAL_DELAY = 1000; // 1 second
+  const MAX_WORKOUTS = 200; // Increased limit for better coverage
 
   // Parse the team identifier to get team UUID
   const teamParts = teamAIdentifier.split(':');
   const teamUUID = teamParts[teamParts.length - 1];
+
+  if (!teamUUID) {
+    const error = new Error(`Invalid team identifier format: ${teamAIdentifier}`);
+    console.error(error.message);
+    throw error;
+  }
 
   // Fetch workouts for the event date with team tag
   // Fix: Use UTC dates to ensure consistent event date handling across timezones
@@ -1572,56 +1660,122 @@ export async function fetchEventParticipation(
     '#team_uuid': [teamUUID],
     since: Math.floor(startOfDay.getTime() / 1000),
     until: Math.floor(endOfDay.getTime() / 1000),
-    limit: 100
+    limit: MAX_WORKOUTS
   };
 
-  try {
-    const workoutsSet = await ndk.fetchEvents(filter, { cacheUsage: NDKSubscriptionCacheUsage.CACHE_FIRST });
-    const participation: EventParticipation[] = [];
+  let lastError: Error | null = null;
 
-    Array.from(workoutsSet).forEach(ndkEvent => {
-      const workout = ndkEvent.rawEvent();
-      const tags = workout.tags;
+  // Retry logic with exponential backoff - League pattern
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`[fetchEventParticipation] Attempt ${attempt + 1}/${MAX_RETRIES + 1} for event ${eventId} on ${eventDate}`);
       
-      // Extract workout data
-      const distanceTag = tags.find(t => t[0] === 'distance');
-      const durationTag = tags.find(t => t[0] === 'duration');
-      const activityTag = tags.find(t => t[0] === 'activity');
+      const workoutsSet = await ndk.fetchEvents(filter, { 
+        cacheUsage: NDKSubscriptionCacheUsage.CACHE_FIRST,
+        closeOnEose: true
+      });
       
-      if (distanceTag && durationTag) {
-        const distance = parseFloat(distanceTag[1]);
-        const durationSeconds = parseDurationToSeconds(durationTag[1]);
-        const activity = activityTag?.[1] || 'run';
-        
-        // Calculate pace
-        let pace = 0;
-        if (distance > 0 && durationSeconds > 0) {
-          if (activity === 'cycle') {
-            // For cycling: km/h
-            pace = (distance / (durationSeconds / 3600));
-          } else {
-            // For run/walk: min/km
-            pace = (durationSeconds / 60) / distance;
-          }
-        }
-
-        participation.push({
-          pubkey: workout.pubkey,
-          workoutId: workout.id,
-          duration: durationSeconds,
-          distance: distance,
-          pace: pace,
-          completedAt: workout.created_at
-        });
+      if (!workoutsSet) {
+        console.log(`[fetchEventParticipation] No workouts found for event ${eventId} on ${eventDate}`);
+        return [];
       }
-    });
 
-    console.log(`Found ${participation.length} participants for event ${eventId}`);
-    return participation;
-  } catch (error) {
-    console.error("Error fetching event participation:", error);
-    return [];
+      const participation: EventParticipation[] = [];
+      const processedUserIds = new Set<string>(); // Prevent duplicates
+
+      Array.from(workoutsSet).forEach(ndkEvent => {
+        try {
+          const workout = ndkEvent.rawEvent();
+          const tags = workout.tags;
+          
+          // Skip if we've already processed this user (prevent duplicates)
+          if (processedUserIds.has(workout.pubkey)) {
+            return;
+          }
+
+          // Extract workout data with enhanced validation
+          const distanceTag = tags.find(t => t[0] === 'distance');
+          const durationTag = tags.find(t => t[0] === 'duration');
+          const activityTag = tags.find(t => t[0] === 'activity');
+          
+          if (!distanceTag || !durationTag) {
+            console.warn(`[fetchEventParticipation] Workout missing required distance/duration tags, skipping:`, workout.id);
+            return;
+          }
+
+          const distance = parseFloat(distanceTag[1]);
+          const durationSeconds = parseDurationToSeconds(durationTag[1]);
+          const activity = activityTag?.[1] || 'run';
+          
+          // Enhanced validation
+          if (isNaN(distance) || distance <= 0) {
+            console.warn(`[fetchEventParticipation] Invalid distance value, skipping:`, distanceTag[1]);
+            return;
+          }
+
+          if (isNaN(durationSeconds) || durationSeconds <= 0) {
+            console.warn(`[fetchEventParticipation] Invalid duration value, skipping:`, durationTag[1]);
+            return;
+          }
+
+          // Calculate pace with bounds checking
+          let pace = 0;
+          if (distance > 0 && durationSeconds > 0) {
+            if (activity === 'cycle') {
+              // For cycling: km/h
+              pace = (distance / (durationSeconds / 3600));
+            } else {
+              // For run/walk: min/km
+              pace = (durationSeconds / 60) / distance;
+            }
+            
+            // Sanity check pace values
+            if (isNaN(pace) || pace <= 0 || pace > 1000) {
+              console.warn(`[fetchEventParticipation] Unrealistic pace calculated (${pace}), setting to 0`);
+              pace = 0;
+            }
+          }
+
+          participation.push({
+            pubkey: workout.pubkey,
+            distance: distance,
+            duration: durationSeconds,
+            pace: pace,
+            joined_at: workout.created_at,
+            completed_at: workout.created_at
+          });
+
+          processedUserIds.add(workout.pubkey);
+        } catch (err) {
+          console.error(`[fetchEventParticipation] Error processing workout:`, err);
+        }
+      });
+
+      console.log(`[fetchEventParticipation] Successfully processed ${participation.length} participants for event ${eventId} on ${eventDate}`);
+      return participation;
+
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.error(`[fetchEventParticipation] Attempt ${attempt + 1} failed:`, lastError.message);
+      
+      // If this is the last attempt, don't wait
+      if (attempt === MAX_RETRIES) {
+        break;
+      }
+      
+      // Exponential backoff - League pattern
+      const delay = INITIAL_DELAY * Math.pow(2, attempt);
+      console.log(`[fetchEventParticipation] Retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
+
+  // All retries failed - throw the last error with context
+  const finalError = new Error(
+    `Failed to fetch event participation for ${eventId} after ${MAX_RETRIES + 1} attempts: ${lastError?.message || 'Unknown error'}`
+  );
+  console.error(`[fetchEventParticipation] Final failure for event ${eventId}:`, finalError.message);
+  throw finalError;
 }
 
 /**
