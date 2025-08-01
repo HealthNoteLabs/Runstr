@@ -181,7 +181,7 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
     } finally {
       setIsJoining(false);
     }
-  }, [eventId, publicKey, teamAIdentifier, eventName, isJoining, isUserParticipatingLocally]);
+  }, [eventId, publicKey, teamAIdentifier, eventName, isJoining, isUserParticipatingLocally, ndk, ndkReady, captainPubkey]);
 
   /**
    * Leave event - remove from localStorage
