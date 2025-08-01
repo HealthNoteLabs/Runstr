@@ -340,9 +340,10 @@ const TeamEventDetailPage: React.FC = () => {
         // Reload participants and activities with fresh data
         setTimeout(async () => {
           if (event) {
+            console.log('[handleJoinEvent] Reloading participants after join...');
             await loadParticipants(event);
           }
-        }, 500); // Small delay to let the event propagate
+        }, 2000); // Increased delay to let the event propagate to relays
       } else {
         toast.error('Failed to join event');
       }
@@ -376,9 +377,10 @@ const TeamEventDetailPage: React.FC = () => {
         // Reload participants and activities with fresh data
         setTimeout(async () => {
           if (event) {
+            console.log('[handleJoinEvent] Reloading participants after join...');
             await loadParticipants(event);
           }
-        }, 500); // Small delay to let the event propagate
+        }, 2000); // Increased delay to let the event propagate to relays
       } else {
         toast.error('Failed to leave event');
       }

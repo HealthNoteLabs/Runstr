@@ -1606,18 +1606,32 @@ export async function joinTeamEvent(
     ndkEvent.tags = eventTemplate.tags;
     ndkEvent.content = eventTemplate.content;
     
+    console.log(`[joinTeamEvent] Creating participation event:`, {
+      kind: ndkEvent.kind,
+      tags: ndkEvent.tags,
+      content: ndkEvent.content,
+      userPubkey
+    });
+    
     await ndkEvent.sign();
     const publishedRelays = await ndkEvent.publish();
     
+    console.log(`[joinTeamEvent] Published to ${publishedRelays.size} relays:`, Array.from(publishedRelays));
+    
     if (publishedRelays.size > 0) {
-      console.log(`Successfully joined event: ${eventId}`);
+      console.log(`[joinTeamEvent] Successfully joined event: ${eventId} with final event:`, {
+        id: ndkEvent.id,
+        pubkey: ndkEvent.pubkey,
+        content: ndkEvent.content,
+        tags: ndkEvent.tags
+      });
       return ndkEvent;
     } else {
-      console.error("Failed to publish event participation to any relays.");
+      console.error("[joinTeamEvent] Failed to publish event participation to any relays.");
       return null;
     }
   } catch (error) {
-    console.error("Error joining team event:", error);
+    console.error("[joinTeamEvent] Error joining team event:", error);
     return null;
   }
 }
@@ -1680,27 +1694,40 @@ export async function fetchEventParticipants(
   teamAIdentifier: string
 ): Promise<string[]> {
   // Query for all participation events for this event
-  // The d tag contains eventId:userPubkey pattern
+  // For replaceable events, we need to query by the d tag pattern or use a broader search
   const filter: NDKFilter = {
     kinds: [KIND_EVENT_PARTICIPATION as NDKKind],
     '#a': [teamAIdentifier],
     '#e': [eventId]
+    // Note: We can't filter by d tag since it contains user pubkeys we don't know yet
   };
 
   try {
+    console.log(`[fetchEventParticipants] Querying with filter:`, filter);
     const events = await ndk.fetchEvents(filter);
+    console.log(`[fetchEventParticipants] Found ${events.size} total events`);
+    
     const participants: string[] = [];
     
     // With replaceable events, we only need to check the content
     // Each user has at most one participation event per event
     for (const event of events) {
+      console.log(`[fetchEventParticipants] Event:`, {
+        id: event.id,
+        pubkey: event.pubkey,
+        content: event.content,
+        tags: event.tags,
+        kind: event.kind
+      });
+      
       if (event.content === 'participating') {
         participants.push(event.pubkey);
+        console.log(`[fetchEventParticipants] Added participant: ${event.pubkey}`);
       }
       // Ignore events with content 'not participating'
     }
 
-    console.log(`Found ${participants.length} active participants for event ${eventId}`);
+    console.log(`[fetchEventParticipants] Found ${participants.length} active participants for event ${eventId}:`, participants);
     return participants;
 
   } catch (error) {
@@ -1728,18 +1755,29 @@ export async function isUserParticipating(
   };
 
   try {
+    console.log(`[isUserParticipating] Querying for user ${userPubkey} with filter:`, filter);
     const events = await ndk.fetchEvents(filter);
+    console.log(`[isUserParticipating] Found ${events.size} events for user ${userPubkey}`);
     
     // Check if user has a 'participating' event
     for (const event of events) {
+      console.log(`[isUserParticipating] Checking event:`, {
+        id: event.id,
+        pubkey: event.pubkey,
+        content: event.content,
+        tags: event.tags
+      });
+      
       if (event.content === 'participating') {
+        console.log(`[isUserParticipating] User ${userPubkey} IS participating`);
         return true;
       }
     }
     
+    console.log(`[isUserParticipating] User ${userPubkey} is NOT participating`);
     return false;
   } catch (error) {
-    console.error('Error checking user participation:', error);
+    console.error('[isUserParticipating] Error checking user participation:', error);
     return false;
   }
 }
