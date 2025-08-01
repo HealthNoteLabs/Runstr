@@ -24,6 +24,23 @@ const TeamEventDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const { ndk, ndkReady, publicKey, fetchWithTimeout, ensureConnection, ndkStatus } = useNostr();
 
+  // Early return if required params are missing to prevent crashes
+  if (!captainPubkey || !teamUUID || !eventId) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-xl font-bold mb-2">Invalid Event URL</h1>
+          <p className="text-gray-400 mb-4">Missing required event parameters</p>
+          <button 
+            onClick={() => navigate('/teams')}
+            className="px-4 py-2 bg-white text-black rounded-lg"
+          >
+            Back to Teams
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const [event, setEvent] = useState<TeamEventDetails | null>(null);
   const [isLoadingEvent, setIsLoadingEvent] = useState(true);
@@ -31,6 +48,12 @@ const TeamEventDetailPage: React.FC = () => {
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
   const [loadingState, setLoadingState] = useState<'loading' | 'success' | 'error' | 'timeout' | 'cancelled'>('loading');
+  
+  // Construct team identifier from URL params (needed for hooks)
+  const teamAIdentifier = `33404:${captainPubkey}:${teamUUID}`;
+
+  // Check if current user is team captain
+  const isCaptain = publicKey === captainPubkey;
   
   // Use new simplified participation system
   const {
@@ -62,12 +85,6 @@ const TeamEventDetailPage: React.FC = () => {
     event?.endTime,
     'all' // Show all activity types
   );
-  
-  // Construct team identifier from URL params
-  const teamAIdentifier = `33404:${captainPubkey}:${teamUUID}`;
-
-  // Check if current user is team captain
-  const isCaptain = publicKey === captainPubkey;
 
   // Progressive loading functions
   const loadEventDetails = useCallback(async () => {
@@ -508,6 +525,57 @@ const TeamEventDetailPage: React.FC = () => {
 
   
   const status = getEventStatus();
+
+  // Show error state if there are critical errors
+  if (participantsError || leaderboardError) {
+    return (
+      <div className="min-h-screen bg-bg-primary text-text-primary">
+        <div className="max-w-4xl mx-auto p-4">
+          <div className="flex items-center justify-center min-h-[50vh]">
+            <div className="text-center">
+              <div className="text-red-400 mb-4">
+                <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 15.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-bold text-white mb-2">Error Loading Event</h2>
+              <p className="text-gray-400 mb-4">{participantsError || leaderboardError}</p>
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="px-4 py-2 bg-white text-black rounded-lg"
+                >
+                  Refresh Page
+                </button>
+                <button 
+                  onClick={() => navigate('/teams')}
+                  className="px-4 py-2 bg-gray-700 text-white rounded-lg"
+                >
+                  Back to Teams
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading state while event is loading
+  if (isLoadingEvent || !event) {
+    return (
+      <div className="min-h-screen bg-bg-primary text-text-primary">
+        <div className="max-w-4xl mx-auto p-4">
+          <div className="flex items-center justify-center min-h-[50vh]">
+            <div className="text-center">
+              <div className="animate-spin w-8 h-8 border-2 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
+              <p className="text-white">{loadingStatus}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary">
