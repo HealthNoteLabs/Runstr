@@ -65,7 +65,7 @@ const TeamEventDetailPage: React.FC = () => {
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
   const [loadingState, setLoadingState] = useState<'loading' | 'success' | 'error' | 'timeout' | 'cancelled'>('loading');
-  const [joinDebugInfo, setJoinDebugInfo] = useState<string[]>([]);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   
   // Construct team identifier from URL params (needed for hooks) - MUST be before skeleton
   const teamAIdentifier = `33404:${captainPubkey}:${teamUUID}`;
@@ -128,88 +128,74 @@ const TeamEventDetailPage: React.FC = () => {
     'all' // Show all activity types
   );
 
-  // Simple effect to set loading complete since we start with skeleton
+  // Fetch actual event data
   useEffect(() => {
-    if (event && event.isLoading) {
+    const fetchEventData = async () => {
+      if (!eventId || !captainPubkey || !teamUUID || !ndk || !ndkReady) {
+        return;
+      }
+
+      try {
+        console.log('[TeamEventDetailPage] Fetching event data for:', eventId);
+        setLoadingStatus('Loading event details...');
+        
+        const eventData = await fetchTeamEventById(ndk, captainPubkey, teamUUID, eventId);
+        
+        if (eventData) {
+          console.log('[TeamEventDetailPage] Event data loaded:', eventData);
+          setEvent({
+            ...eventData,
+            isLoading: false
+          });
+          setLoadingState('success');
+          setLoadingStatus('Event loaded');
+        } else {
+          console.warn('[TeamEventDetailPage] No event data found');
+          setLoadingState('error');
+          setLoadingStatus('Event not found');
+        }
+      } catch (error) {
+        console.error('[TeamEventDetailPage] Error fetching event:', error);
+        setLoadingState('error');
+        setLoadingStatus('Failed to load event');
+      } finally {
+        setIsLoadingEvent(false);
+      }
+    };
+
+    fetchEventData();
+  }, [eventId, captainPubkey, teamUUID, ndk, ndkReady]);
+
+  // Fallback effect to set loading complete for skeleton if real data fetch fails
+  useEffect(() => {
+    if (event && event.isLoading && loadingState === 'loading') {
       console.log('[TeamEventDetailPage] Event initialized with skeleton, setting ready state');
       setIsLoadingEvent(false);
       setLoadingState('success');
       setLoadingStatus('Event ready');
     }
-  }, [event]);
+  }, [event, loadingState]);
 
 
   // Remove timeout - it's causing false timeouts when the event actually loads
   // The event is loading properly, just slowly
 
   const handleJoinEvent = async () => {
-    console.log('🔵 [TeamEventDetailPage] JOIN BUTTON CLICKED');
-    
-    // Clear previous debug info
-    setJoinDebugInfo(['Join button clicked...']);
-    
-    const debugState = {
-      publicKey: publicKey ? `${publicKey.slice(0, 8)}...` : null,
-      eventId,
-      captainPubkey: captainPubkey ? `${captainPubkey.slice(0, 8)}...` : null,
-      teamUUID,
-      eventName: event?.name,
-      hasEvent: !!event,
-      isJoining,
-      isUserParticipating,
-      isUserParticipatingLocally,
-      ndkReady,
-      participantCount
-    };
-    
-    console.log('🔵 [TeamEventDetailPage] Current state:', debugState);
-    setJoinDebugInfo(prev => [...prev, `State: ${JSON.stringify(debugState, null, 2)}`]);
-
     if (!publicKey) {
-      console.log('🔴 [TeamEventDetailPage] No publicKey, aborting');
-      setJoinDebugInfo(prev => [...prev, '❌ ERROR: Not signed in']);
       toast.error('Please sign in to join events');
       return;
     }
 
     if (!event) {
-      console.log('🔴 [TeamEventDetailPage] No event data, aborting');
-      setJoinDebugInfo(prev => [...prev, '❌ ERROR: Event data unavailable']);
       toast.error('Event information unavailable');
       return;
     }
 
     try {
-      console.log('🟡 [TeamEventDetailPage] Calling joinEvent()...');
-      setJoinDebugInfo(prev => [...prev, '🟡 Calling joinEvent()...']);
-      
-      const result = await joinEvent();
-      
-      console.log('🟢 [TeamEventDetailPage] joinEvent() returned:', result);
-      
-      if (result === 'already-joined') {
-        setJoinDebugInfo(prev => [...prev, '⚠️ Already joined this event']);
-        toast.info('You are already participating in this event');
-      } else if (result && result.startsWith('success|')) {
-        const steps = result.split('|').slice(1);
-        setJoinDebugInfo(prev => [...prev, ...steps]);
-        toast.success('Successfully joined the event! 🎉');
-      } else {
-        setJoinDebugInfo(prev => [...prev, `✅ joinEvent returned: ${result}`]);
-        toast.success('Successfully joined the event! 🎉');
-      }
-      
-      // Clear debug info after success
-      setTimeout(() => setJoinDebugInfo([]), 10000);
+      await joinEvent();
+      toast.success('Successfully joined the event! 🎉');
     } catch (error) {
-      console.error('🔴 [TeamEventDetailPage] Error in handleJoinEvent:', error);
-      console.error('🔴 [TeamEventDetailPage] Error stack:', error.stack);
-      
-      setJoinDebugInfo(prev => [...prev, `❌ ERROR: ${error.message}`]);
-      if (error.stack) {
-        setJoinDebugInfo(prev => [...prev, `Stack: ${error.stack}`]);
-      }
-      
+      console.error('Error joining event:', error);
       toast.error(error.message || 'Failed to join event - please try again');
     }
   };
@@ -632,6 +618,61 @@ const TeamEventDetailPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Diagnostic Button - Always visible for debugging */}
+          <div className="mb-2">
+            <button
+              onClick={() => setShowDiagnostics(!showDiagnostics)}
+              className="text-xs text-white/60 hover:text-white underline"
+            >
+              {showDiagnostics ? 'Hide' : 'Show'} Diagnostics
+            </button>
+          </div>
+
+          {/* Diagnostics Panel */}
+          {showDiagnostics && (
+            <div className="mb-4 p-3 bg-blue-900/20 border border-blue-500/50 rounded text-xs">
+              <h4 className="text-blue-400 font-semibold mb-2">Event Participation Diagnostics:</h4>
+              <div className="space-y-1 text-blue-200">
+                <div>publicKey: {publicKey ? `${publicKey.slice(0, 8)}...${publicKey.slice(-4)}` : 'Not signed in'}</div>
+                <div>eventId: {eventId || 'Missing'}</div>
+                <div>isUserParticipating: {isUserParticipating ? 'YES' : 'NO'}</div>
+                <div>isUserParticipatingLocally: {isUserParticipatingLocally ? 'YES' : 'NO'}</div>
+                <div>isJoining: {isJoining ? 'YES' : 'NO'}</div>
+                <div>ndkReady: {ndkReady ? 'YES' : 'NO'}</div>
+                <div>Button shown: {isUserParticipating || isUserParticipatingLocally ? 'LEAVE' : 'JOIN'}</div>
+              </div>
+              <button
+                onClick={() => {
+                  // Clear localStorage participation for this event
+                  if (typeof localStorage !== 'undefined' && eventId && publicKey) {
+                    try {
+                      // Clear event participants
+                      const participants = JSON.parse(localStorage.getItem('eventParticipants') || '{}');
+                      if (participants[eventId] && participants[eventId][publicKey]) {
+                        delete participants[eventId][publicKey];
+                        localStorage.setItem('eventParticipants', JSON.stringify(participants));
+                      }
+                      
+                      // Clear user joined events
+                      const userJoined = JSON.parse(localStorage.getItem('userJoinedEvents') || '{}');
+                      if (userJoined[eventId]) {
+                        delete userJoined[eventId];
+                        localStorage.setItem('userJoinedEvents', JSON.stringify(userJoined));
+                      }
+                      
+                      window.location.reload();
+                    } catch (error) {
+                      console.error('Error clearing participation:', error);
+                    }
+                  }
+                }}
+                className="mt-2 px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+              >
+                Clear Local Participation & Reload
+              </button>
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div className="flex items-center gap-3">
             {/* Show join/leave button for all logged-in users (including captains) */}
@@ -647,10 +688,7 @@ const TeamEventDetailPage: React.FC = () => {
                   </button>
                 ) : (
                   <button
-                    onClick={() => {
-                      console.log('🔵 [TeamEventDetailPage] JOIN BUTTON PHYSICALLY CLICKED');
-                      handleJoinEvent();
-                    }}
+                    onClick={handleJoinEvent}
                     disabled={isJoining || isLeaving || status === 'completed'}
                     className="px-4 py-2 bg-white text-black font-semibold border border-white hover:bg-white/90 transition-colors disabled:opacity-50"
                   >
@@ -681,28 +719,6 @@ const TeamEventDetailPage: React.FC = () => {
               </>
             )}
           </div>
-          
-          {/* Debug Info Panel - Only shows when there's debug info */}
-          {joinDebugInfo.length > 0 && (
-            <div className="mt-4 p-4 bg-yellow-900/20 border border-yellow-500/50 rounded-lg">
-              <div className="flex justify-between items-start mb-2">
-                <h3 className="text-yellow-400 font-semibold">Join Debug Info:</h3>
-                <button
-                  onClick={() => setJoinDebugInfo([])}
-                  className="text-yellow-400 hover:text-yellow-300 text-sm"
-                >
-                  Clear
-                </button>
-              </div>
-              <div className="space-y-1">
-                {joinDebugInfo.map((info, index) => (
-                  <pre key={index} className="text-xs text-yellow-200 whitespace-pre-wrap break-words">
-                    {info}
-                  </pre>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Participants Section */}

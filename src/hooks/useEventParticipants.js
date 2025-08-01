@@ -118,57 +118,27 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
    * Join event - immediately stored in localStorage for optimistic UI
    */
   const joinEvent = useCallback(async () => {
-    console.log('🔵 [useEventParticipants] joinEvent() called');
-    console.log('🔵 [useEventParticipants] Parameters:', {
-      eventId,
-      publicKey: publicKey ? `${publicKey.slice(0, 8)}...` : null,
-      teamAIdentifier,
-      eventName,
-      isJoining,
-      isUserParticipatingLocally,
-      ndkReady,
-      hasNdk: !!ndk,
-      captainPubkey: captainPubkey ? `${captainPubkey.slice(0, 8)}...` : null
-    });
-
     if (!eventId || !publicKey) {
-      console.log('🔴 [useEventParticipants] Missing eventId or publicKey');
       throw new Error('EventId and user authentication required');
     }
 
-    if (isJoining) {
-      console.log('🔴 [useEventParticipants] Already joining, aborting');
-      throw new Error('Already processing join request');
-    }
-    
-    // Check if already participating (but allow re-joining if needed)
-    if (isUserParticipatingLocally) {
-      console.log('🟡 [useEventParticipants] User already participating locally, returning success');
-      return 'already-joined'; // Return string to show in UI
+    if (isJoining || isUserParticipatingLocally) {
+      console.log('[useEventParticipants] Already joining or already participating');
+      return false;
     }
 
-    console.log('🟡 [useEventParticipants] Setting isJoining = true');
     setIsJoining(true);
-    
-    const steps = [];
-    
     try {
-      console.log(`🟡 [useEventParticipants] Starting join process for event ${eventId}`);
-      steps.push('Starting join process...');
-      
+      console.log(`[useEventParticipants] Joining event ${eventId}`);
+
       // Immediate local join for optimistic UI
-      console.log('🟡 [useEventParticipants] Calling joinEventLocally...');
-      steps.push('Saving to local storage...');
-      
       EventParticipationService.joinEventLocally(
         eventId, 
         teamAIdentifier, 
         eventName, 
         publicKey
       );
-      console.log('🟢 [useEventParticipants] joinEventLocally completed');
-      steps.push('✅ Saved to local storage');
-      
+
       // Update local state immediately
       const newParticipant = {
         pubkey: publicKey,
@@ -176,26 +146,17 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
         status: 'active',
         source: 'localStorage'
       };
-      
+
       setParticipants(prev => {
-        console.log('🟡 [useEventParticipants] Updating participants state');
         // Avoid duplicates
-        if (prev.some(p => p.pubkey === publicKey)) {
-          console.log('🟡 [useEventParticipants] User already in participants, no update needed');
-          return prev;
-        }
-        console.log('🟢 [useEventParticipants] Adding user to participants');
+        if (prev.some(p => p.pubkey === publicKey)) return prev;
         return [...prev, newParticipant];
       });
-      
-      steps.push('✅ Updated participant list');
-      
+
       // Send notification to captain (if NDK is ready)
       try {
         if (ndk && ndkReady && captainPubkey && captainPubkey !== publicKey) {
-          console.log(`🟡 [useEventParticipants] Sending join request notification to captain`);
-          steps.push('Sending notification to captain...');
-          
+          console.log(`[useEventParticipants] Sending join request notification to captain`);
           await EventNotificationService.sendJoinRequestNotification(ndk, {
             eventId,
             eventName,
@@ -204,29 +165,20 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
             requesterPubkey: publicKey,
             requesterName: null // Could be enhanced to get user's display name
           });
-          
-          console.log(`🟢 [useEventParticipants] Join request notification sent successfully`);
-          steps.push('✅ Notification sent to captain');
-        } else {
-          const reason = !ndk ? 'No NDK' : !ndkReady ? 'NDK not ready' : captainPubkey === publicKey ? 'User is captain' : 'Unknown';
-          console.log(`🟡 [useEventParticipants] Skipping notification - ${reason}`);
-          steps.push(`⚠️ Skipped notification: ${reason}`);
+          console.log(`[useEventParticipants] Join request notification sent`);
         }
       } catch (notificationError) {
         // Don't fail the join if notification fails
-        console.error('🔴 [useEventParticipants] Failed to send join notification:', notificationError);
-        steps.push(`⚠️ Notification failed: ${notificationError.message}`);
+        console.warn('[useEventParticipants] Failed to send join notification:', notificationError);
       }
-      
-      console.log(`🟢 [useEventParticipants] Successfully completed join for event ${eventId}`);
-      return `success|${steps.join('|')}`;
+
+      console.log(`[useEventParticipants] Successfully joined event ${eventId}`);
+      return true;
     } catch (err) {
-      console.error('🔴 [useEventParticipants] Error in joinEvent:', err);
-      console.error('🔴 [useEventParticipants] Error stack:', err.stack);
+      console.error('[useEventParticipants] Error joining event:', err);
       setError(err.message || 'Failed to join event');
-      throw new Error(`Join failed at: ${steps.join(' → ')} | Error: ${err.message}`);
+      throw err;
     } finally {
-      console.log('🟡 [useEventParticipants] Setting isJoining = false');
       setIsJoining(false);
     }
   }, [eventId, publicKey, teamAIdentifier, eventName, isJoining, isUserParticipatingLocally, ndk, ndkReady, captainPubkey]);
