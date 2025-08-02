@@ -211,32 +211,31 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
   };
 
   const getEventStatus = useCallback((event: TeamEventDetails): string => {
-    // Use UTC for consistent comparison across timezones
-    const nowUTC = new Date();
+    // Use local timezone for consistent user experience
+    const now = new Date();
     
     // If event has start/end times, use them for precise timing
     if (event.startTime && event.endTime) {
-      // Create UTC dates for event times
-      const eventStart = new Date(event.date + 'T' + event.startTime + ':00.000Z');
-      const eventEnd = new Date(event.date + 'T' + event.endTime + ':00.000Z');
+      // Create local timezone dates for event times (user input timezone)
+      const eventStart = new Date(event.date + 'T' + event.startTime + ':00');
+      const eventEnd = new Date(event.date + 'T' + event.endTime + ':00');
       
-      if (nowUTC > eventEnd) {
+      if (now > eventEnd) {
         return 'completed';
-      } else if (nowUTC >= eventStart && nowUTC <= eventEnd) {
+      } else if (now >= eventStart && now <= eventEnd) {
         return 'active';
       } else {
         return 'upcoming';
       }
     }
     
-    // For all-day events, use UTC midnight to midnight to ensure consistency
-    // This ensures all users see the same event status regardless of timezone
-    const eventStart = new Date(event.date + 'T00:00:00.000Z');
-    const eventEnd = new Date(event.date + 'T23:59:59.999Z');
+    // For all-day events, use local timezone for user-friendly experience
+    const eventStart = new Date(event.date + 'T00:00:00');
+    const eventEnd = new Date(event.date + 'T23:59:59');
     
-    if (nowUTC > eventEnd) {
+    if (now > eventEnd) {
       return 'completed';
-    } else if (nowUTC >= eventStart && nowUTC <= eventEnd) {
+    } else if (now >= eventStart && now <= eventEnd) {
       return 'active';
     } else {
       return 'upcoming';
@@ -493,18 +492,7 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
             return (
               <div
                 key={event.id || `event-${index}`}
-                onClick={() => {
-                  if (event.id && captainPubkey && teamUUID) {
-                    navigate(`/teams/${captainPubkey}/${teamUUID}/event/${event.id}`);
-                  } else {
-                    console.error('[TeamEventsTab] Cannot navigate: missing event.id, captainPubkey, or teamUUID', {
-                      eventId: event.id,
-                      captainPubkey,
-                      teamUUID
-                    });
-                  }
-                }}
-                className="bg-black border border-white rounded-lg p-4 hover:bg-gray-900 transition-colors cursor-pointer"
+                className="bg-black border border-white rounded-lg p-4 transition-colors cursor-default"
               >
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex items-center space-x-3">

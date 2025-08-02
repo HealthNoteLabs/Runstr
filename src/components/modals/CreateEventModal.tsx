@@ -125,10 +125,9 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
     }
   };
 
-  // Get tomorrow's date as minimum date for event
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const minDate = tomorrow.toISOString().split('T')[0];
+  // Allow today's date for event creation
+  const today = new Date();
+  const minDate = today.toISOString().split('T')[0];
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
