@@ -198,7 +198,7 @@ const EventJoinModal: React.FC<EventJoinModalProps> = ({ event, onClose, onJoin 
             <button
               onClick={handleJoinEvent}
               disabled={isJoining || !canJoin}
-              className="flex-1 px-4 py-3 bg-primary hover:bg-primary-hover text-text-inverse font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-3 bg-black hover:bg-gray-900 text-white border-2 border-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isJoining ? 'Joining...' : canJoin ? 'Join Event' : 'Event Completed'}
             </button>
