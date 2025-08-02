@@ -1,3 +1,3 @@
-# Release v0.6.0
+# Release v0.7.0
 
-Manual release created on Sat Jul 12 00:45:39 UTC 2025
+Manual release created on Sat Aug  2 23:27:35 UTC 2025
