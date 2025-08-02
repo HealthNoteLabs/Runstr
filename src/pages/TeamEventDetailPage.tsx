@@ -8,11 +8,13 @@ import {
 } from '../services/nostr/NostrTeamsService';
 import { useEventParticipants } from '../hooks/useEventParticipants';
 import { useEventLeaderboard } from '../hooks/useEventLeaderboard';
+import { useTeamEventActivityFeed } from '../hooks/useTeamEventActivityFeed';
 import { DisplayName } from '../components/shared/DisplayName';
 import { Post } from '../components/Post';
 import EditEventModal from '../components/modals/EditEventModal';
 import CaptainNotificationsModal from '../components/modals/CaptainNotificationsModal';
 import { teamEventsCache, CACHE_KEYS, CACHE_TTL } from '../utils/teamEventsCache.js';
+import { calculateLeaderboardFromFeed, calculateEventStats } from '../utils/teamEventLeaderboard.js';
 import toast from 'react-hot-toast';
 
 const TeamEventDetailPage: React.FC = () => {
@@ -67,6 +69,9 @@ const TeamEventDetailPage: React.FC = () => {
   const [loadingState, setLoadingState] = useState<'loading' | 'success' | 'error' | 'timeout' | 'cancelled'>('loading');
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   
+  // Tab navigation state (following League's simple pattern)
+  const [activeTab, setActiveTab] = useState<'feed' | 'leaderboard' | 'info'>('feed');
+  
   // Construct team identifier from URL params (needed for hooks) - MUST be before skeleton
   const teamAIdentifier = `33404:${captainPubkey}:${teamUUID}`;
   
@@ -113,7 +118,24 @@ const TeamEventDetailPage: React.FC = () => {
     teamAIdentifier
   );
 
-  // Use new event leaderboard system - only when we have participants and event date
+  // Use new unified team event activity feed (following League pattern)
+  const {
+    feedEvents,
+    enhancedFeedEvents,
+    isLoading: isLoadingActivityFeed,
+    error: activityFeedError,
+    refresh: refreshActivityFeed,
+    lastUpdated: feedLastUpdated,
+    loadingProgress: feedLoadingProgress
+  } = useTeamEventActivityFeed(
+    participants || [], // Event participants
+    event?.date || new Date().toISOString().split('T')[0], // Event date
+    event?.startTime || null, // Event start time
+    event?.endTime || null, // Event end time
+    event?.activity || 'run' // Event activity type
+  );
+  
+  // Keep existing leaderboard for the leaderboard tab
   const {
     leaderboard,
     workoutActivities,
@@ -305,60 +327,18 @@ const TeamEventDetailPage: React.FC = () => {
     return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
   };
 
+  // Optimized leaderboard derived from activity feed (following League pattern)
   const sortedParticipants = useMemo(() => {
-    if (!event) return [];
+    if (!event || !participants.length) return [];
     
-    // Use leaderboard data if available, otherwise show participants without activity
-    const participantMap = new Map();
-    
-    // Add all participants first
-    participants.forEach(participant => {
-      participantMap.set(participant.pubkey, {
-        pubkey: participant.pubkey,
-        distance: 0,
-        duration: 0,
-        pace: 0,
-        completed: false,
-        isCurrentUser: participant.pubkey === publicKey,
-        workoutCount: 0,
-        rank: 0
-      });
-    });
-    
-    // Overlay leaderboard data
-    leaderboard.forEach(entry => {
-      const eventDistance = event?.distance || 0;
-      const completed = eventDistance > 0 ? entry.totalDistance >= eventDistance * 0.8 : false;
-      
-      participantMap.set(entry.pubkey, {
-        pubkey: entry.pubkey,
-        distance: entry.totalDistance,
-        duration: entry.totalDuration,
-        pace: entry.averagePace,
-        completed,
-        isCurrentUser: entry.pubkey === publicKey,
-        workoutCount: entry.workoutCount,
-        rank: entry.rank
-      });
-    });
+    // Use the optimized calculation that derives from activity feed
+    return calculateLeaderboardFromFeed(enhancedFeedEvents, participants, event, publicKey);
+  }, [enhancedFeedEvents, participants, event, publicKey]);
 
-    const allParticipants = Array.from(participantMap.values());
-
-    // Sort by completion status, then by distance/time
-    return allParticipants.sort((a, b) => {
-      // Completed participants first
-      if (a.completed && !b.completed) return -1;
-      if (!a.completed && b.completed) return 1;
-      
-      // Among completed participants, sort by time (fastest first)
-      if (a.completed && b.completed) {
-        return a.duration - b.duration;
-      }
-      
-      // Among non-completed participants, sort by distance (highest first)
-      return b.distance - a.distance;
-    });
-  }, [participants, leaderboard, event?.distance, publicKey]);
+  // Calculate event statistics from the optimized leaderboard
+  const eventStats = useMemo(() => {
+    return calculateEventStats(sortedParticipants);
+  }, [sortedParticipants]);
 
   const renderLeaderboard = () => {
 
@@ -723,97 +703,241 @@ const TeamEventDetailPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Participants Section */}
+        {/* Tab Navigation (following League's simple interface) */}
         <div className="bg-black border border-white/20 overflow-hidden">
-          <div className="p-4 border-b border-white/20 bg-black">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-white">Event Leaderboard</h2>
-              <div className="flex items-center gap-2">
-                {participantsError && (
-                  <span className="text-xs text-white/60" title={participantsError}>⚠️</span>
-                )}
-                <span className="text-sm text-white/60">
-                  {isLoadingParticipants ? 'Loading...' : `${participantCount} participant${participantCount !== 1 ? 's' : ''}`}
-                </span>
-              </div>
-            </div>
-            {participantsError && (
-              <p className="text-xs text-white/60 mt-1">
-                Participant data may be limited - {participantsDataSource} only
-              </p>
-            )}
+          <div className="flex border-b border-white/20">
+            <button
+              onClick={() => setActiveTab('feed')}
+              className={`px-6 py-3 font-medium transition-colors ${
+                activeTab === 'feed'
+                  ? 'bg-white text-black border-b-2 border-white'
+                  : 'text-white/70 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              Activity Feed
+            </button>
+            <button
+              onClick={() => setActiveTab('leaderboard')}
+              className={`px-6 py-3 font-medium transition-colors ${
+                activeTab === 'leaderboard'
+                  ? 'bg-white text-black border-b-2 border-white'
+                  : 'text-white/70 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              Leaderboard
+            </button>
+            <button
+              onClick={() => setActiveTab('info')}
+              className={`px-6 py-3 font-medium transition-colors ${
+                activeTab === 'info'
+                  ? 'bg-white text-black border-b-2 border-white'
+                  : 'text-white/70 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              Event Info
+            </button>
           </div>
           
-          {isLoadingParticipants ? (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mx-auto mb-4"></div>
-              <p className="text-white text-sm">Loading participants...</p>
-            </div>
-          ) : (
-            renderLeaderboard()
-          )}
-        </div>
-
-        {/* Activity Feed Section */}
-        <div className="bg-black border border-white/20 overflow-hidden mt-6">
-          <div className="p-4 border-b border-white/20 bg-black">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-white">Event Activities</h2>
-              <div className="flex items-center gap-2">
-                {leaderboardError && (
-                  <span className="text-xs text-white/60" title={leaderboardError}>⚠️</span>
-                )}
-                <span className="text-sm text-white/60">
-                  {workoutActivities.length} workout{workoutActivities.length !== 1 ? 's' : ''}
-                </span>
-              </div>
-            </div>
-            {leaderboardError && (
-              <p className="text-xs text-white/60 mt-1">
-                Activity feed may be limited - network connection issues
-              </p>
-            )}
-          </div>
-          
+          {/* Tab Content */}
           <div className="p-4">
-            {isLoadingActivities ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
-                <p className="text-white">Loading activities...</p>
-              </div>
-            ) : workoutActivities.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-white mb-2">No activities yet</p>
-                <p className="text-sm text-gray-300">
-                  Participant workouts during the event will appear here
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {workoutActivities.map((activity, index) => {
-                  // Format activity for Post component
-                  const formattedActivity = {
-                    ...activity,
-                    kind: activity.kind,
-                    content: activity.content,
-                    created_at: activity.created_at,
-                    pubkey: activity.pubkey,
-                    tags: activity.tags || [],
-                    author: {
-                      pubkey: activity.pubkey
-                    }
-                  };
+            {activeTab === 'feed' && (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-lg font-semibold text-white">Event Activity Feed</h2>
+                  <div className="flex items-center gap-2">
+                    {activityFeedError && (
+                      <span className="text-xs text-white/60" title={activityFeedError}>⚠️</span>
+                    )}
+                    <span className="text-sm text-white/60">
+                      {enhancedFeedEvents.length} workout{enhancedFeedEvents.length !== 1 ? 's' : ''}
+                    </span>
+                    {feedLastUpdated && (
+                      <span className="text-xs text-white/40">
+                        • Updated {feedLastUpdated.toLocaleTimeString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Loading progress indicator */}
+                {isLoadingActivityFeed && enhancedFeedEvents.length === 0 && (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
+                    <p className="text-white mb-2">{feedLoadingProgress.message}</p>
+                    {feedLoadingProgress.participantCount > 0 && (
+                      <p className="text-sm text-white/60">
+                        {feedLoadingProgress.participantCount} participants • {feedLoadingProgress.processedEvents} events processed
+                      </p>
+                    )}
+                  </div>
+                )}
+                
+                {/* Activity Feed Error */}
+                {activityFeedError && enhancedFeedEvents.length === 0 && (
+                  <div className="text-center py-12">
+                    <p className="text-red-400 mb-2">❌ Error loading activity feed</p>
+                    <p className="text-sm text-white/60 mb-4">{activityFeedError}</p>
+                    <button
+                      onClick={refreshActivityFeed}
+                      className="px-4 py-2 bg-white text-black rounded hover:bg-white/90 transition-colors"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+                
+                {/* Empty State */}
+                {!isLoadingActivityFeed && enhancedFeedEvents.length === 0 && !activityFeedError && (
+                  <div className="text-center py-12">
+                    <p className="text-white mb-2">No activities yet</p>
+                    <p className="text-sm text-gray-300">
+                      Participant workouts during the event will appear here
+                    </p>
+                  </div>
+                )}
+                
+                {/* Activity Feed (following League's Post component pattern) */}
+                {enhancedFeedEvents.length > 0 && (
+                  <div className="space-y-4">
+                    {enhancedFeedEvents.map((event, index) => {
+                      // Transform to Post-compatible format (same as League)
+                      const post = {
+                        id: event.id,
+                        kind: 1301,
+                        content: event.content || '',
+                        created_at: event.created_at || Math.floor(Date.now() / 1000),
+                        title: event.title || 'Event Workout',
+                        author: {
+                          pubkey: event.pubkey,
+                          profile: {
+                            name: event.displayName,
+                            display_name: event.displayName,
+                            picture: event.picture,
+                            about: event.about || '',
+                            nip05: event.profile?.nip05
+                          }
+                        },
+                        tags: event.tags || [],
+                        zaps: 0, // Keep simple for events
+                        activityType: event.activityType,
+                        rawEvent: event.rawEvent
+                      };
 
-                  return (
-                    <div key={activity.id || index} className="bg-black border border-white/20">
-                      <Post 
-                        post={formattedActivity} 
-                        handleZap={() => {}} 
-                        wallet={null} 
-                      />
+                      return (
+                        <div key={event.id || index} className="bg-black border border-white/20 rounded-lg overflow-hidden">
+                          <Post 
+                            post={post} 
+                            handleZap={() => {}} 
+                            wallet={null}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {activeTab === 'leaderboard' && (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-lg font-semibold text-white">Event Leaderboard</h2>
+                  <div className="flex items-center gap-2">
+                    {participantsError && (
+                      <span className="text-xs text-white/60" title={participantsError}>⚠️</span>
+                    )}
+                    <span className="text-sm text-white/60">
+                      {isLoadingParticipants ? 'Loading...' : `${participantCount} participant${participantCount !== 1 ? 's' : ''}`}
+                    </span>
+                  </div>
+                </div>
+                
+                {isLoadingParticipants ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mx-auto mb-4"></div>
+                    <p className="text-white text-sm">Loading participants...</p>
+                  </div>
+                ) : (
+                  renderLeaderboard()
+                )}
+              </div>
+            )}
+            
+            {activeTab === 'info' && (
+              <div>
+                <h2 className="text-lg font-semibold text-white mb-4">Event Information</h2>
+                
+                {/* Event Details */}
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-white/70 mb-1">Activity</h3>
+                      <p className="text-white">{event?.activity || 'run'}</p>
                     </div>
-                  );
-                })}
+                    <div>
+                      <h3 className="text-sm font-medium text-white/70 mb-1">Distance</h3>
+                      <p className="text-white">{event?.distance || 0}km</p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-white/70 mb-1">Date</h3>
+                      <p className="text-white">{new Date(event?.date || Date.now()).toLocaleDateString()}</p>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-medium text-white/70 mb-1">Status</h3>
+                      <div className="flex items-center gap-2">
+                        {event && getStatusBadge(status)}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {event?.startTime && event?.endTime && (
+                    <div>
+                      <h3 className="text-sm font-medium text-white/70 mb-1">Time</h3>
+                      <p className="text-white">{event.startTime} - {event.endTime}</p>
+                    </div>
+                  )}
+                  
+                  {event?.description && (
+                    <div>
+                      <h3 className="text-sm font-medium text-white/70 mb-1">Description</h3>
+                      <p className="text-white">{event.description}</p>
+                    </div>
+                  )}
+                  
+                  {/* Enhanced Event Statistics */}
+                  <div className="mt-6 pt-4 border-t border-white/20">
+                    <h3 className="text-sm font-medium text-white/70 mb-4">Event Statistics</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-2xl font-bold text-white">{eventStats.totalParticipants}</p>
+                        <p className="text-sm text-white/60">Total Participants</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-white">{eventStats.activeParticipants}</p>
+                        <p className="text-sm text-white/60">Active Participants</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-white">{eventStats.totalWorkouts}</p>
+                        <p className="text-sm text-white/60">Total Workouts</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-white">{eventStats.completedParticipants}</p>
+                        <p className="text-sm text-white/60">Completed Event</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-white">{eventStats.totalDistance} km</p>
+                        <p className="text-sm text-white/60">Total Distance</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-white">{eventStats.completionRate}%</p>
+                        <p className="text-sm text-white/60">Completion Rate</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
