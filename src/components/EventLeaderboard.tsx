@@ -70,10 +70,11 @@ const EventLeaderboard: React.FC<EventLeaderboardProps> = ({ event, className = 
 
   // Fetch workout notes (Kind 1301) with event tags from the event timeframe
   const fetchEventWorkouts = async (ndk: NDK, event: TeamEventDetails): Promise<WorkoutResult[]> => {
-    const eventStartTime = new Date(event.date + 'T00:00:00').getTime() / 1000;
+    // Use UTC dates to match workout timestamps (which are in UTC)
+    const eventStartTime = new Date(event.date + 'T00:00:00Z').getTime() / 1000;
     const eventEndTime = event.endTime 
-      ? new Date(`${event.date}T${event.endTime}:00`).getTime() / 1000
-      : new Date(event.date + 'T23:59:59').getTime() / 1000;
+      ? new Date(`${event.date}T${event.endTime}:00Z`).getTime() / 1000
+      : new Date(event.date + 'T23:59:59Z').getTime() / 1000;
 
     const filter: NDKFilter = {
       kinds: [1301 as NDKKind], // Workout events
