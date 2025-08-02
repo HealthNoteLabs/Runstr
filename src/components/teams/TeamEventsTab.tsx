@@ -487,7 +487,7 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
         </div>
       ) : (
         <div className="space-y-4">
-          {events.map((event, index) => {
+          {events.filter(event => getEventStatus(event) !== 'completed').map((event, index) => {
             const status = getEventStatus(event);
             return (
               <div

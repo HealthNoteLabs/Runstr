@@ -65,19 +65,19 @@ const EventJoinModal: React.FC<EventJoinModalProps> = ({ event, onClose, onJoin 
     switch (status) {
       case 'completed':
         return (
-          <span className="px-3 py-1 text-sm rounded-full bg-gray-100 text-gray-800">
+          <span className="px-3 py-1 text-sm rounded-lg bg-bg-secondary text-text-primary border border-border-secondary">
             Completed
           </span>
         );
       case 'active':
         return (
-          <span className="px-3 py-1 text-sm rounded-full bg-green-100 text-green-800 animate-pulse">
-            🔴 Live Now
+          <span className="px-3 py-1 text-sm rounded-lg bg-bg-secondary text-text-primary border border-border-secondary animate-pulse">
+            Live Now
           </span>
         );
       case 'upcoming':
         return (
-          <span className="px-3 py-1 text-sm rounded-full bg-blue-100 text-blue-800">
+          <span className="px-3 py-1 text-sm rounded-lg bg-bg-secondary text-text-primary border border-border-secondary">
             Upcoming
           </span>
         );
@@ -86,16 +86,16 @@ const EventJoinModal: React.FC<EventJoinModalProps> = ({ event, onClose, onJoin 
     }
   };
 
-  const getActivityIcon = (activity: string) => {
+  const getActivityLabel = (activity: string) => {
     switch (activity) {
       case 'run':
-        return '🏃‍♂️';
+        return 'Run';
       case 'walk':
-        return '🚶‍♂️';
+        return 'Walk';
       case 'cycle':
-        return '🚴‍♂️';
+        return 'Cycle';
       default:
-        return '🏃‍♂️';
+        return 'Run';
     }
   };
 
@@ -114,17 +114,14 @@ const EventJoinModal: React.FC<EventJoinModalProps> = ({ event, onClose, onJoin 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
-      <div className="bg-bg-secondary rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6 shadow-lg border border-border-secondary">
+      <div className="bg-bg-primary rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6 shadow-lg border border-border-secondary">
         {/* Header */}
         <div className="flex justify-between items-start mb-4">
-          <div className="flex items-center space-x-3">
-            <span className="text-3xl">{getActivityIcon(event.activity)}</span>
-            <div>
-              <h2 className="text-xl font-bold text-text-primary">{event.name}</h2>
-              <p className="text-sm text-text-secondary">
-                {event.distance}km {event.activity}
-              </p>
-            </div>
+          <div>
+            <h2 className="text-xl font-bold text-text-primary">{event.name}</h2>
+            <p className="text-sm text-text-secondary">
+              {event.distance}km {getActivityLabel(event.activity)}
+            </p>
           </div>
           <button 
             onClick={onClose}
@@ -144,13 +141,13 @@ const EventJoinModal: React.FC<EventJoinModalProps> = ({ event, onClose, onJoin 
         {/* Event Details */}
         <div className="space-y-3 mb-6">
           <div className="flex items-center space-x-3">
-            <span className="text-lg">📅</span>
+            <span className="text-sm text-text-secondary w-16">Date:</span>
             <span className="text-text-primary">{formatEventDate(event.date)}</span>
           </div>
           
           {event.startTime && event.endTime && (
             <div className="flex items-center space-x-3">
-              <span className="text-lg">🕐</span>
+              <span className="text-sm text-text-secondary w-16">Time:</span>
               <span className="text-text-primary">
                 {event.startTime} - {event.endTime}
               </span>
@@ -158,8 +155,8 @@ const EventJoinModal: React.FC<EventJoinModalProps> = ({ event, onClose, onJoin 
           )}
           
           <div className="flex items-center space-x-3">
-            <span className="text-lg">📏</span>
-            <span className="text-text-primary">{event.distance}km {event.activity}</span>
+            <span className="text-sm text-text-secondary w-16">Distance:</span>
+            <span className="text-text-primary">{event.distance}km {getActivityLabel(event.activity)}</span>
           </div>
         </div>
 
@@ -167,7 +164,7 @@ const EventJoinModal: React.FC<EventJoinModalProps> = ({ event, onClose, onJoin 
         {event.description && (
           <div className="mb-6">
             <h3 className="text-sm font-medium text-text-secondary mb-2">Description</h3>
-            <p className="text-text-primary text-sm bg-bg-tertiary p-3 rounded-lg border border-border-secondary">
+            <p className="text-text-primary text-sm bg-bg-secondary p-3 rounded-lg border border-border-secondary">
               {event.description}
             </p>
           </div>
@@ -175,14 +172,13 @@ const EventJoinModal: React.FC<EventJoinModalProps> = ({ event, onClose, onJoin 
 
         {/* Join Status Info */}
         {isJoined && (
-          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+          <div className="mb-4 p-3 bg-bg-secondary border border-border-secondary rounded-lg">
             <div className="flex items-center space-x-2">
-              <span className="text-green-600">✅</span>
-              <span className="text-sm text-green-800 font-medium">
+              <span className="text-sm text-text-primary font-medium">
                 You've joined this event!
               </span>
             </div>
-            <p className="text-xs text-green-700 mt-1">
+            <p className="text-xs text-text-secondary mt-1">
               Your workouts during the event timeframe will be automatically tagged and included in the leaderboard.
             </p>
           </div>
@@ -194,9 +190,9 @@ const EventJoinModal: React.FC<EventJoinModalProps> = ({ event, onClose, onJoin 
             <button
               onClick={handleLeaveEvent}
               disabled={isJoining}
-              className="flex-1 px-4 py-3 bg-bg-tertiary hover:bg-bg-primary text-text-primary font-medium rounded-lg transition-colors border border-border-secondary disabled:opacity-50"
+              className="flex-1 px-4 py-3 bg-bg-secondary hover:bg-bg-tertiary text-text-primary font-medium rounded-lg transition-colors border border-border-secondary disabled:opacity-50"
             >
-              {isJoining ? 'Leaving...' : 'Leave Event'}
+              {isJoining ? 'Leaving...' : 'Quit'}
             </button>
           ) : (
             <button
@@ -209,29 +205,21 @@ const EventJoinModal: React.FC<EventJoinModalProps> = ({ event, onClose, onJoin 
           )}
           
           <button
-            onClick={onClose}
-            className="px-4 py-3 bg-bg-tertiary hover:bg-bg-primary text-text-primary font-medium rounded-lg transition-colors border border-border-secondary"
+            onClick={() => setShowLeaderboard(!showLeaderboard)}
+            className="px-4 py-3 bg-bg-secondary hover:bg-bg-tertiary text-text-primary font-medium rounded-lg transition-colors border border-border-secondary"
           >
-            Close
+            {showLeaderboard ? 'Hide Leaderboard' : 'Leaderboard'}
           </button>
         </div>
 
         {/* Instructions for joined users */}
         {isJoined && (
-          <div className="mt-4 p-3 bg-bg-tertiary rounded-lg border border-border-secondary">
+          <div className="mt-4 p-3 bg-bg-secondary rounded-lg border border-border-secondary">
             <h4 className="text-sm font-medium text-text-primary mb-1">Next Steps:</h4>
             <ul className="text-xs text-text-secondary space-y-1">
-              <li>• Complete your {event.activity} during the event timeframe</li>
+              <li>• Complete your {getActivityLabel(event.activity).toLowerCase()} during the event timeframe</li>
               <li>• Your workout will be automatically tagged with this event</li>
-              <li>• 
-                <button 
-                  onClick={() => setShowLeaderboard(!showLeaderboard)}
-                  className="text-primary hover:text-primary-hover underline focus:outline-none"
-                >
-                  {showLeaderboard ? 'Hide' : 'View'} Leaderboard
-                </button>
-                {' '}to see how you compare with other participants
-              </li>
+              <li>• Use the Leaderboard button to see how you compare with other participants</li>
             </ul>
           </div>
         )}

@@ -165,7 +165,7 @@ const EventsPage: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            {events.map((event) => {
+            {events.filter(event => getEventStatus(event) !== 'completed').map((event) => {
               const status = getEventStatus(event);
               return (
                 <div
