@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TeamEventDetails } from '../../services/nostr/NostrTeamsService';
 import { EventJoinStorage, EventsService } from '../../services/EventsService';
+import EventLeaderboard from '../EventLeaderboard';
 import toast from 'react-hot-toast';
 
 interface EventJoinModalProps {
@@ -12,6 +13,7 @@ interface EventJoinModalProps {
 const EventJoinModal: React.FC<EventJoinModalProps> = ({ event, onClose, onJoin }) => {
   const [isJoined, setIsJoined] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
 
   // Check if user has already joined this event
   useEffect(() => {
@@ -112,7 +114,7 @@ const EventJoinModal: React.FC<EventJoinModalProps> = ({ event, onClose, onJoin 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
-      <div className="bg-bg-secondary rounded-xl w-full max-w-md p-6 shadow-lg border border-border-secondary">
+      <div className="bg-bg-secondary rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6 shadow-lg border border-border-secondary">
         {/* Header */}
         <div className="flex justify-between items-start mb-4">
           <div className="flex items-center space-x-3">
@@ -221,8 +223,23 @@ const EventJoinModal: React.FC<EventJoinModalProps> = ({ event, onClose, onJoin 
             <ul className="text-xs text-text-secondary space-y-1">
               <li>• Complete your {event.activity} during the event timeframe</li>
               <li>• Your workout will be automatically tagged with this event</li>
-              <li>• View the leaderboard to see how you compare with other participants</li>
+              <li>• 
+                <button 
+                  onClick={() => setShowLeaderboard(!showLeaderboard)}
+                  className="text-primary hover:text-primary-hover underline focus:outline-none"
+                >
+                  {showLeaderboard ? 'Hide' : 'View'} Leaderboard
+                </button>
+                {' '}to see how you compare with other participants
+              </li>
             </ul>
+          </div>
+        )}
+
+        {/* Leaderboard */}
+        {showLeaderboard && (
+          <div className="mt-4 border-t border-border-secondary pt-4">
+            <EventLeaderboard event={event} className="bg-transparent border-0 p-0" />
           </div>
         )}
       </div>
