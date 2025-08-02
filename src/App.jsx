@@ -19,6 +19,7 @@ import { storeFeedCache, isCacheFresh } from './utils/feedCache';
 import { NostrContext } from './contexts/NostrContext.jsx';
 import './utils/errorSilencer';
 import { Toaster } from 'react-hot-toast';
+import SafePullToRefresh from './components/SafePullToRefresh';
 
 console.log("App.jsx is loading");
 
@@ -71,6 +72,36 @@ const AppRoutes = lazy(() =>
 
 const App = () => {
   const [hasError, setHasError] = useState(false);
+  
+  // Phase 2: Basic refresh using existing proven mechanisms
+  const handleAppRefresh = async () => {
+    console.log('App refresh triggered - Phase 2 (basic refresh)');
+    
+    try {
+      // Clear cached feed data using existing mechanism
+      if (window.__PRELOADED_FEED) {
+        delete window.__PRELOADED_FEED;
+        console.log('Cleared preloaded feed cache');
+      }
+      
+      // Clear feed loading flag to allow fresh fetch
+      if (window.__FEED_LOADING) {
+        window.__FEED_LOADING = false;
+        console.log('Reset feed loading flag');
+      }
+      
+      // Trigger existing refresh events that components already listen for
+      document.dispatchEvent(new Event('runHistoryUpdated'));
+      console.log('Triggered runHistoryUpdated event');
+      
+      // Brief delay for UX feedback
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      console.log('App refresh completed successfully');
+    } catch (error) {
+      console.warn('App refresh error (app continues normally):', error);
+    }
+  };
   
   // Initialize app services
   useEffect(() => {
@@ -177,11 +208,13 @@ const App = () => {
                       <WalletProvider>
                         <div className="relative w-full min-h-screen bg-bg-primary text-text-primary">
                           <MenuBar />
-                          <main className="pb-24 w-full mx-auto px-4 max-w-screen-md">
-                            <Suspense fallback={<EnhancedLoadingFallback />}>
-                              <AppRoutes />
-                            </Suspense>
-                          </main>
+                          <SafePullToRefresh onRefresh={handleAppRefresh}>
+                            <main className="pb-24 w-full mx-auto px-4 max-w-screen-md">
+                              <Suspense fallback={<EnhancedLoadingFallback />}>
+                                <AppRoutes />
+                              </Suspense>
+                            </main>
+                          </SafePullToRefresh>
                           <Toaster 
                             position="top-center"
                             toastOptions={{

@@ -48,23 +48,8 @@ export const PostRunWizardModal = ({ run, onClose }) => {
       });
       setPublishResults(results);
 
-      const allSuccess = results && results.every(r => r.success);
-      if (allSuccess) {
-        try {
-          const { rewardUserActivity } = await import('../services/rewardService');
-          if (publicKey) {
-            const res = await rewardUserActivity(publicKey, 'workout_record', settings.publishMode === 'private', lightningAddress);
-            const toastMsg = res.success ? `Reward sent: ${res.message}` : `Reward failed: ${res.error || res.message}`;
-            if (window.Android && window.Android.showToast) {
-              window.Android.showToast(toastMsg);
-            } else {
-              alert(toastMsg);
-            }
-          }
-        } catch (errReward) {
-          console.warn('reward zap failed', errReward);
-        }
-      }
+      // Reward logic removed - rewards are now handled via manual weekly process
+      // const allSuccess = results && results.every(r => r.success);
     } catch (err) {
       console.error('PostRunWizardModal publish error', err);
       setPublishResults([{ success: false, error: err.message }]);

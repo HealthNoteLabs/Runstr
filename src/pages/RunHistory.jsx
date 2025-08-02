@@ -10,7 +10,6 @@ import { useActivityMode } from '../contexts/ActivityModeContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { RunHistoryCard } from '../components/RunHistoryCard';
 import { SaveRunExtrasModal } from '../components/SaveRunExtrasModal';
-import { rewardUserActivity } from '../services/rewardService';
 import { NostrContext } from '../contexts/NostrContext';
 import appToast from '../utils/toast';
 
@@ -364,11 +363,8 @@ ${additionalContent ? `\n${additionalContent}` : ''}
 
       if (publishedWorkoutEventId) {
         setWorkoutSavedRuns(prev => new Set([...prev, run.id]));
-        const rewardSats = publishMode === 'private' ? 10 : 5;
-        if (publicKey) {
-          rewardUserActivity(publicKey, 'workout_record', publishMode === 'private');
-        }
-        const msg = `Main workout record saved! Now choose extras. (+${rewardSats} sats)`;
+        // Reward logic removed - rewards are now handled via manual weekly process
+        const msg = `Main workout record saved! Now choose extras.`;
         if (window.Android && window.Android.showToast) {
           window.Android.showToast(msg);
         } else {
