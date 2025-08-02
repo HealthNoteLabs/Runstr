@@ -86,6 +86,15 @@ export const MenuBar = () => {
       ) 
     },
     { 
+      name: 'EVENTS', 
+      path: '/events', 
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+      ) 
+    },
+    { 
       name: 'MUSIC', 
       path: '/music', 
       icon: (
@@ -525,7 +534,7 @@ export const MenuBar = () => {
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-bg-secondary border-t border-border-secondary shadow-lg h-20 z-40">
-        <div className="grid grid-cols-5 h-full">
+        <div className="grid grid-cols-6 h-full">
           {menuItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (

@@ -1,0 +1,10 @@
+
+> nostr-run-club@0.7.0 dev
+> vite
+
+Port 5173 is in use, trying another one...
+
+  VITE v5.4.18  ready in 133 ms
+
+  ➜  Local:   http://localhost:5174/
+  ➜  Network: use --host to expose

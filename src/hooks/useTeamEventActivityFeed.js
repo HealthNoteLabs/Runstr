@@ -6,6 +6,35 @@ import { useProfiles } from './useProfiles';
 import { useNostr } from './useNostr';
 
 /**
+ * Utility function for exponential backoff retry logic
+ */
+const withExponentialBackoff = async (fn, maxRetries = 3, initialDelay = 1000) => {
+  let lastError;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      
+      // Don't retry on the last attempt
+      if (attempt === maxRetries) {
+        throw error;
+      }
+      
+      // Calculate exponential backoff delay: 1s, 2s, 4s, 8s...
+      const delay = initialDelay * Math.pow(2, attempt);
+      console.log(`[useTeamEventActivityFeed] Attempt ${attempt + 1} failed, retrying in ${delay}ms:`, error.message);
+      
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError;
+};
+
+/**
  * Hook: useTeamEventActivityFeed  
  * Fetches Kind 1301 workout records from team event participants for activity feed display
  * Filters by event activity type and date range for event-specific feeds
@@ -162,9 +191,10 @@ export const useTeamEventActivityFeed = (participants = [], eventDate, eventStar
       
       const unit = distanceTag[2]?.toLowerCase() || 'km';
       
-      // Add reasonable bounds checking to filter out corrupted data
-      const MAX_REASONABLE_DISTANCE_KM = 500; // 500km covers ultramarathons
-      const MIN_REASONABLE_DISTANCE_KM = 0.01; // 10 meters minimum
+      // Enhanced bounds checking with multiple validation layers
+      const MAX_REASONABLE_DISTANCE_KM = 1000; // 1000km covers ultra-long events
+      const MIN_REASONABLE_DISTANCE_KM = 0.001; // 1 meter minimum (very short activities)
+      const MAX_SINGLE_SESSION_KM = 300; // Single session limit (ultra marathon + buffer)
       
       // Convert to km first for validation
       let distanceInKm = value;
@@ -187,11 +217,22 @@ export const useTeamEventActivityFeed = (participants = [], eventDate, eventStar
           break;
       }
       
-      // Validate reasonable range
+      // Multiple validation layers for robust input sanitization
+      
+      // 1. Validate reasonable range for any activity
       if (distanceInKm < MIN_REASONABLE_DISTANCE_KM || distanceInKm > MAX_REASONABLE_DISTANCE_KM) {
-        console.warn(`Invalid distance detected: ${value} ${unit} (${distanceInKm.toFixed(2)}km) - filtering out event ${event.id}`);
+        console.warn(`Distance out of reasonable bounds: ${value} ${unit} (${distanceInKm.toFixed(2)}km) - filtering out event ${event.id}`);
         return 0;
       }
+      
+      // 2. Additional validation for single-session activities
+      if (distanceInKm > MAX_SINGLE_SESSION_KM) {
+        console.warn(`Distance exceeds single session limit: ${value} ${unit} (${distanceInKm.toFixed(2)}km) - filtering out event ${event.id}`);
+        return 0;
+      }
+      
+      // 3. Sanitize to reasonable precision (prevent floating point issues)
+      distanceInKm = Math.round(distanceInKm * 1000) / 1000; // Round to 3 decimal places (1m precision)
       
       return distanceInKm;
     } catch (err) {
@@ -279,22 +320,31 @@ export const useTeamEventActivityFeed = (participants = [], eventDate, eventStar
           return;
         }
         
-        // Filter by event activity type
+        // Filter by event activity type with enhanced case-insensitive matching
         const exerciseTag = event.tags?.find(tag => tag[0] === 'exercise');
         const eventActivityType = exerciseTag?.[1]?.toLowerCase();
         
-        // Map activity types for consistency
+        // Enhanced activity mapping with synonyms and case variations
         const activityMatches = {
-          'run': ['run', 'running', 'jog', 'jogging'],
-          'cycle': ['cycle', 'cycling', 'bike', 'biking'],  
-          'walk': ['walk', 'walking', 'hike', 'hiking']
+          'run': ['run', 'running', 'jog', 'jogging', 'sprint', 'sprinting', 'trail', 'trail run', 'trail running'],
+          'cycle': ['cycle', 'cycling', 'bike', 'biking', 'bicycle', 'bicycling', 'road bike', 'mountain bike', 'mtb'],  
+          'walk': ['walk', 'walking', 'hike', 'hiking', 'stroll', 'strolling', 'march', 'marching']
         };
         
-        const acceptedActivities = activityMatches[eventActivity] || [eventActivity];
+        // Get accepted activity variations for the event type (case-insensitive)
+        const acceptedActivities = activityMatches[eventActivity.toLowerCase()] || [eventActivity.toLowerCase()];
         
+        // Check if the event activity type matches any accepted variations
         if (eventActivityType && !acceptedActivities.includes(eventActivityType)) {
-          filteredCount++;
-          return;
+          // Additional fuzzy matching for common variations
+          const isPartialMatch = acceptedActivities.some(accepted => 
+            eventActivityType.includes(accepted) || accepted.includes(eventActivityType)
+          );
+          
+          if (!isPartialMatch) {
+            filteredCount++;
+            return;
+          }
         }
         
         const distance = extractDistance(event);
@@ -404,14 +454,18 @@ export const useTeamEventActivityFeed = (participants = [], eventDate, eventStar
         message: 'Fetching event activities...' 
       });
 
-      // Fetch events from team event participants using event date range
-      const events = await fetchEvents({
-        kinds: [1301],
-        authors: participantPubkeys,
-        limit: MAX_EVENTS,
-        since: eventStartTimestamp,
-        until: eventEndTimestamp
-      });
+      // Fetch events from team event participants using event date range with backoff
+      const events = await withExponentialBackoff(
+        () => fetchEvents({
+          kinds: [1301],
+          authors: participantPubkeys,
+          limit: MAX_EVENTS,
+          since: eventStartTimestamp,
+          until: eventEndTimestamp
+        }),
+        2, // fewer retries for activity feed (less critical than main events)
+        1000 // 1 second initial delay
+      );
       
       setLoadingProgress({ 
         phase: 'processing_events', 

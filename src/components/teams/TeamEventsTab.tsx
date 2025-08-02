@@ -12,6 +12,35 @@ import {
 import CreateEventModal from '../modals/CreateEventModal';
 import toast from 'react-hot-toast';
 
+/**
+ * Utility function for exponential backoff retry logic
+ */
+const withExponentialBackoff = async (fn, maxRetries = 3, initialDelay = 1000) => {
+  let lastError;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      
+      // Don't retry on the last attempt
+      if (attempt === maxRetries) {
+        throw error;
+      }
+      
+      // Calculate exponential backoff delay: 1s, 2s, 4s, 8s...
+      const delay = initialDelay * Math.pow(2, attempt);
+      console.log(`[withExponentialBackoff] Attempt ${attempt + 1} failed, retrying in ${delay}ms:`, error.message);
+      
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError;
+};
+
 interface TeamEventsTabProps {
   teamAIdentifier: string;
   isCaptain: boolean;
@@ -69,6 +98,7 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
 
   /**
    * Fetch fresh events data - League's background refresh pattern
+   * Memoized to prevent excessive re-renders, with exponential backoff for resilience
    */
   const fetchEventsData = useCallback(async () => {
     if (!ndk || !teamAIdentifier) {
@@ -84,7 +114,12 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
         fromCache: false
       });
 
-      const teamEvents = await fetchTeamEvents(ndk, teamAIdentifier);
+      // Use exponential backoff for network resilience
+      const teamEvents = await withExponentialBackoff(
+        () => fetchTeamEvents(ndk, teamAIdentifier),
+        3, // max retries
+        1000 // initial delay (1 second)
+      );
       
       // Cache the results
       const cacheKey = CACHE_KEYS.TEAM_EVENTS(teamAIdentifier);
@@ -99,24 +134,24 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
       });
 
     } catch (err) {
-      console.error('Error fetching team events:', err);
+      console.error('Error fetching team events (after retries):', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load team events';
       setError(errorMessage);
       
       // Show toast only if we don't have cached data to fall back to
       if (events.length === 0) {
-        toast.error('Failed to load team events');
+        toast.error('Connection issues - using cached data if available');
       }
       
       setLoadingProgress({
         phase: 'complete',
-        message: 'Error loading team events',
+        message: 'Network error - check connection',
         fromCache: false
       });
     } finally {
       setIsLoading(false);
     }
-  }, [ndk, teamAIdentifier, events.length]);
+  }, [ndk, teamAIdentifier]); // Removed events.length dependency to prevent cascading re-renders
 
   /**
    * Refresh events data with cache clearing
@@ -146,16 +181,21 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
     }
   }, [loadCachedEvents, fetchEventsData]);
 
-  // Fetch fresh data when NDK becomes ready (if we haven't already)
+  // Fetch fresh data when NDK becomes ready (only if no cached data was loaded)
   useEffect(() => {
-    if (ndk && ndkReady && events.length === 0 && !isLoading) {
+    if (ndk && ndkReady && events.length === 0 && !isLoading && !loadingProgress.fromCache) {
+      console.log('[TeamEventsTab] NDK ready, fetching fresh data (no cached data available)');
       fetchEventsData();
     }
-  }, [ndk, ndkReady, events.length, isLoading, fetchEventsData]);
+  }, [ndk, ndkReady, events.length, isLoading, loadingProgress.fromCache, fetchEventsData]);
 
-  // Auto-refresh every 15 minutes like League
+  // Auto-refresh every 15 minutes with staggered timing to reduce server load
   useEffect(() => {
-    const refreshInterval = 15 * 60 * 1000; // 15 minutes
+    const baseRefreshInterval = 15 * 60 * 1000; // 15 minutes
+    // Add random jitter (0-2 minutes) to stagger refreshes across users
+    const jitter = Math.random() * 2 * 60 * 1000; // 0-2 minutes
+    const refreshInterval = baseRefreshInterval + jitter;
+    
     const interval = setInterval(() => {
       console.log('[TeamEventsTab] Auto-refreshing team events');
       fetchEventsData();
@@ -171,17 +211,18 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
   };
 
   const getEventStatus = useCallback((event: TeamEventDetails): string => {
-    const now = new Date();
+    // Use UTC for consistent comparison across timezones
+    const nowUTC = new Date();
     
     // If event has start/end times, use them for precise timing
     if (event.startTime && event.endTime) {
-      // Fix: Use UTC dates to avoid timezone issues
+      // Create UTC dates for event times
       const eventStart = new Date(event.date + 'T' + event.startTime + ':00.000Z');
       const eventEnd = new Date(event.date + 'T' + event.endTime + ':00.000Z');
       
-      if (now > eventEnd) {
+      if (nowUTC > eventEnd) {
         return 'completed';
-      } else if (now >= eventStart && now <= eventEnd) {
+      } else if (nowUTC >= eventStart && nowUTC <= eventEnd) {
         return 'active';
       } else {
         return 'upcoming';
@@ -193,9 +234,9 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
     const eventStart = new Date(event.date + 'T00:00:00.000Z');
     const eventEnd = new Date(event.date + 'T23:59:59.999Z');
     
-    if (now > eventEnd) {
+    if (nowUTC > eventEnd) {
       return 'completed';
-    } else if (now >= eventStart && now <= eventEnd) {
+    } else if (nowUTC >= eventStart && nowUTC <= eventEnd) {
       return 'active';
     } else {
       return 'upcoming';
@@ -274,20 +315,53 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
 
 
   const getTimeUntilEvent = useCallback((eventDate: string): string => {
-    const now = new Date();
-    const event = new Date(eventDate);
-    const diffMs = event.getTime() - now.getTime();
-    
-    if (diffMs < 0) return '';
-    
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-    
-    if (diffDays > 0) return `in ${diffDays} day${diffDays > 1 ? 's' : ''}`;
-    if (diffHours > 0) return `in ${diffHours} hour${diffHours > 1 ? 's' : ''}`;
-    if (diffMinutes > 0) return `in ${diffMinutes} min`;
-    return 'starting soon';
+    try {
+      // Validate input
+      if (!eventDate || typeof eventDate !== 'string') {
+        console.warn('[TeamEventsTab] Invalid eventDate provided to getTimeUntilEvent:', eventDate);
+        return '';
+      }
+      
+      const now = new Date();
+      const event = new Date(eventDate);
+      
+      // Validate that the date parsing was successful
+      if (isNaN(event.getTime())) {
+        console.warn('[TeamEventsTab] Invalid date format in getTimeUntilEvent:', eventDate);
+        return '';
+      }
+      
+      // Reasonable bounds check (within next 2 years)
+      const twoYearsFromNow = new Date();
+      twoYearsFromNow.setFullYear(twoYearsFromNow.getFullYear() + 2);
+      
+      if (event.getTime() > twoYearsFromNow.getTime()) {
+        console.warn('[TeamEventsTab] Event date too far in future:', eventDate);
+        return '';
+      }
+      
+      const diffMs = event.getTime() - now.getTime();
+      
+      // Event is in the past
+      if (diffMs < 0) return '';
+      
+      // Prevent overflow for extremely large time differences
+      if (diffMs > (365 * 24 * 60 * 60 * 1000)) { // More than 1 year
+        return 'in over a year';
+      }
+      
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      
+      if (diffDays > 0) return `in ${diffDays} day${diffDays > 1 ? 's' : ''}`;
+      if (diffHours > 0) return `in ${diffHours} hour${diffHours > 1 ? 's' : ''}`;
+      if (diffMinutes > 0) return `in ${diffMinutes} min`;
+      return 'starting soon';
+    } catch (error) {
+      console.error('[TeamEventsTab] Error in getTimeUntilEvent:', error);
+      return '';
+    }
   }, []);
 
   const getStatusBadge = (status: string, eventDate: string) => {
@@ -414,12 +488,22 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
         </div>
       ) : (
         <div className="space-y-4">
-          {events.map((event) => {
+          {events.map((event, index) => {
             const status = getEventStatus(event);
             return (
               <div
-                key={event.id}
-                onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}/event/${event.id}`)}
+                key={event.id || `event-${index}`}
+                onClick={() => {
+                  if (event.id && captainPubkey && teamUUID) {
+                    navigate(`/teams/${captainPubkey}/${teamUUID}/event/${event.id}`);
+                  } else {
+                    console.error('[TeamEventsTab] Cannot navigate: missing event.id, captainPubkey, or teamUUID', {
+                      eventId: event.id,
+                      captainPubkey,
+                      teamUUID
+                    });
+                  }
+                }}
                 className="bg-black border border-white rounded-lg p-4 hover:bg-gray-900 transition-colors cursor-pointer"
               >
                 <div className="flex justify-between items-start mb-2">

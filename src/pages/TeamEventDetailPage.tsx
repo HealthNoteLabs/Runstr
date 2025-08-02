@@ -247,17 +247,18 @@ const TeamEventDetailPage: React.FC = () => {
   const getEventStatus = (): string => {
     if (!event) return 'unknown';
     
-    const now = new Date();
+    // Use UTC for consistent comparison across timezones
+    const nowUTC = new Date();
     
     // If event has start/end times, use them for precise timing
     if (event.startTime && event.endTime) {
-      // Fix: Use UTC dates to avoid timezone issues
+      // Create UTC dates for event times
       const eventStart = new Date(event.date + 'T' + event.startTime + ':00.000Z');
       const eventEnd = new Date(event.date + 'T' + event.endTime + ':00.000Z');
       
-      if (now > eventEnd) {
+      if (nowUTC > eventEnd) {
         return 'completed';
-      } else if (now >= eventStart && now <= eventEnd) {
+      } else if (nowUTC >= eventStart && nowUTC <= eventEnd) {
         return 'active';
       } else {
         return 'upcoming';
@@ -269,9 +270,9 @@ const TeamEventDetailPage: React.FC = () => {
     const eventStart = new Date(event.date + 'T00:00:00.000Z');
     const eventEnd = new Date(event.date + 'T23:59:59.999Z');
     
-    if (now > eventEnd) {
+    if (nowUTC > eventEnd) {
       return 'completed';
-    } else if (now >= eventStart && now <= eventEnd) {
+    } else if (nowUTC >= eventStart && nowUTC <= eventEnd) {
       return 'active';
     } else {
       return 'upcoming';
@@ -333,12 +334,25 @@ const TeamEventDetailPage: React.FC = () => {
     
     // Use the optimized calculation that derives from activity feed
     return calculateLeaderboardFromFeed(enhancedFeedEvents, participants, event, publicKey);
-  }, [enhancedFeedEvents, participants, event, publicKey]);
+  }, [
+    enhancedFeedEvents.length, // Only re-calc when feed size changes, not content
+    participants.length, // Only re-calc when participant count changes
+    event?.id, // Only re-calc when event changes
+    event?.distance, // Only re-calc when event details change
+    event?.activity,
+    publicKey
+  ]);
 
   // Calculate event statistics from the optimized leaderboard
   const eventStats = useMemo(() => {
     return calculateEventStats(sortedParticipants);
-  }, [sortedParticipants]);
+  }, [
+    sortedParticipants.length,
+    // More efficient dependency - sum of distances instead of join
+    sortedParticipants.reduce((sum, p) => sum + (p.totalDistance || 0), 0),
+    // Track completion status changes
+    sortedParticipants.filter(p => p.completed).length
+  ]);
 
   const renderLeaderboard = () => {
 
@@ -442,11 +456,42 @@ const TeamEventDetailPage: React.FC = () => {
       <div className="min-h-screen bg-bg-primary text-text-primary p-4">
         <div className="max-w-4xl mx-auto">
           <div className="text-center py-8">
-            <div className="text-warning text-4xl mb-4">⚠️</div>
-            <h2 className="text-xl font-semibold text-text-primary mb-2">Request Timed Out</h2>
-            <p className="text-text-secondary mb-4">Loading took too long. This might be due to slow relay connections.</p>
+            <div className="text-warning text-4xl mb-4">⏱️</div>
+            <h2 className="text-xl font-semibold text-text-primary mb-2">Taking Longer Than Expected</h2>
+            <p className="text-text-secondary mb-4">The event is taking a while to load. This can happen when the network is slow.</p>
             <div className="bg-bg-secondary rounded-lg p-4 mb-4 border border-border-secondary">
-              <p className="text-sm text-text-muted">{loadingStatus}</p>
+              <p className="text-sm text-text-muted">💡 Try refreshing the page or check your internet connection</p>
+            </div>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 bg-primary hover:bg-primary-hover text-text-inverse rounded-lg transition-colors"
+              >
+                Refresh Page
+              </button>
+              <button
+                onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}`)}
+                className="px-4 py-2 bg-bg-secondary hover:bg-bg-tertiary text-text-primary rounded-lg border border-border-secondary transition-colors"
+              >
+                ← Back to Team
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadingState === 'error') {
+    return (
+      <div className="min-h-screen bg-bg-primary text-text-primary p-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center py-8">
+            <div className="text-error text-4xl mb-4">🔗</div>
+            <h2 className="text-xl font-semibold text-text-primary mb-2">Connection Problem</h2>
+            <p className="text-text-secondary mb-4">We're having trouble loading this event. This might be a temporary network issue.</p>
+            <div className="bg-bg-secondary rounded-lg p-4 mb-4 border border-border-secondary">
+              <p className="text-sm text-text-muted">💡 Check your internet connection and try again in a moment</p>
             </div>
             <div className="flex gap-3 justify-center">
               <button
@@ -468,45 +513,17 @@ const TeamEventDetailPage: React.FC = () => {
     );
   }
 
-  if (loadingState === 'error') {
-    return (
-      <div className="min-h-screen bg-bg-primary text-text-primary p-4">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center py-8">
-            <div className="text-error text-4xl mb-4">❌</div>
-            <h2 className="text-xl font-semibold text-text-primary mb-2">Loading Error</h2>
-            <p className="text-text-secondary mb-4">Unable to load event details</p>
-            <div className="bg-bg-secondary rounded-lg p-4 mb-4 border border-border-secondary">
-              <p className="text-sm text-text-muted">{loadingStatus}</p>
-            </div>
-            <div className="flex gap-3 justify-center">
-              <button
-                onClick={() => window.location.reload()}
-                className="px-4 py-2 bg-primary hover:bg-primary-hover text-text-inverse rounded-lg transition-colors"
-              >
-                Retry
-              </button>
-              <button
-                onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}`)}
-                className="px-4 py-2 bg-bg-secondary hover:bg-bg-tertiary text-text-primary rounded-lg border border-border-secondary transition-colors"
-              >
-                ← Back to Team
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   if (!event && loadingState === 'success') {
     return (
       <div className="min-h-screen bg-bg-primary text-text-primary p-4">
         <div className="max-w-4xl mx-auto">
           <div className="text-center py-8">
-            <div className="text-error text-4xl mb-4">🔍</div>
-            <h2 className="text-xl font-semibold text-text-primary mb-2">Event Not Found</h2>
-            <p className="text-text-secondary mb-4">The requested event could not be found</p>
+            <div className="text-error text-4xl mb-4">📅</div>
+            <h2 className="text-xl font-semibold text-text-primary mb-2">Event Not Available</h2>
+            <p className="text-text-secondary mb-4">This event might have been removed or you don't have permission to view it.</p>
+            <div className="bg-bg-secondary rounded-lg p-4 mb-4 border border-border-secondary">
+              <p className="text-sm text-text-muted">💡 Try checking with your team captain or return to the team page</p>
+            </div>
             <button
               onClick={() => navigate(`/teams/${captainPubkey}/${teamUUID}`)}
               className="mt-4 px-4 py-2 bg-primary hover:bg-primary-hover text-text-inverse rounded-lg transition-colors"
@@ -579,7 +596,7 @@ const TeamEventDetailPage: React.FC = () => {
                 )}
               </h1>
               <p className="text-white/80 mb-2">
-                {event?.distance || 0}km {event?.activity || 'run'} • {new Date(event?.date || Date.now()).toLocaleDateString()}
+                {event?.distance || 0}km {event?.activity || 'run'} • {event?.date ? new Date(event.date).toLocaleDateString() : 'Date unavailable'}
                 {event?.startTime && ` • ${event.startTime}`}
                 {event?.endTime && ` - ${event.endTime}`}
               </p>
@@ -800,27 +817,27 @@ const TeamEventDetailPage: React.FC = () => {
                 {enhancedFeedEvents.length > 0 && (
                   <div className="space-y-4">
                     {enhancedFeedEvents.map((event, index) => {
-                      // Transform to Post-compatible format (same as League)
+                      // Transform to Post-compatible format with null checks
                       const post = {
-                        id: event.id,
+                        id: event?.id || `feed-event-${index}`,
                         kind: 1301,
-                        content: event.content || '',
-                        created_at: event.created_at || Math.floor(Date.now() / 1000),
-                        title: event.title || 'Event Workout',
+                        content: event?.content || '',
+                        created_at: event?.created_at || Math.floor(Date.now() / 1000),
+                        title: event?.title || 'Event Workout',
                         author: {
-                          pubkey: event.pubkey,
+                          pubkey: event?.pubkey || '',
                           profile: {
-                            name: event.displayName,
-                            display_name: event.displayName,
-                            picture: event.picture,
-                            about: event.about || '',
-                            nip05: event.profile?.nip05
+                            name: event?.displayName || 'Unknown User',
+                            display_name: event?.displayName || 'Unknown User',
+                            picture: event?.picture || '',
+                            about: event?.about || '',
+                            nip05: event?.profile?.nip05 || ''
                           }
                         },
-                        tags: event.tags || [],
+                        tags: event?.tags || [],
                         zaps: 0, // Keep simple for events
-                        activityType: event.activityType,
-                        rawEvent: event.rawEvent
+                        activityType: event?.activityType || 'run',
+                        rawEvent: event?.rawEvent || null
                       };
 
                       return (
@@ -883,7 +900,7 @@ const TeamEventDetailPage: React.FC = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <h3 className="text-sm font-medium text-white/70 mb-1">Date</h3>
-                      <p className="text-white">{new Date(event?.date || Date.now()).toLocaleDateString()}</p>
+                      <p className="text-white">{event?.date ? new Date(event.date).toLocaleDateString() : 'Date not set'}</p>
                     </div>
                     <div>
                       <h3 className="text-sm font-medium text-white/70 mb-1">Status</h3>

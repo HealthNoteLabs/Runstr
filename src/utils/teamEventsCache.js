@@ -14,14 +14,76 @@ const TEAM_EVENTS_CACHE_DURATION_MS = 15 * 60 * 1000; // 15 minutes like League
 const CACHE_VERSION = 'v1'; // Versioning for cache invalidation
 
 /**
- * Generate cache keys with versioning like League
+ * Sanitize cache key components to prevent injection and ensure valid keys
+ */
+const sanitizeCacheKeyComponent = (component) => {
+  if (!component || typeof component !== 'string') {
+    return null;
+  }
+  
+  // Remove potentially problematic characters and limit length
+  const sanitized = component
+    .replace(/[^a-zA-Z0-9\-_:]/g, '_') // Replace non-alphanumeric chars with underscore
+    .substring(0, 100) // Limit length to prevent extremely long keys
+    .trim();
+    
+  return sanitized.length > 0 ? sanitized : null;
+};
+
+/**
+ * Generate cache keys with proper separators and input sanitization
+ * Uses double underscores as separators since they're unlikely to appear in IDs
  */
 export const CACHE_KEYS = {
-  EVENT_DETAILS: (teamId, eventId) => `runstr_team_event_details_${teamId}_${eventId}_${CACHE_VERSION}`,
-  EVENT_PARTICIPANTS: (teamId, eventId) => `runstr_team_event_participants_${teamId}_${eventId}_${CACHE_VERSION}`,
-  EVENT_PARTICIPATION: (teamId, eventId) => `runstr_team_event_participation_${teamId}_${eventId}_${CACHE_VERSION}`,
-  EVENT_ACTIVITIES: (teamId, eventId) => `runstr_team_event_activities_${teamId}_${eventId}_${CACHE_VERSION}`,
-  TEAM_EVENTS: (teamId) => `runstr_team_events_${teamId}_${CACHE_VERSION}`
+  EVENT_DETAILS: (teamId, eventId) => {
+    const cleanTeamId = sanitizeCacheKeyComponent(teamId);
+    const cleanEventId = sanitizeCacheKeyComponent(eventId);
+    
+    if (!cleanTeamId || !cleanEventId) {
+      console.warn('[CACHE_KEYS] Invalid teamId or eventId for EVENT_DETAILS', { teamId, eventId });
+      return null;
+    }
+    return `runstr_team_event_details__${cleanTeamId}__${cleanEventId}__${CACHE_VERSION}`;
+  },
+  EVENT_PARTICIPANTS: (teamId, eventId) => {
+    const cleanTeamId = sanitizeCacheKeyComponent(teamId);
+    const cleanEventId = sanitizeCacheKeyComponent(eventId);
+    
+    if (!cleanTeamId || !cleanEventId) {
+      console.warn('[CACHE_KEYS] Invalid teamId or eventId for EVENT_PARTICIPANTS', { teamId, eventId });
+      return null;
+    }
+    return `runstr_team_event_participants__${cleanTeamId}__${cleanEventId}__${CACHE_VERSION}`;
+  },
+  EVENT_PARTICIPATION: (teamId, eventId) => {
+    const cleanTeamId = sanitizeCacheKeyComponent(teamId);
+    const cleanEventId = sanitizeCacheKeyComponent(eventId);
+    
+    if (!cleanTeamId || !cleanEventId) {
+      console.warn('[CACHE_KEYS] Invalid teamId or eventId for EVENT_PARTICIPATION', { teamId, eventId });
+      return null;
+    }
+    return `runstr_team_event_participation__${cleanTeamId}__${cleanEventId}__${CACHE_VERSION}`;
+  },
+  EVENT_ACTIVITIES: (teamId, eventId) => {
+    const cleanTeamId = sanitizeCacheKeyComponent(teamId);
+    const cleanEventId = sanitizeCacheKeyComponent(eventId);
+    
+    if (!cleanTeamId || !cleanEventId) {
+      console.warn('[CACHE_KEYS] Invalid teamId or eventId for EVENT_ACTIVITIES', { teamId, eventId });
+      return null;
+    }
+    return `runstr_team_event_activities__${cleanTeamId}__${cleanEventId}__${CACHE_VERSION}`;
+  },
+  TEAM_EVENTS: (teamId) => {
+    const cleanTeamId = sanitizeCacheKeyComponent(teamId);
+    
+    if (!cleanTeamId) {
+      console.warn('[CACHE_KEYS] Invalid teamId for TEAM_EVENTS', { teamId });
+      return null;
+    }
+    return `runstr_team_events__${cleanTeamId}__${CACHE_VERSION}`;
+  }
 };
 
 /**
@@ -40,6 +102,11 @@ export const CACHE_TTL = {
  * Copied from League's successful loadCachedData pattern
  */
 export const loadCachedData = (cacheKey, cacheDurationMs = TEAM_EVENTS_CACHE_DURATION_MS) => {
+  if (!cacheKey) {
+    console.warn('[loadCachedData] Invalid cache key provided');
+    return null;
+  }
+  
   try {
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
@@ -65,6 +132,11 @@ export const loadCachedData = (cacheKey, cacheDurationMs = TEAM_EVENTS_CACHE_DUR
  * Copied from League's successful saveCachedData pattern
  */
 export const saveCachedData = (cacheKey, data) => {
+  if (!cacheKey) {
+    console.warn('[saveCachedData] Invalid cache key provided');
+    return;
+  }
+  
   try {
     const cacheData = {
       data,
@@ -80,6 +152,11 @@ export const saveCachedData = (cacheKey, data) => {
  * Check if cache has valid data without loading it
  */
 export const hasCachedData = (cacheKey, cacheDurationMs = TEAM_EVENTS_CACHE_DURATION_MS) => {
+  if (!cacheKey) {
+    console.warn('[hasCachedData] Invalid cache key provided');
+    return false;
+  }
+  
   try {
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
@@ -97,6 +174,11 @@ export const hasCachedData = (cacheKey, cacheDurationMs = TEAM_EVENTS_CACHE_DURA
  * Clear specific cache entry
  */
 export const clearCachedData = (cacheKey) => {
+  if (!cacheKey) {
+    console.warn('[clearCachedData] Invalid cache key provided');
+    return;
+  }
+  
   try {
     localStorage.removeItem(cacheKey);
   } catch (err) {

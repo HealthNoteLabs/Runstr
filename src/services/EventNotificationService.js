@@ -206,20 +206,89 @@ export async function fetchJoinRequestNotifications(ndk, captainPubkey, eventId 
 
     const notifications = Array.from(events).map(event => {
       try {
-        const content = JSON.parse(event.content);
+        // Validate event structure
+        if (!event || !event.id || !event.content || !Array.isArray(event.tags)) {
+          console.warn('[EventNotificationService] Invalid event structure:', event?.id);
+          return null;
+        }
+        
+        // Parse and validate content
+        let content;
+        try {
+          content = JSON.parse(event.content);
+        } catch (jsonError) {
+          console.warn('[EventNotificationService] Invalid JSON content in notification:', event.id);
+          return null;
+        }
+        
+        if (!content || typeof content !== 'object') {
+          console.warn('[EventNotificationService] Invalid content object in notification:', event.id);
+          return null;
+        }
+        
+        // Helper function to safely extract tag values
+        const getTagValue = (tagType, excludeValue = null) => {
+          try {
+            const tag = event.tags.find(t => 
+              Array.isArray(t) && 
+              t.length >= 2 && 
+              t[0] === tagType && 
+              t[1] && 
+              t[1] !== excludeValue
+            );
+            return tag ? tag[1] : null;
+          } catch (err) {
+            console.warn(`[EventNotificationService] Error extracting ${tagType} tag:`, err);
+            return null;
+          }
+        };
+        
+        // Extract and validate required fields
+        const eventId = getTagValue('e');
+        const requesterPubkey = getTagValue('p', captainPubkey);
+        
+        // Validate required fields
+        if (!eventId || !requesterPubkey) {
+          console.warn('[EventNotificationService] Missing required fields in notification:', {
+            eventId, 
+            requesterPubkey,
+            notificationId: event.id
+          });
+          return null;
+        }
+        
+        // Validate pubkey format (basic hex check)
+        if (!/^[a-fA-F0-9]{64}$/.test(requesterPubkey)) {
+          console.warn('[EventNotificationService] Invalid requester pubkey format:', requesterPubkey);
+          return null;
+        }
+        
+        // Validate timestamp
+        const timestamp = content.timestamp || event.created_at * 1000;
+        const now = Date.now();
+        const oneYearAgo = now - (365 * 24 * 60 * 60 * 1000);
+        const oneYearFromNow = now + (365 * 24 * 60 * 60 * 1000);
+        
+        if (timestamp < oneYearAgo || timestamp > oneYearFromNow) {
+          console.warn('[EventNotificationService] Notification timestamp outside reasonable bounds:', {
+            timestamp: new Date(timestamp),
+            notificationId: event.id
+          });
+        }
+        
         return {
           id: event.id,
-          eventId: event.tags.find(t => t[0] === 'e')?.[1],
-          eventName: event.tags.find(t => t[0] === 'event_name')?.[1],
-          requesterPubkey: event.tags.find(t => t[0] === 'p' && t[1] !== captainPubkey)?.[1],
-          teamAIdentifier: event.tags.find(t => t[0] === 'a')?.[1],
-          timestamp: content.timestamp || event.created_at * 1000,
-          message: content.message,
-          requesterName: content.requesterName,
+          eventId,
+          eventName: getTagValue('event_name') || content.eventName || 'Unknown Event',
+          requesterPubkey,
+          teamAIdentifier: getTagValue('a') || content.teamAIdentifier || '',
+          timestamp,
+          message: content.message || 'Join request notification',
+          requesterName: content.requesterName || 'Unknown User',
           rawEvent: event
         };
       } catch (parseError) {
-        console.warn('[EventNotificationService] Failed to parse notification content:', parseError);
+        console.warn('[EventNotificationService] Failed to parse notification:', parseError);
         return null;
       }
     }).filter(Boolean);

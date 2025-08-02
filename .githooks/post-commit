@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# Claude Learning System - Post-commit hook
+# Automatically detects and logs mistakes based on commit messages
+
+# Get the commit message
+COMMIT_MSG=$(git log -1 --pretty=%B)
+
+# Check if this looks like a mistake-fixing commit
+if echo "$COMMIT_MSG" | grep -qi -E "(fix|revert|undo|broke|broken|error|mistake|wrong|restore)"; then
+    echo "🔍 Detected potential mistake fix in commit message"
+    
+    # Extract the commit hash
+    COMMIT_HASH=$(git rev-parse HEAD)
+    
+    # Log the mistake automatically
+    node scripts/claude-learning-system.js log "$COMMIT_MSG" --type "git-commit" 2>/dev/null || {
+        echo "⚠️  Could not log mistake automatically. Run manually:"
+        echo "    node scripts/claude-learning-system.js log \"$COMMIT_MSG\""
+    }
+fi
+
+# Update CLAUDE.md periodically (every 5th commit with mistakes)
+MISTAKE_COUNT=$(cat .claude-learning.json 2>/dev/null | grep -c "timestamp" || echo "0")
+if [ $((MISTAKE_COUNT % 5)) -eq 0 ] && [ "$MISTAKE_COUNT" -gt 0 ]; then
+    echo "📚 Updating CLAUDE.md with recent lessons..."
+    node scripts/claude-learning-system.js update 2>/dev/null || echo "⚠️  Could not update CLAUDE.md automatically"
+fi

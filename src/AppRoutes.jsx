@@ -42,7 +42,7 @@ const Music = safeLazy(() => import('./pages/Music'), 'Music');
 const NWC = safeLazy(() => import('./pages/NWC'), 'NWC');
 // const EcashWallet = safeLazy(() => import('./pages/EcashWallet'), 'EcashWallet'); // Temporarily disabled
 const Goals = safeLazy(() => import('./pages/Goals'), 'Goals');
-const Events = safeLazy(() => import('./pages/Events'), 'Events');
+const EventsPage = safeLazy(() => import('./pages/EventsPage'), 'EventsPage');
 const EventDetail = safeLazy(() => import('./pages/EventDetail'), 'EventDetail');
 const Profile = safeLazy(() => import('./pages/Profile'), 'Profile');
 const NostrStatsPage = safeLazy(() => import('./pages/NostrStatsPage'), 'NostrStatsPage');
@@ -90,7 +90,7 @@ const AppRoutes = () => {
         <Route path="/wallet" element={<Wallet />} />
         <Route path="/music" element={<Music />} />
         <Route path="/goals" element={<Goals />} />
-        <Route path="/events" element={<Events />} />
+        <Route path="/events" element={<EventsPage />} />
         <Route path="/event/:eventId" element={<EventDetail />} />
         
         <Route path="/teams" element={<TeamsPage />} />

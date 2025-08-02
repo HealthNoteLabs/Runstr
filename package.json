@@ -29,7 +29,11 @@
     "parse-prd": "node scripts/dev.js parse-prd",
     "rewards:fetch": "node scripts/fetch-weekly-workouts.mjs",
     "zapstore:init": "zapstore init",
-    "zapstore:login": "zapstore login"
+    "zapstore:login": "zapstore login",
+    "claude:setup": "bash .githooks/install.sh",
+    "claude:log": "node scripts/claude-learning-system.js log",
+    "claude:scan": "node scripts/claude-learning-system.js scan",
+    "claude:update": "node scripts/claude-learning-system.js update"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

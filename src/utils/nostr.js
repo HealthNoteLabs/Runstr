@@ -1182,6 +1182,46 @@ export const createWorkoutEvent = (run, distanceUnit, options = {}) => {
     });
   }
 
+  // Add event tags for simplified team events system
+  try {
+    // Get active events for the workout date using localStorage directly to avoid imports
+    const workoutDate = new Date(run.date);
+    const dateString = workoutDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+    
+    // Read joined events from localStorage
+    const joinedEventsJson = localStorage.getItem('runstr_joined_events');
+    if (joinedEventsJson) {
+      const joinedEvents = JSON.parse(joinedEventsJson);
+      const activeEvents = Object.values(joinedEvents)
+        .filter((event) => event.eventDate === dateString)
+        .map((event) => ({
+          eventId: event.eventId,
+          eventName: event.eventName
+        }));
+      
+      if (activeEvents.length > 0) {
+        console.log(`[createWorkoutEvent] Adding tags for ${activeEvents.length} active events on ${dateString}`);
+        
+        // Add event tags and content
+        activeEvents.forEach(({ eventId, eventName }) => {
+          // Add event identifier tag for leaderboard queries
+          tags.push(["event", eventId, eventName]);
+          
+          // Add hashtag for discovery
+          tags.push(["t", `event:${eventId}`]);
+          
+          // Add event to content
+          contentParts.push(`Event: ${eventName}`);
+        });
+        
+        console.log(`[createWorkoutEvent] Added event tags:`, activeEvents);
+      }
+    }
+  } catch (eventError) {
+    // Don't fail workout publishing if event tagging fails
+    console.warn('[createWorkoutEvent] Failed to add event tags:', eventError);
+  }
+
   return {
     kind: 1301,
     content: contentParts.join(' • '), // Join content parts with bullet separator

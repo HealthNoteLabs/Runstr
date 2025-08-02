@@ -143,6 +143,74 @@ NostrProvider
 - **No Sweeping Refactors**: Avoid large architectural changes that could break the collaborative open-source project
 - **Test Existing Flows**: Ensure changes don't break current user workflows or integrations
 
+#### Safety-First Development Principles
+
+**CRITICAL: Always prioritize not breaking existing functionality over adding new features.**
+
+##### Pre-Change Safety Checks (Always Before Making Any Change)
+1. **Read First**: Always read the existing file completely before editing
+2. **Test Commands Work**: Verify `npm run test`, `npm run lint`, `npm run build` work before starting
+3. **Check Dependencies**: Look for existing imports/functions before creating new ones
+4. **Understand Context**: Read related files to understand how the code fits together
+5. **Clean Git Status**: Ensure current branch has clean git status
+
+##### Change Implementation Rules
+1. **One Thing at a Time**: Make one focused change per session
+2. **Preserve Existing Logic**: Never delete existing logic unless explicitly required
+3. **Follow Existing Patterns**: Copy patterns from similar existing code in the codebase
+4. **Add, Don't Replace**: Add new functionality alongside existing, don't replace
+5. **Maintain Interfaces**: Keep function signatures and export names unchanged
+
+##### Mandatory Validation Steps (After Every Change)
+1. **Run Tests**: `npm run test` - Must pass before proceeding
+2. **Check Lint**: `npm run lint` - Must have zero errors/warnings  
+3. **Verify Build**: `npm run build` - Must complete successfully
+4. **Test in Browser**: `npm run dev` - Verify app loads and basic functionality works
+5. **Git Diff Review**: Check exactly what changed before committing
+
+##### Red Flags - Stop Immediately If You See These
+- Build errors after your changes
+- Test failures that weren't there before
+- Lint errors in files you touched
+- Console errors in browser that are new
+- App won't start or loads blank page
+- Any file showing as deleted in git diff unexpectedly
+
+##### Safe Rollback Protocol
+If anything breaks:
+1. **Stop immediately** - Don't try to "fix forward"
+2. **Git stash changes**: `git stash` to save work
+3. **Verify app works**: Test that reverting fixes the issue
+4. **Analyze the problem**: Understand what went wrong
+5. **Apply minimal fix**: Make smallest possible change to achieve goal
+
+##### High-Risk Areas (Extra Caution Required)
+- `/src/lib/ndkSingleton.js` - Core Nostr connection
+- `/src/contexts/` - App-wide state management  
+- `/src/services/RunTracker.js` - GPS tracking core
+- `/src/utils/nostr.js` - Nostr publishing
+- `/package.json` - Dependencies and scripts
+- Any file imported by many others
+
+##### Safety Questions Before Every Change
+1. "Could this break existing users' data or workflows?"
+2. "Am I changing a core system that other features depend on?"
+3. "Is there a simpler way that touches fewer files?"
+4. "What's the worst case scenario if this goes wrong?"
+5. "Can I test this change in isolation?"
+
+#### Simplicity & Anti-Over-Engineering Principles
+- **KISS Principle**: Keep It Simple, Stupid - Always choose the simplest solution that works
+- **No Premature Optimization**: Don't add complexity for hypothetical future needs
+- **Edit Don't Create**: Always prefer editing existing files over creating new ones
+- **Single Purpose**: Each function/component should do one thing well
+- **Avoid Abstractions**: Don't create abstract layers unless you have 3+ concrete use cases
+- **Use Existing Patterns**: Follow established patterns in the codebase rather than inventing new ones
+- **Question Complexity**: If a solution feels complex, step back and find a simpler approach
+- **No Over-Engineering**: Resist the urge to build "flexible" or "extensible" solutions unless explicitly required
+- **Direct Solutions**: Solve the specific problem at hand, not a generalized version of it
+- **Readable Code**: Prefer explicit, clear code over clever or terse solutions
+
 #### Nostr Event Handling
 - All Nostr events should use the NDK singleton instance
 - Check `ndkReady` state before publishing events
@@ -201,6 +269,57 @@ NostrProvider
 - Graceful fallbacks when no team is assigned
 
 **Result**: Both manual and auto posting now show identical workout summaries with team integration.
+
+## Claude Learning System
+
+**IMPORTANT: This repository includes an automated learning system that helps Claude avoid repeating mistakes.**
+
+### How It Works
+- **Automatic Detection**: Git hooks scan commit messages for mistake patterns (`fix`, `revert`, `undo`, `broke`, etc.)
+- **Mistake Logging**: Detected mistakes are logged to `.claude-learning.json` with context and solutions
+- **Documentation Updates**: CLAUDE.md is automatically updated with learned lessons and prevention strategies
+- **Pattern Recognition**: Common mistake patterns are identified and highlighted for future avoidance
+
+### Setup (One-time)
+```bash
+# Install the learning system git hooks
+bash .githooks/install.sh
+```
+
+### Manual Commands
+```bash
+# Log a mistake manually with solution and prevention
+node scripts/claude-learning-system.js log "Broke build by updating wrong dependency" --solution "Reverted and tested in branch" --prevention "Always test dependency updates in separate branch"
+
+# Scan recent commits for mistakes
+node scripts/claude-learning-system.js scan --days 7
+
+# Update CLAUDE.md with recent lessons
+node scripts/claude-learning-system.js update
+```
+
+### Current Learning Insights
+*This section will be automatically populated as mistakes are detected and logged.*
+
+### Key Learning: Avoid Over-Engineering
+**Most Important Lesson**: The biggest mistakes in this codebase come from over-engineering simple problems.
+
+**Common Over-Engineering Patterns to Avoid:**
+- Creating new files when editing existing ones would work
+- Building "flexible" systems for single-use cases  
+- Adding abstraction layers without concrete need
+- Implementing complex state management for simple data
+- Creating utilities that are only used once
+- Building for hypothetical future requirements
+
+**Simple Solution Checklist:**
+1. Can I edit an existing file instead of creating a new one? ✅
+2. Does this solve the actual problem without extra features? ✅  
+3. Can someone else understand this in 30 seconds? ✅
+4. Am I following existing patterns in the codebase? ✅
+5. Would a junior developer choose this approach? ✅
+
+**Remember**: Simple, direct solutions that work are always better than complex, "elegant" solutions that might work.
 
 ## Agent System Usage
 

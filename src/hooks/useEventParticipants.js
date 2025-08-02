@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNostr } from './useNostr';
 import EventParticipationService from '../services/EventParticipationService';
 import EventNotificationService from '../services/EventNotificationService';
@@ -50,6 +50,9 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
 
   // Data source tracking
   const [dataSource, setDataSource] = useState('loading');
+  
+  // Ref to prevent infinite loops in useEffect
+  const fetchParticipantsRef = useRef(null);
 
   /**
    * Fetch participants using league-pattern cache-first approach
@@ -80,15 +83,21 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
             captainPubkey
           );
           
-          // Only update if we got more/different data
-          if (hybridParticipants.length >= localParticipants.length) {
+          // Always update with hybrid data if it contains official participants
+          // This ensures captain removals are respected even if count is lower
+          const hasOfficialData = hybridParticipants.some(p => p.source === 'official');
+          
+          if (hasOfficialData || hybridParticipants.length >= localParticipants.length) {
             setParticipants(hybridParticipants);
-            setDataSource(hybridParticipants.some(p => p.source === 'official') ? 'hybrid' : 'local_enhanced');
-            console.log(`[useEventParticipants] Enhanced with ${hybridParticipants.length} hybrid participants`);
+            setDataSource(hasOfficialData ? 'hybrid' : 'local_enhanced');
+            console.log(`[useEventParticipants] Enhanced with ${hybridParticipants.length} hybrid participants (official: ${hasOfficialData})`);
+          } else {
+            // Only use local data if no official data and fewer participants
+            console.log(`[useEventParticipants] Keeping ${localParticipants.length} local participants (no official data, fewer hybrid)`);
           }
         } catch (nostrError) {
           console.warn('[useEventParticipants] Nostr enhancement failed, keeping local data:', nostrError);
-          setError('Limited participant data - network issues');
+          setError('Some participant data may be outdated due to connection issues');
           // Keep the local data we already set
         }
       } else {
@@ -113,13 +122,16 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
       setIsLoading(false);
     }
   }, [eventId, captainPubkey, ndk, ndkReady]);
+  
+  // Update ref when fetchParticipants changes
+  fetchParticipantsRef.current = fetchParticipants;
 
   /**
    * Join event - immediately stored in localStorage for optimistic UI
    */
   const joinEvent = useCallback(async () => {
     if (!eventId || !publicKey) {
-      throw new Error('EventId and user authentication required');
+      throw new Error('Please sign in to join events');
     }
 
     if (isJoining || isUserParticipatingLocally) {
@@ -139,7 +151,7 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
         publicKey
       );
 
-      // Update local state immediately
+      // Update local state immediately (optimistic update) with synchronization
       const newParticipant = {
         pubkey: publicKey,
         joinedAt: Date.now(),
@@ -148,9 +160,27 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
       };
 
       setParticipants(prev => {
-        // Avoid duplicates
-        if (prev.some(p => p.pubkey === publicKey)) return prev;
-        return [...prev, newParticipant];
+        // Avoid duplicates and preserve official participants
+        const existingParticipant = prev.find(p => p.pubkey === publicKey);
+        if (existingParticipant) {
+          console.log('[useEventParticipants] User already in participants list, updating source if needed');
+          // Update existing participant to show it's now local + official if needed
+          return prev.map(p => 
+            p.pubkey === publicKey 
+              ? { ...p, source: p.source === 'official' ? 'hybrid' : 'localStorage', joinedAt: Date.now() }
+              : p
+          );
+        }
+        
+        // Add user while preserving existing participants with stable ordering
+        const updated = [...prev, newParticipant].sort((a, b) => {
+          // Official participants first, then by join time
+          if (a.source === 'official' && b.source !== 'official') return -1;
+          if (b.source === 'official' && a.source !== 'official') return 1;
+          return (b.joinedAt || 0) - (a.joinedAt || 0);
+        });
+        console.log(`[useEventParticipants] Optimistically added user to participants (${updated.length} total)`);
+        return updated;
       });
 
       // Send notification to captain (if NDK is ready)
@@ -188,7 +218,7 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
    */
   const leaveEvent = useCallback(async () => {
     if (!eventId || !publicKey) {
-      throw new Error('EventId and user authentication required');
+      throw new Error('Please sign in to leave events');
     }
 
     if (isLeaving || !isUserParticipatingLocally) {
@@ -203,8 +233,27 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
       // Remove from localStorage
       EventParticipationService.leaveEventLocally(eventId, publicKey);
       
-      // Update local state immediately
-      setParticipants(prev => prev.filter(p => p.pubkey !== publicKey || p.source === 'official'));
+      // Update local state immediately - handle different source types properly
+      setParticipants(prev => {
+        const updated = prev.map(p => {
+          if (p.pubkey === publicKey) {
+            // If user was hybrid (official + local), keep official part only
+            if (p.source === 'hybrid') {
+              return { ...p, source: 'official' };
+            }
+            // If user was local only, remove completely
+            if (p.source === 'localStorage') {
+              return null;
+            }
+            // If user was official only, keep as is (captain managed)
+            return p;
+          }
+          return p;
+        }).filter(Boolean); // Remove null entries
+        
+        console.log(`[useEventParticipants] Updated user participation status (${updated.length} remaining)`);
+        return updated;
+      });
       
       console.log(`[useEventParticipants] Successfully left event ${eventId}`);
       return true;
@@ -233,14 +282,18 @@ export const useEventParticipants = (eventId, captainPubkey, eventName, teamAIde
 
   // LEAGUE PATTERN: Less aggressive auto-refresh, don't depend on NDK state
   useEffect(() => {
-    if (ndkReady && !isLoading) {
+    if (ndkReady && !isLoading && dataSource === 'local') {
       console.log('[useEventParticipants] NDK ready, enhancing participants with Nostr data');
-      // Only refresh if we haven't already, to avoid repeated network calls
-      if (dataSource === 'local') {
-        fetchParticipants();
-      }
+      // Only refresh if we haven't already loaded official data
+      const timeoutId = setTimeout(() => {
+        if (fetchParticipantsRef.current) {
+          fetchParticipantsRef.current();
+        }
+      }, 100); // Small delay to prevent race conditions
+      
+      return () => clearTimeout(timeoutId);
     }
-  }, [ndkReady]); // Removed fetchParticipants dependency to prevent loops
+  }, [ndkReady, isLoading, dataSource]); // Safe dependencies that won't cause loops
 
   return {
     // Participant data

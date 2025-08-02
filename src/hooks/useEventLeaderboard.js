@@ -41,17 +41,52 @@ export const useEventLeaderboard = (participants = [], eventStartTime, eventEndT
   }, [activityMode]);
 
   /**
-   * Parse workout data from Kind 1301 event
+   * Parse workout data from Kind 1301 event with robust tag validation
    */
   const parseWorkoutData = useCallback((event) => {
-    const tags = event.tags || [];
+    if (!event || typeof event !== 'object') {
+      console.warn('[useEventLeaderboard] Invalid event object provided to parseWorkoutData');
+      return null;
+    }
     
-    // Extract data from tags
-    const distance = parseFloat(tags.find(tag => tag[0] === 'distance')?.[1] || '0');
-    const duration = parseInt(tags.find(tag => tag[0] === 'duration')?.[1] || '0');
-    const activityType = tags.find(tag => tag[0] === 'activity_type')?.[1] || 'run';
-    const calories = parseInt(tags.find(tag => tag[0] === 'calories')?.[1] || '0');
-    const elevation = parseFloat(tags.find(tag => tag[0] === 'elevation_gain')?.[1] || '0');
+    const tags = Array.isArray(event.tags) ? event.tags : [];
+    
+    // Helper function to safely extract tag values with validation
+    const getTagValue = (tagName, defaultValue = '0', validator = null) => {
+      try {
+        const tag = tags.find(tag => Array.isArray(tag) && tag.length >= 2 && tag[0] === tagName);
+        if (!tag || !tag[1]) return defaultValue;
+        
+        const value = tag[1];
+        if (validator && !validator(value)) {
+          console.warn(`[useEventLeaderboard] Invalid ${tagName} value: ${value}, using default`);
+          return defaultValue;
+        }
+        
+        return value;
+      } catch (err) {
+        console.warn(`[useEventLeaderboard] Error extracting ${tagName} tag:`, err);
+        return defaultValue;
+      }
+    };
+    
+    // Validators for different data types
+    const isValidNumber = (val) => !isNaN(parseFloat(val)) && isFinite(parseFloat(val)) && parseFloat(val) >= 0;
+    const isValidInteger = (val) => !isNaN(parseInt(val)) && parseInt(val) >= 0;
+    const isValidString = (val) => typeof val === 'string' && val.trim().length > 0;
+    
+    // Extract data from tags with validation
+    const distanceStr = getTagValue('distance', '0', isValidNumber);
+    const durationStr = getTagValue('duration', '0', isValidInteger);
+    const activityType = getTagValue('activity_type', 'run', isValidString);
+    const caloriesStr = getTagValue('calories', '0', isValidInteger);
+    const elevationStr = getTagValue('elevation_gain', '0', isValidNumber);
+    
+    // Parse with additional bounds checking
+    const distance = Math.max(0, Math.min(1000, parseFloat(distanceStr))); // Max 1000km
+    const duration = Math.max(0, Math.min(86400, parseInt(durationStr))); // Max 24 hours
+    const calories = Math.max(0, Math.min(10000, parseInt(caloriesStr))); // Max 10000 calories
+    const elevation = Math.max(0, Math.min(10000, parseFloat(elevationStr))); // Max 10000m elevation
     
     // Calculate pace/speed based on activity type
     let pace = 0;
@@ -188,8 +223,14 @@ export const useEventLeaderboard = (participants = [], eventStartTime, eventEndT
         eventEndTime || Date.now()
       );
       
-      // Parse workout data
-      const parsedActivities = activities.map(parseWorkoutData);
+      // Parse workout data and filter out invalid entries
+      const parsedActivities = activities.map(parseWorkoutData).filter(Boolean);
+      const invalidCount = activities.length - parsedActivities.length;
+      
+      if (invalidCount > 0) {
+        console.warn(`[useEventLeaderboard] Filtered out ${invalidCount} invalid workout activities`);
+      }
+      
       setWorkoutActivities(parsedActivities);
       
       // Calculate leaderboard

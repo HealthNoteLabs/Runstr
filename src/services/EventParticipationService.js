@@ -23,19 +23,74 @@ const STORAGE_KEYS = {
 const KIND_PARTICIPANT_LIST = 30001; // Nostr list for official participants
 const KIND_WORKOUT_RECORD = 1301; // Workout events
 
+// In-memory fallback for when localStorage fails
+let memoryStorage = {};
+
 /**
- * Get stored event participants from localStorage
+ * Enhanced storage wrapper with fallbacks for localStorage failures
+ */
+const safeStorage = {
+  getItem: (key) => {
+    try {
+      if (typeof localStorage === 'undefined') {
+        console.warn('[safeStorage] localStorage not available, using memory fallback');
+        return memoryStorage[key] || null;
+      }
+      return localStorage.getItem(key);
+    } catch (error) {
+      console.warn('[safeStorage] localStorage.getItem failed, using memory fallback:', error.message);
+      return memoryStorage[key] || null;
+    }
+  },
+  
+  setItem: (key, value) => {
+    try {
+      if (typeof localStorage === 'undefined') {
+        console.warn('[safeStorage] localStorage not available, using memory fallback');
+        memoryStorage[key] = value;
+        return true;
+      }
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      console.warn('[safeStorage] localStorage.setItem failed, using memory fallback:', error.message);
+      memoryStorage[key] = value;
+      return false; // Indicate localStorage failed but memory fallback succeeded
+    }
+  },
+  
+  removeItem: (key) => {
+    try {
+      if (typeof localStorage === 'undefined') {
+        delete memoryStorage[key];
+        return;
+      }
+      localStorage.removeItem(key);
+    } catch (error) {
+      console.warn('[safeStorage] localStorage.removeItem failed, removing from memory fallback:', error.message);
+      delete memoryStorage[key];
+    }
+  },
+  
+  isUsingFallback: () => {
+    return typeof localStorage === 'undefined' || Object.keys(memoryStorage).length > 0;
+  }
+};
+
+/**
+ * Get stored event participants with enhanced fallback support
  * Format: { eventId: { [pubkey]: { joinedAt, status } } }
  */
 function getStoredEventParticipants() {
   try {
-    // Graceful fallback for environments without localStorage (like Node.js tests)
-    if (typeof localStorage === 'undefined') {
-      console.warn('[EventParticipationService] localStorage not available, using empty data');
-      return {};
+    const stored = safeStorage.getItem(STORAGE_KEYS.EVENT_PARTICIPANTS);
+    const data = stored ? JSON.parse(stored) : {};
+    
+    if (safeStorage.isUsingFallback()) {
+      console.info('[EventParticipationService] Using fallback storage for participants data');
     }
-    const stored = localStorage.getItem(STORAGE_KEYS.EVENT_PARTICIPANTS);
-    return stored ? JSON.parse(stored) : {};
+    
+    return data;
   } catch (error) {
     console.error('[EventParticipationService] Error reading stored participants:', error);
     return {};
@@ -43,34 +98,34 @@ function getStoredEventParticipants() {
 }
 
 /**
- * Save event participants to localStorage
+ * Save event participants with enhanced fallback support
  */
 function saveStoredEventParticipants(participants) {
   try {
-    // Graceful fallback for environments without localStorage
-    if (typeof localStorage === 'undefined') {
-      console.warn('[EventParticipationService] localStorage not available, skipping save');
-      return;
+    const success = safeStorage.setItem(STORAGE_KEYS.EVENT_PARTICIPANTS, JSON.stringify(participants));
+    
+    if (!success) {
+      console.warn('[EventParticipationService] Using memory fallback for participant storage');
     }
-    localStorage.setItem(STORAGE_KEYS.EVENT_PARTICIPANTS, JSON.stringify(participants));
   } catch (error) {
     console.error('[EventParticipationService] Error saving participants:', error);
   }
 }
 
 /**
- * Get user's joined events from localStorage
+ * Get user's joined events with enhanced fallback support
  * Format: { [eventId]: { joinedAt, teamAIdentifier, eventName } }
  */
 function getUserJoinedEvents() {
   try {
-    // Graceful fallback for environments without localStorage
-    if (typeof localStorage === 'undefined') {
-      console.warn('[EventParticipationService] localStorage not available, using empty data');
-      return {};
+    const stored = safeStorage.getItem(STORAGE_KEYS.USER_JOINED_EVENTS);
+    const data = stored ? JSON.parse(stored) : {};
+    
+    if (safeStorage.isUsingFallback()) {
+      console.info('[EventParticipationService] Using fallback storage for user events data');
     }
-    const stored = localStorage.getItem(STORAGE_KEYS.USER_JOINED_EVENTS);
-    return stored ? JSON.parse(stored) : {};
+    
+    return data;
   } catch (error) {
     console.error('[EventParticipationService] Error reading user joined events:', error);
     return {};
@@ -78,16 +133,15 @@ function getUserJoinedEvents() {
 }
 
 /**
- * Save user's joined events to localStorage
+ * Save user's joined events with enhanced fallback support
  */
 function saveUserJoinedEvents(joinedEvents) {
   try {
-    // Graceful fallback for environments without localStorage
-    if (typeof localStorage === 'undefined') {
-      console.warn('[EventParticipationService] localStorage not available, skipping save');
-      return;
+    const success = safeStorage.setItem(STORAGE_KEYS.USER_JOINED_EVENTS, JSON.stringify(joinedEvents));
+    
+    if (!success) {
+      console.warn('[EventParticipationService] Using memory fallback for user events storage');
     }
-    localStorage.setItem(STORAGE_KEYS.USER_JOINED_EVENTS, JSON.stringify(joinedEvents));
   } catch (error) {
     console.error('[EventParticipationService] Error saving user joined events:', error);
   }
@@ -341,13 +395,61 @@ export async function fetchEventWorkoutActivities(ndk, participantPubkeys, event
     console.warn('[EventParticipationService] Missing required parameters for fetching activities');
     return [];
   }
+  
+  // Validate date range parameters
+  if (!eventStartTime || typeof eventStartTime !== 'number' || eventStartTime <= 0) {
+    console.error('[EventParticipationService] Invalid eventStartTime:', eventStartTime);
+    throw new Error('Invalid event start time provided');
+  }
+  
+  if (eventEndTime && (typeof eventEndTime !== 'number' || eventEndTime <= 0)) {
+    console.error('[EventParticipationService] Invalid eventEndTime:', eventEndTime);
+    throw new Error('Invalid event end time provided');
+  }
+  
+  if (eventEndTime && eventEndTime <= eventStartTime) {
+    console.error('[EventParticipationService] End time must be after start time', {
+      eventStartTime: new Date(eventStartTime),
+      eventEndTime: new Date(eventEndTime)
+    });
+    throw new Error('Event end time must be after start time');
+  }
+  
+  // Reasonable bounds checking (within last 5 years and next 1 year)
+  const fiveYearsAgo = Date.now() - (5 * 365 * 24 * 60 * 60 * 1000);
+  const oneYearFromNow = Date.now() + (365 * 24 * 60 * 60 * 1000);
+  
+  if (eventStartTime < fiveYearsAgo || eventStartTime > oneYearFromNow) {
+    console.warn('[EventParticipationService] Event start time outside reasonable bounds', {
+      eventStartTime: new Date(eventStartTime),
+      bounds: { min: new Date(fiveYearsAgo), max: new Date(oneYearFromNow) }
+    });
+  }
+  
+  // Validate participant pubkeys
+  const validPubkeys = participantPubkeys.filter(pubkey => {
+    if (!pubkey || typeof pubkey !== 'string' || pubkey.length < 32) {
+      console.warn('[EventParticipationService] Invalid pubkey filtered out:', pubkey);
+      return false;
+    }
+    return true;
+  });
+  
+  if (validPubkeys.length === 0) {
+    console.warn('[EventParticipationService] No valid participant pubkeys after filtering');
+    return [];
+  }
+  
+  if (validPubkeys.length !== participantPubkeys.length) {
+    console.warn(`[EventParticipationService] Filtered ${participantPubkeys.length - validPubkeys.length} invalid pubkeys`);
+  }
 
   try {
-    console.log(`[EventParticipationService] Fetching workout activities for ${participantPubkeys.length} participants from ${new Date(eventStartTime)} to ${new Date(eventEndTime || Date.now())}`);
+    console.log(`[EventParticipationService] Fetching workout activities for ${validPubkeys.length} participants from ${new Date(eventStartTime)} to ${new Date(eventEndTime || Date.now())}`);
 
     const filter = {
       kinds: [KIND_WORKOUT_RECORD],
-      authors: participantPubkeys,
+      authors: validPubkeys,
       since: Math.floor(eventStartTime / 1000),
       until: eventEndTime ? Math.floor(eventEndTime / 1000) : undefined
     };
