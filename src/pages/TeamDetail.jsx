@@ -14,6 +14,7 @@ import { ensureRelays } from '../utils/relays.js';
 import { useProfileCache } from '../hooks/useProfileCache.js';
 import '../components/RunClub.css';
 import { ChatRoom } from '../components/ChatRoom.jsx';
+import WorkoutPlansTab from '../components/teams/WorkoutPlansTab.tsx';
 
 console.log("TeamDetail component file is loading (Simplified Metadata)");
 

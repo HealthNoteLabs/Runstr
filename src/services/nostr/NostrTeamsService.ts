@@ -47,6 +47,7 @@ export const KIND_NIP101_TEAM_CHAT_MESSAGE = 133404; // Example custom kind
 // New Kinds for NIP-101e Activities
 export const KIND_NIP101_TEAM_EVENT = 31012; // NIP-101e Team Event
 export const KIND_NIP101_TEAM_CHALLENGE = 31013; // NIP-101e Team Challenge
+export const KIND_WORKOUT_PLAN = 33402; // NIP-101e Workout Plan Template
 
 export interface TeamData {
   name: string;
@@ -1270,6 +1271,37 @@ export interface TeamEventDetails {
   creatorPubkey: string;
   createdAt: number;
   participantCount?: number;
+  // Reward fields
+  participationReward?: number; // sats for participation
+  winnerRewards?: {
+    first?: number; // sats for 1st place
+    second?: number; // sats for 2nd place
+    third?: number; // sats for 3rd place
+  };
+}
+
+// Workout Plan specific types
+export interface WorkoutPlanExercise {
+  name: string;
+  type: 'warmup' | 'intervals' | 'steady' | 'cooldown' | 'strength';
+  duration?: string; // e.g., "10 minutes"
+  distance?: string; // e.g., "2km"
+  intensity?: 'easy' | 'moderate' | 'hard';
+  sets?: number;
+  reps?: number;
+  notes?: string;
+}
+
+export interface WorkoutPlanDetails {
+  id: string;
+  teamAIdentifier: string;
+  name: string;
+  description?: string;
+  duration?: string; // e.g., "4 weeks"
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  exercises: WorkoutPlanExercise[];
+  creatorPubkey: string;
+  createdAt: number;
 }
 
 export interface EventParticipation {
@@ -1296,6 +1328,12 @@ export async function createTeamEvent(
     startTime?: string;
     endTime?: string;
     creatorPubkey: string;
+    participationReward?: number;
+    winnerRewards?: {
+      first?: number;
+      second?: number;
+      third?: number;
+    };
   }
 ): Promise<string | null> {
   if (!ndk) {
@@ -1321,6 +1359,20 @@ export async function createTeamEvent(
   }
   if (eventData.endTime) {
     tags.push(["end_time", eventData.endTime]);
+  }
+  
+  // Add reward tags
+  if (eventData.participationReward) {
+    tags.push(["participation_reward", eventData.participationReward.toString()]);
+  }
+  if (eventData.winnerRewards?.first) {
+    tags.push(["winner_reward_first", eventData.winnerRewards.first.toString()]);
+  }
+  if (eventData.winnerRewards?.second) {
+    tags.push(["winner_reward_second", eventData.winnerRewards.second.toString()]);
+  }
+  if (eventData.winnerRewards?.third) {
+    tags.push(["winner_reward_third", eventData.winnerRewards.third.toString()]);
   }
 
   const eventTemplate: EventTemplate = {
@@ -1419,6 +1471,12 @@ export async function fetchTeamEventById(
         return null;
       }
 
+      // Parse reward data
+      const participationReward = tags.find(t => t[0] === 'participation_reward')?.[1];
+      const firstPlaceReward = tags.find(t => t[0] === 'winner_reward_first')?.[1];
+      const secondPlaceReward = tags.find(t => t[0] === 'winner_reward_second')?.[1];
+      const thirdPlaceReward = tags.find(t => t[0] === 'winner_reward_third')?.[1];
+
       const eventDetails: TeamEventDetails = {
         id: eventIdFromTags,
         teamAIdentifier: teamAIdentifier,
@@ -1431,7 +1489,13 @@ export async function fetchTeamEventById(
         endTime: tags.find(t => t[0] === 'end_time')?.[1],
         creatorPubkey: rawEvent.pubkey,
         createdAt: rawEvent.created_at,
-        participantCount: 0 // Will be populated by other services
+        participantCount: 0, // Will be populated by other services
+        participationReward: participationReward ? parseInt(participationReward) : undefined,
+        winnerRewards: (firstPlaceReward || secondPlaceReward || thirdPlaceReward) ? {
+          first: firstPlaceReward ? parseInt(firstPlaceReward) : undefined,
+          second: secondPlaceReward ? parseInt(secondPlaceReward) : undefined,
+          third: thirdPlaceReward ? parseInt(thirdPlaceReward) : undefined,
+        } : undefined
       };
       
       console.log(`[fetchTeamEventById] Successfully fetched event ${eventId}: "${eventDetails.name}"`);
@@ -1540,6 +1604,12 @@ export async function fetchTeamEvents(
               return null;
             }
 
+            // Parse reward data
+            const participationReward = tags.find(t => t[0] === 'participation_reward')?.[1];
+            const firstPlaceReward = tags.find(t => t[0] === 'winner_reward_first')?.[1];
+            const secondPlaceReward = tags.find(t => t[0] === 'winner_reward_second')?.[1];
+            const thirdPlaceReward = tags.find(t => t[0] === 'winner_reward_third')?.[1];
+
             return {
               id: eventId,
               teamAIdentifier: teamAIdentifier,
@@ -1552,7 +1622,13 @@ export async function fetchTeamEvents(
               endTime: tags.find(t => t[0] === 'end_time')?.[1],
               creatorPubkey: rawEvent.pubkey,
               createdAt: rawEvent.created_at,
-              participantCount: 0 // Will be populated by other services
+              participantCount: 0, // Will be populated by other services
+              participationReward: participationReward ? parseInt(participationReward) : undefined,
+              winnerRewards: (firstPlaceReward || secondPlaceReward || thirdPlaceReward) ? {
+                first: firstPlaceReward ? parseInt(firstPlaceReward) : undefined,
+                second: secondPlaceReward ? parseInt(secondPlaceReward) : undefined,
+                third: thirdPlaceReward ? parseInt(thirdPlaceReward) : undefined,
+              } : undefined
             };
           } catch (err) {
             console.error(`[fetchTeamEvents] Error processing event:`, err);
@@ -2135,4 +2211,316 @@ export async function fetchEventActivities(
     console.error('Error fetching event activities:', error);
     return [];
   }
+}
+
+// --- Workout Plan Functions ---
+
+/**
+ * Creates a new workout plan (KIND_WORKOUT_PLAN)
+ */
+export async function createWorkoutPlan(
+  ndk: NDK,
+  planData: {
+    teamAIdentifier: string;
+    name: string;
+    description?: string;
+    duration?: string;
+    difficulty: 'beginner' | 'intermediate' | 'advanced';
+    exercises: WorkoutPlanExercise[];
+    creatorPubkey: string;
+  }
+): Promise<string | null> {
+  if (!ndk) {
+    console.error("NDK instance not provided to createWorkoutPlan.");
+    return null;
+  }
+
+  const planId = uuidv4();
+  const tags = [
+    ["d", planId],
+    ["h", planData.teamAIdentifier.split(':')[2]], // Extract team UUID for h tag
+    ["title", planData.name],
+    ["t", "workout-plan"],
+    ["difficulty", planData.difficulty],
+    ["p", planData.creatorPubkey]
+  ];
+
+  if (planData.duration) {
+    tags.push(["duration", planData.duration]);
+  }
+
+  // Create NIP101e compliant content
+  const content = {
+    name: planData.name,
+    description: planData.description || '',
+    duration: planData.duration || '',
+    difficulty: planData.difficulty,
+    exercises: planData.exercises
+  };
+
+  const eventTemplate: EventTemplate = {
+    kind: KIND_WORKOUT_PLAN,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: tags,
+    content: JSON.stringify(content)
+  };
+
+  try {
+    const ndkEvent = new NDKEvent(ndk, { ...eventTemplate, pubkey: planData.creatorPubkey });
+    await ndkEvent.sign();
+    const publishedRelays = await ndkEvent.publish();
+    
+    if (publishedRelays.size > 0) {
+      console.log(`Workout plan created successfully: ${planId}`);
+      return planId;
+    } else {
+      console.error("Failed to publish workout plan to any relays.");
+      return null;
+    }
+  } catch (error) {
+    console.error("Error creating workout plan:", error);
+    return null;
+  }
+}
+
+/**
+ * Enhanced workout plans fetching with resilience patterns
+ * Queries only the captain's pubkey for efficiency
+ */
+export async function fetchWorkoutPlans(
+  ndk: NDK,
+  captainPubkey: string,
+  teamUUID: string
+): Promise<WorkoutPlanDetails[]> {
+  if (!ndk) {
+    const error = new Error("NDK instance not provided to fetchWorkoutPlans");
+    console.error(error.message);
+    throw error;
+  }
+
+  if (!captainPubkey || !teamUUID) {
+    const error = new Error("Captain pubkey and team UUID are required for fetchWorkoutPlans");
+    console.error(error.message);  
+    throw error;
+  }
+
+  const MAX_RETRIES = 3;
+  const INITIAL_DELAY = 1000; // 1 second
+  const MAX_PLANS = 100;
+  
+  const filter: NDKFilter = {
+    kinds: [KIND_WORKOUT_PLAN as NDKKind],
+    authors: [captainPubkey], // Query only captain's pubkey for efficiency
+    '#h': [teamUUID], // Filter by team UUID
+    limit: MAX_PLANS
+  };
+
+  let lastError: Error | null = null;
+
+  // Retry logic with exponential backoff
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`[fetchWorkoutPlans] Attempt ${attempt + 1}/${MAX_RETRIES + 1} for captain ${captainPubkey} team ${teamUUID}`);
+      
+      const eventsSet = await ndk.fetchEvents(filter, { 
+        cacheUsage: NDKSubscriptionCacheUsage.CACHE_FIRST,
+        closeOnEose: true
+      });
+      
+      if (!eventsSet || eventsSet.size === 0) {
+        console.log(`[fetchWorkoutPlans] No workout plans found for captain ${captainPubkey} team ${teamUUID}`);
+        return [];
+      }
+
+      const processedPlans: WorkoutPlanDetails[] = [];
+      
+      Array.from(eventsSet).forEach(ndkEvent => {
+        try {
+          const rawEvent = ndkEvent.rawEvent();
+          const tags = rawEvent.tags;
+          
+          // Enhanced validation
+          const planId = tags.find(t => t[0] === 'd')?.[1];
+          if (!planId) {
+            console.warn(`[fetchWorkoutPlans] Plan missing required 'd' tag, skipping:`, rawEvent.id);
+            return;
+          }
+
+          const title = tags.find(t => t[0] === 'title')?.[1];
+          if (!title) {
+            console.warn(`[fetchWorkoutPlans] Plan missing required title, skipping:`, planId);
+            return;
+          }
+
+          // Parse content
+          let parsedContent;
+          try {
+            parsedContent = JSON.parse(rawEvent.content);
+          } catch (err) {
+            console.warn(`[fetchWorkoutPlans] Failed to parse plan content, skipping:`, planId);
+            return;
+          }
+
+          const workoutPlan: WorkoutPlanDetails = {
+            id: planId,
+            teamAIdentifier: `33404:${captainPubkey}:${teamUUID}`,
+            name: title,
+            description: parsedContent.description || '',
+            duration: tags.find(t => t[0] === 'duration')?.[1] || parsedContent.duration || '',
+            difficulty: (tags.find(t => t[0] === 'difficulty')?.[1] || parsedContent.difficulty || 'beginner') as 'beginner' | 'intermediate' | 'advanced',
+            exercises: parsedContent.exercises || [],
+            creatorPubkey: rawEvent.pubkey,
+            createdAt: rawEvent.created_at
+          };
+
+          processedPlans.push(workoutPlan);
+        } catch (err) {
+          console.error(`[fetchWorkoutPlans] Error processing workout plan:`, err);
+        }
+      });
+
+      // Sort by creation time (newest first)
+      processedPlans.sort((a, b) => b.createdAt - a.createdAt);
+      
+      console.log(`[fetchWorkoutPlans] Successfully fetched ${processedPlans.length} workout plans for captain ${captainPubkey} team ${teamUUID}`);
+      return processedPlans;
+
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.error(`[fetchWorkoutPlans] Attempt ${attempt + 1} failed:`, lastError.message);
+      
+      // If this is the last attempt, don't wait
+      if (attempt === MAX_RETRIES) {
+        break;
+      }
+      
+      // Exponential backoff
+      const delay = INITIAL_DELAY * Math.pow(2, attempt);
+      console.log(`[fetchWorkoutPlans] Retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  // All retries failed - throw the last error with context
+  const finalError = new Error(
+    `Failed to fetch workout plans after ${MAX_RETRIES + 1} attempts: ${lastError?.message || 'Unknown error'}`
+  );
+  console.error(`[fetchWorkoutPlans] Final failure for captain ${captainPubkey} team ${teamUUID}:`, finalError.message);
+  throw finalError;
+}
+
+/**
+ * Fetches a specific workout plan by ID
+ */
+export async function fetchWorkoutPlanById(
+  ndk: NDK,
+  captainPubkey: string,
+  planId: string
+): Promise<WorkoutPlanDetails | null> {
+  if (!ndk) {
+    const error = new Error("NDK instance not provided to fetchWorkoutPlanById");
+    console.error(error.message);
+    throw error;
+  }
+
+  if (!captainPubkey || !planId) {
+    const error = new Error("Captain pubkey and plan ID are required for fetchWorkoutPlanById");
+    console.error(error.message);
+    throw error;
+  }
+
+  const MAX_RETRIES = 3;
+  const INITIAL_DELAY = 1000; // 1 second
+  
+  const filter: NDKFilter = {
+    kinds: [KIND_WORKOUT_PLAN as NDKKind],
+    authors: [captainPubkey], // Query only captain's pubkey
+    '#d': [planId],
+    limit: 1
+  };
+
+  let lastError: Error | null = null;
+
+  // Retry logic with exponential backoff
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`[fetchWorkoutPlanById] Attempt ${attempt + 1}/${MAX_RETRIES + 1} for plan ${planId}`);
+      
+      const eventsSet = await ndk.fetchEvents(filter, { 
+        cacheUsage: NDKSubscriptionCacheUsage.CACHE_FIRST,
+        closeOnEose: true
+      });
+      
+      if (!eventsSet || eventsSet.size === 0) {
+        console.log(`[fetchWorkoutPlanById] No workout plan found with ID ${planId} by captain ${captainPubkey}`);
+        return null;
+      }
+
+      const ndkEvent = Array.from(eventsSet)[0];
+      const rawEvent = ndkEvent.rawEvent();
+      const tags = rawEvent.tags;
+      
+      // Enhanced validation
+      const planIdFromTags = tags.find(t => t[0] === 'd')?.[1];
+      if (!planIdFromTags) {
+        console.warn(`[fetchWorkoutPlanById] Plan missing required 'd' tag, skipping:`, rawEvent.id);
+        return null;
+      }
+
+      const title = tags.find(t => t[0] === 'title')?.[1];
+      if (!title) {
+        console.warn(`[fetchWorkoutPlanById] Plan missing required title, skipping:`, planIdFromTags);
+        return null;
+      }
+
+      // Parse content
+      let parsedContent;
+      try {
+        parsedContent = JSON.parse(rawEvent.content);
+      } catch (err) {
+        console.warn(`[fetchWorkoutPlanById] Failed to parse plan content:`, planIdFromTags);
+        return null;
+      }
+
+      // Extract team UUID from h tag for team identifier reconstruction
+      const teamUUID = tags.find(t => t[0] === 'h')?.[1];
+      const teamAIdentifier = teamUUID ? `33404:${captainPubkey}:${teamUUID}` : '';
+
+      const workoutPlan: WorkoutPlanDetails = {
+        id: planIdFromTags,
+        teamAIdentifier: teamAIdentifier,
+        name: title,
+        description: parsedContent.description || '',
+        duration: tags.find(t => t[0] === 'duration')?.[1] || parsedContent.duration || '',
+        difficulty: (tags.find(t => t[0] === 'difficulty')?.[1] || parsedContent.difficulty || 'beginner') as 'beginner' | 'intermediate' | 'advanced',
+        exercises: parsedContent.exercises || [],
+        creatorPubkey: rawEvent.pubkey,
+        createdAt: rawEvent.created_at
+      };
+      
+      console.log(`[fetchWorkoutPlanById] Successfully fetched workout plan ${planId}: "${workoutPlan.name}"`);
+      return workoutPlan;
+
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.error(`[fetchWorkoutPlanById] Attempt ${attempt + 1} failed:`, lastError.message);
+      
+      // If this is the last attempt, don't wait
+      if (attempt === MAX_RETRIES) {
+        break;
+      }
+      
+      // Exponential backoff
+      const delay = INITIAL_DELAY * Math.pow(2, attempt);
+      console.log(`[fetchWorkoutPlanById] Retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  // All retries failed - throw the last error with context 
+  const finalError = new Error(
+    `Failed to fetch workout plan ${planId} after ${MAX_RETRIES + 1} attempts: ${lastError?.message || 'Unknown error'}`
+  );
+  console.error(`[fetchWorkoutPlanById] Final failure for plan ${planId}:`, finalError.message);
+  throw finalError;
 } 

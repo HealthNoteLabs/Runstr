@@ -50,20 +50,60 @@ function getWeekDateRange() {
   };
 }
 
-// Fetch weekly data (simplified version combining both scripts)
+// Helper function to fetch events via subscribe with timeout
+async function fetchWeeklyWorkoutEvents(ndkInstance, sinceTimestamp) {
+  return new Promise((resolve) => {
+    const collected = new Map();
+
+    const sub = ndkInstance.subscribe(
+      {
+        kinds: [1301],
+        since: sinceTimestamp,
+      },
+      { closeOnEose: false }
+    );
+
+    const done = () => {
+      try { sub.stop(); } catch (_) {}
+      resolve(new Set(collected.values()));
+    };
+
+    // Safety timeout
+    const timeoutId = setTimeout(done, 30000);
+
+    sub.on("event", (ev) => {
+      collected.set(ev.id, ev);
+    });
+
+    sub.on("eose", () => {
+      clearTimeout(timeoutId);
+      done();
+    });
+  });
+}
+
+// Fetch weekly data (using NDK like the rewards script)
 async function fetchWeeklyData() {
-  const pool = new SimplePool();
+  const ndk = new NDK({
+    explicitRelayUrls: RELAYS,
+  });
+  
   const sinceTimestamp = Math.floor(Date.now() / 1000) - WEEK_IN_SECONDS;
   
-  console.log(`${colors.blue}🔄 Fetching weekly data...${colors.reset}`);
+  console.log(`${colors.blue}🔄 Connecting to Nostr relays...${colors.reset}`);
   
   try {
-    const events = await pool.querySync(RELAYS, {
-      kinds: [1301],
-      since: sinceTimestamp,
-    });
+    await ndk.connect();
+    console.log(`${colors.green}✅ Connected to ${RELAYS.length} relays.${colors.reset}`);
     
-    const runstrEvents = events.filter(event => 
+    console.log(`${colors.blue}🔍 Fetching workout events from the last 7 days...${colors.reset}`);
+    
+    let events = await fetchWeeklyWorkoutEvents(ndk, sinceTimestamp);
+    
+    console.log(`${colors.cyan}📥 Fetched ${events.size} total kind:1301 events${colors.reset}`);
+    
+    // Filter for RUNSTR events
+    const runstrEvents = Array.from(events).filter(event => 
       event.tags.some(tag => 
         (tag[0] === 'client' && RUNSTR_IDENTIFIERS.some(id => tag[1]?.toLowerCase().includes(id.toLowerCase()))) ||
         (tag[0] === 'source' && RUNSTR_IDENTIFIERS.some(id => tag[1]?.toLowerCase().includes(id.toLowerCase())))
@@ -76,8 +116,6 @@ async function fetchWeeklyData() {
   } catch (error) {
     console.error(`${colors.red}❌ Error fetching events:${colors.reset}`, error);
     return [];
-  } finally {
-    pool.close(RELAYS);
   }
 }
 

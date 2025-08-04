@@ -40,6 +40,7 @@ import { useTeamActivity } from '../hooks/useTeamActivity';
 import { setDefaultPostingTeamIdentifier, getDefaultPostingTeamIdentifier } from '../utils/settingsManager';
 import { cacheTeamName } from '../services/nameResolver';
 import TeamEventsTab from '../components/teams/TeamEventsTab';
+import WorkoutPlansTab from '../components/teams/WorkoutPlansTab';
 
 // Define a type for the route parameters
 interface TeamDetailParams extends Record<string, string | undefined> {
@@ -70,7 +71,7 @@ const TeamDetailPage: React.FC = () => {
   const [team, setTeam] = useState<NostrTeamEvent | null>(seededEvent);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'chat' | 'members' | 'events'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'members' | 'events' | 'workout-plans'>('chat');
 
   const [teamFeed, setTeamFeed] = useState<NostrWorkoutEvent[]>([]);
   const [isLoadingFeed, setIsLoadingFeed] = useState<boolean>(false);
@@ -464,9 +465,10 @@ const TeamDetailPage: React.FC = () => {
     return (
       <div className="mb-8 border-b border-border-secondary">
         <nav className="-mb-px flex space-x-6 sm:space-x-8 overflow-x-auto pb-px scrollbar-hide" aria-label="Tabs">
-          {['chat', 'members', 'events'].map((tabName) => {
+          {['chat', 'members', 'events', 'workout-plans'].map((tabName) => {
             let displayName = tabName;
             if (tabName === 'members') displayName = 'Members';
+            else if (tabName === 'workout-plans') displayName = 'Workout Plans';
             else displayName = tabName.charAt(0).toUpperCase() + tabName.slice(1);
 
             return (
@@ -536,6 +538,19 @@ const TeamDetailPage: React.FC = () => {
         isCaptain={isCurrentUserCaptain}
         captainPubkey={captainPubkey}
         teamUUID={teamUUID}
+      />
+    );
+  };
+
+  const renderWorkoutPlansTabContent = () => {
+    if (!captainPubkey || !teamUUID) {
+      return <div className="text-text-muted p-4 text-center">Workout plans unavailable – missing team parameters</div>;
+    }
+    return (
+      <WorkoutPlansTab 
+        captainPubkey={captainPubkey}
+        teamUUID={teamUUID}
+        isCaptain={isCurrentUserCaptain}
       />
     );
   };
@@ -614,6 +629,8 @@ const TeamDetailPage: React.FC = () => {
         );
       case 'events':
         return renderEventsTabContent();
+      case 'workout-plans':
+        return renderWorkoutPlansTabContent();
       default:
         return null;
     }

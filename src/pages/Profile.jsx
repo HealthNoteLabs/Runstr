@@ -1,18 +1,28 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRunProfile } from '../hooks/useRunProfile';
 import { publishHealthProfile } from '../utils/nostrHealth';
 import { useSettings } from '../contexts/SettingsContext';
+import { useNostr } from '../hooks/useNostr';
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
+import SubscriptionModal from '../components/modals/SubscriptionModal';
+import enhancedSubscriptionService from '../services/enhancedSubscriptionService';
 import '../assets/styles/profile.css';
 
 export const Profile = () => {
   const navigate = useNavigate();
+  const { publicKey } = useNostr();
   
   // State for Nostr publishing
   const [isPublishing, setIsPublishing] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  
+  // State for subscription
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [subscriptionTier, setSubscriptionTier] = useState(null);
+  const [subscriberCount, setSubscriberCount] = useState(0);
+  const [isLoadingSubscription, setIsLoadingSubscription] = useState(true);
   
   // Get user profile from custom hook
   const { 
@@ -24,6 +34,29 @@ export const Profile = () => {
   } = useRunProfile();
 
   const { isHealthEncryptionEnabled } = useSettings();
+
+  // Load subscription status when component mounts
+  useEffect(() => {
+    const loadSubscriptionStatus = async () => {
+      if (!publicKey) {
+        setIsLoadingSubscription(false);
+        return;
+      }
+
+      try {
+        const tier = await enhancedSubscriptionService.getSubscriptionTier(publicKey);
+        const counts = await enhancedSubscriptionService.getSubscriberCountByTier();
+        setSubscriptionTier(tier);
+        setSubscriberCount(counts.total);
+      } catch (error) {
+        console.error('Error loading subscription status:', error);
+      } finally {
+        setIsLoadingSubscription(false);
+      }
+    };
+
+    loadSubscriptionStatus();
+  }, [publicKey]);
 
   // Custom submit handler that navigates back after saving
   const handleProfileSubmit = () => {
@@ -67,6 +100,21 @@ export const Profile = () => {
       }
     } finally {
       setIsPublishing(false);
+    }
+  };
+
+  // Handle successful subscription
+  const handleSubscriptionSuccess = async () => {
+    // Reload subscription status
+    if (publicKey) {
+      try {
+        const tier = await enhancedSubscriptionService.getSubscriptionTier(publicKey, true); // Force refresh
+        const counts = await enhancedSubscriptionService.getSubscriberCountByTier(true);
+        setSubscriptionTier(tier);
+        setSubscriberCount(counts.total);
+      } catch (error) {
+        console.error('Error reloading subscription status:', error);
+      }
     }
   };
 
@@ -218,6 +266,100 @@ export const Profile = () => {
           </Button>
         </div>
       </div>
+
+      {/* Subscription Section */}
+      <div className="form-container" style={{ marginTop: '2rem' }}>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">Premium Subscription</h3>
+        
+        {isLoadingSubscription ? (
+          <div className="text-center py-4">
+            <div className="w-8 h-8 border-2 border-text-primary border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="text-text-secondary text-sm mt-2">Loading subscription status...</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {subscriptionTier ? (
+              // User has active subscription
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-semibold text-green-800">
+                    {subscriptionTier === 'captain' ? 'Captain' : 'Member'} Subscription Active ⭐
+                  </h4>
+                  <span className="text-xs text-green-600 px-2 py-1 bg-green-100 rounded-full">
+                    Premium
+                  </span>
+                </div>
+                <p className="text-sm text-green-700 mb-3">
+                  You're enjoying {subscriptionTier === 'captain' ? 'captain privileges and ' : ''}automatic daily rewards!
+                </p>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-green-600">
+                    Join {subscriberCount} other premium subscribers
+                  </span>
+                  <Button 
+                    onClick={() => setShowSubscriptionModal(true)}
+                    variant="outline"
+                    size="sm"
+                    className="text-green-700 border-green-300 hover:bg-green-100"
+                  >
+                    Manage Subscription
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              // User doesn't have subscription
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <h4 className="font-semibold text-yellow-800 mb-1">
+                      Unlock Premium Features ⭐
+                    </h4>
+                    <p className="text-sm text-yellow-700 mb-2">
+                      Get automatic daily rewards for completing streaks!
+                    </p>
+                    <div className="text-xs text-yellow-600 space-y-1">
+                      <div className="flex items-center">
+                        <span className="w-1.5 h-1.5 bg-yellow-400 rounded-full mr-2"></span>
+                        Member: 5,000 sats/month • Daily rewards + team access
+                      </div>
+                      <div className="flex items-center">
+                        <span className="w-1.5 h-1.5 bg-yellow-400 rounded-full mr-2"></span>
+                        Captain: 10,000 sats/month • Create teams + prize events
+                      </div>
+                    </div>
+                  </div>
+                  <Button 
+                    onClick={() => setShowSubscriptionModal(true)}
+                    variant="default"
+                    size="sm"
+                    className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                    disabled={!publicKey}
+                  >
+                    Subscribe
+                  </Button>
+                </div>
+                {subscriberCount > 0 && (
+                  <p className="text-xs text-yellow-600 mt-2">
+                    {subscriberCount} runners are already earning rewards
+                  </p>
+                )}
+                {!publicKey && (
+                  <p className="text-xs text-red-600 mt-2">
+                    Connect your Nostr account to subscribe
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Subscription Modal */}
+      <SubscriptionModal 
+        open={showSubscriptionModal}
+        onClose={() => setShowSubscriptionModal(false)}
+        onSubscriptionSuccess={handleSubscriptionSuccess}
+      />
 
       {/* Confirmation Dialog */}
       {showConfirmation && (

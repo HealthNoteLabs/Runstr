@@ -83,6 +83,26 @@ export const CACHE_KEYS = {
       return null;
     }
     return `runstr_team_events__${cleanTeamId}__${CACHE_VERSION}`;
+  },
+  WORKOUT_PLANS: (captainPubkey, teamUUID) => {
+    const cleanCaptainPubkey = sanitizeCacheKeyComponent(captainPubkey);
+    const cleanTeamUUID = sanitizeCacheKeyComponent(teamUUID);
+    
+    if (!cleanCaptainPubkey || !cleanTeamUUID) {
+      console.warn('[CACHE_KEYS] Invalid captainPubkey or teamUUID for WORKOUT_PLANS', { captainPubkey, teamUUID });
+      return null;
+    }
+    return `runstr_workout_plans__${cleanCaptainPubkey}__${cleanTeamUUID}__${CACHE_VERSION}`;
+  },
+  WORKOUT_PLAN_DETAILS: (captainPubkey, planId) => {
+    const cleanCaptainPubkey = sanitizeCacheKeyComponent(captainPubkey);
+    const cleanPlanId = sanitizeCacheKeyComponent(planId);
+    
+    if (!cleanCaptainPubkey || !cleanPlanId) {
+      console.warn('[CACHE_KEYS] Invalid captainPubkey or planId for WORKOUT_PLAN_DETAILS', { captainPubkey, planId });
+      return null;
+    }
+    return `runstr_workout_plan_details__${cleanCaptainPubkey}__${cleanPlanId}__${CACHE_VERSION}`;
   }
 };
 
@@ -94,7 +114,9 @@ export const CACHE_TTL = {
   PARTICIPANTS: 5 * 60 * 1000,   // 5 minutes - people join/leave but not frequently
   PARTICIPATION: 3 * 60 * 1000,  // 3 minutes - completion data updates during events
   ACTIVITIES: 5 * 60 * 1000,     // 5 minutes - new activities but cache for UX
-  TEAM_EVENTS: TEAM_EVENTS_CACHE_DURATION_MS  // 15 minutes - event list changes infrequently
+  TEAM_EVENTS: TEAM_EVENTS_CACHE_DURATION_MS,  // 15 minutes - event list changes infrequently
+  WORKOUT_PLANS: TEAM_EVENTS_CACHE_DURATION_MS, // 15 minutes - workout plans rarely change
+  WORKOUT_PLAN_DETAILS: TEAM_EVENTS_CACHE_DURATION_MS // 15 minutes - individual plan details rarely change
 };
 
 /**
@@ -187,18 +209,18 @@ export const clearCachedData = (cacheKey) => {
 };
 
 /**
- * Clear all team events cache entries (for logout, etc.)
+ * Clear all team events and workout plans cache entries (for logout, etc.)
  */
 export const clearAllTeamEventsCache = () => {
   try {
     const keys = Object.keys(localStorage);
     keys.forEach(key => {
-      if (key.startsWith('runstr_team_') && key.includes(CACHE_VERSION)) {
+      if ((key.startsWith('runstr_team_') || key.startsWith('runstr_workout_')) && key.includes(CACHE_VERSION)) {
         localStorage.removeItem(key);
       }
     });
   } catch (err) {
-    console.error('Error clearing all team events cache:', err);
+    console.error('Error clearing all team events and workout plans cache:', err);
   }
 };
 

@@ -4,6 +4,9 @@
  */
 import { REWARDS } from '../config/rewardsConfig';
 import rewardsPayoutService from '../services/rewardsPayoutService';
+import enhancedSubscriptionService from '../services/enhancedSubscriptionService';
+import paymentVerificationService from '../services/paymentVerificationService';
+import teamMemberCountService from '../services/teamMemberCountService';
 
 const STREAK_DATA_KEY = 'runstrStreakData';
 
@@ -50,9 +53,10 @@ export const saveStreakData = (data: StreakData): boolean => {
  * This should be called after a new run is successfully recorded.
  * All date comparisons are done in the user's local time zone.
  * @param {Date} newRunDateObject - The Date object of the new run (in user's local time).
- * @returns {StreakData} The updated streak data.
+ * @param {string | null} publicKey - The user's public key for subscription check
+ * @returns {Promise<StreakData>} The updated streak data.
  */
-export const updateUserStreak = (newRunDateObject: Date, publicKey: string | null): StreakData => {
+export const updateUserStreak = async (newRunDateObject: Date, publicKey: string | null): Promise<StreakData> => {
   const data = getStreakData();
   const { capDays } = REWARDS.STREAK;
 
@@ -111,47 +115,82 @@ export const updateUserStreak = (newRunDateObject: Date, publicKey: string | nul
 
   saveStreakData(newData);
 
-  // Determine if a payout is needed (also enforces capDays)
-  const { amountToReward, effectiveDaysForReward } = calculateStreakReward(newData);
-  console.log('[StreakUtils] updateUserStreak: Calculated reward. Amount:', amountToReward, 'Effective Days:', effectiveDaysForReward, 'Pubkey:', publicKey);
-
-  if (amountToReward > 0) {
-    const lightningAddress = localStorage.getItem('lightningAddress');
-    // if (!lightningAddress) { // This warning is fine, primary is pubkey
-    //   console.warn('[StreakRewards] Lightning address not set – cannot pay reward. Ask user to add it in Settings > Wallet.');
-    // }
-    const dest = lightningAddress || publicKey;
-    console.log('[StreakUtils] updateUserStreak: Destination for reward:', dest);
-
-    if (dest) {
-      console.log('[StreakUtils] updateUserStreak: `dest` is valid, attempting optimistic notification.');
-      const pendingMsg = `🚀 Sending ${amountToReward} sats reward…`;
+  // Check subscription status
+  let subscriptionTier: 'member' | 'captain' | null = null;
+  let captainBonus = 0;
+  
+  if (publicKey) {
+    try {
+      subscriptionTier = await enhancedSubscriptionService.getSubscriptionTier(publicKey);
+      console.log('[StreakUtils] User subscription tier:', subscriptionTier);
       
+      // Calculate captain bonus if user is a captain
+      if (subscriptionTier === 'captain') {
+        captainBonus = await teamMemberCountService.calculateCaptainBonus(publicKey);
+        console.log('[StreakUtils] Captain bonus:', captainBonus, 'sats/day');
+      }
+    } catch (error) {
+      console.error('[StreakUtils] Error checking subscription:', error);
+    }
+  }
+
+  // Determine if a payout is needed (also enforces capDays)
+  const { amountToReward, effectiveDaysForReward, message } = calculateStreakReward(newData, subscriptionTier, captainBonus);
+  console.log('[StreakUtils] updateUserStreak:', message, 'Amount:', amountToReward, 'Pubkey:', publicKey);
+
+  if (amountToReward > 0 && subscriptionTier && publicKey) {
+    console.log('[StreakUtils] updateUserStreak: Starting reward process with payment verification...');
+    
+    // Verify payment destination first
+    try {
+      const verification = await paymentVerificationService.verifyPaymentDestination(publicKey);
+      
+      if (!verification.success) {
+        console.warn('[StreakUtils] Payment verification failed:', verification.error);
+        
+        // Show verification failure message
+        const failureMsg = `⚠️ ${effectiveDaysForReward}-day reward pending: Please update your Lightning address in Settings`;
+        if ((window as any).Android?.showToast) {
+          try {
+            (window as any).Android.showToast(failureMsg);
+          } catch (e) {
+            console.error('[StreakUtils] Error showing verification failure toast:', e);
+          }
+        } else if (typeof window !== 'undefined') {
+          console.log('[StreakUtils] Verification failure message:', failureMsg);
+        }
+        
+        return newData; // Exit early, reward not sent
+      }
+
+      const verifiedAddress = verification.lightningAddress;
+      console.log('[StreakUtils] Payment destination verified:', verifiedAddress);
+      
+      // Show optimistic notification
+      const pendingMsg = `🚀 Sending ${amountToReward} sats reward…`;
       let optimisticToastShown = false;
       if ((window as any).Android?.showToast) {
         try {
-          console.log('[StreakUtils] updateUserStreak: Attempting Android optimistic toast...');
           (window as any).Android.showToast(pendingMsg);
           optimisticToastShown = true;
-          console.log('[StreakUtils] updateUserStreak: Android optimistic toast attempted.');
         } catch (e) {
           console.error('[StreakUtils] updateUserStreak: Error calling Android optimistic toast:', e);
         }
       }
       
-      if (!optimisticToastShown && typeof window !== 'undefined') { // Fallback for web/dev
-        console.log('[StreakUtils] updateUserStreak: Attempting console.log optimistic notification:', pendingMsg);
-      } else if (!optimisticToastShown) {
-        console.log('[StreakUtils] updateUserStreak: No optimistic notification method available (not Android, not browser window).');
+      if (!optimisticToastShown && typeof window !== 'undefined') {
+        console.log('[StreakUtils] updateUserStreak: Optimistic notification:', pendingMsg);
       }
 
+      // Send reward using verified address
       rewardsPayoutService
-        .sendStreakReward(dest, amountToReward, effectiveDaysForReward, (localStorage.getItem('nwcConnectionString') || null))
+        .sendStreakReward(verifiedAddress || publicKey, amountToReward, effectiveDaysForReward, (localStorage.getItem('nwcConnectionString') || null))
         .then((result) => {
           console.log('[StreakUtils] updateUserStreak: sendStreakReward promise resolved. Result success:', result.success);
           if (result.success) {
             updateLastRewardedDay(effectiveDaysForReward);
-            const successMsg = `🎉 Streak reward sent: ${amountToReward} sats for day ${effectiveDaysForReward}!`;
+            const tierLabel = subscriptionTier === 'captain' ? 'Captain' : 'Member';
+            const successMsg = `🎉 ${tierLabel} reward: ${amountToReward} sats for ${effectiveDaysForReward}-day streak!`;
             console.log('[StreakUtils] updateUserStreak: Attempting success notification.');
 
             let successToastShown = false;
@@ -206,8 +245,34 @@ export const updateUserStreak = (newRunDateObject: Date, publicKey: string | nul
           console.warn('[StreakUtils] updateUserStreak: sendStreakReward promise was rejected. This is unusual as sendRewardZap should catch errors. Error:', err);
           // console.warn('[StreakRewards] Payout flow threw, but payment likely already sent:', err);
         });
-    } else {
-      console.warn('[StreakUtils] updateUserStreak: Reward payable, but `dest` is null/undefined. Pubkey:', publicKey, 'LN Address in LS:', lightningAddress);
+        
+    } catch (verificationError: any) {
+      console.error('[StreakUtils] Payment verification error:', verificationError);
+      
+      // Show generic error message
+      const errorMsg = `⚠️ Unable to verify payment address. Please check Settings`;
+      if ((window as any).Android?.showToast) {
+        try {
+          (window as any).Android.showToast(errorMsg);
+        } catch (e) {
+          console.error('[StreakUtils] Error showing verification error toast:', e);
+        }
+      } else if (typeof window !== 'undefined') {
+        console.log('[StreakUtils] Verification error message:', errorMsg);
+      }
+    }
+  } else if (!subscriptionTier && newData.currentStreakDays > 0) {
+    // Show upgrade message for non-subscribers with streaks
+    const upgradeMsg = `🔥 ${newData.currentStreakDays}-day streak! Subscribe to earn ${Math.floor(REWARDS.STREAK.satsPerDay * REWARDS.STREAK.subscriberMultipliers.member)} sats/day`;
+    
+    if ((window as any).Android?.showToast) {
+      try {
+        (window as any).Android.showToast(upgradeMsg);
+      } catch (e) {
+        console.error('[StreakUtils] updateUserStreak: Error showing upgrade toast:', e);
+      }
+    } else if (typeof window !== 'undefined') {
+      console.log('[StreakUtils] Non-subscriber upgrade message:', upgradeMsg);
     }
   } else {
     console.log('[StreakUtils] updateUserStreak: No reward amount due.');
@@ -219,14 +284,25 @@ export const updateUserStreak = (newRunDateObject: Date, publicKey: string | nul
  * Calculates the reward amount for the current streak status.
  * Does NOT trigger a payout, only calculates.
  * @param {StreakData} streakData - The current streak data for the user.
+ * @param {string | null} subscriptionTier - The user's subscription tier ('member', 'captain', or null)
+ * @param {number} captainBonus - Additional bonus for captains based on team size (default: 0)
  * @returns {{ amountToReward: number, effectiveDaysForReward: number, message: string }}
  */
-export const calculateStreakReward = (streakData: StreakData): { amountToReward: number, effectiveDaysForReward: number, message: string } => {
+export const calculateStreakReward = (streakData: StreakData, subscriptionTier: 'member' | 'captain' | null = null, captainBonus: number = 0): { amountToReward: number, effectiveDaysForReward: number, message: string } => {
   const { currentStreakDays, lastRewardedDay } = streakData;
-  const { satsPerDay, capDays } = REWARDS.STREAK;
+  const { satsPerDay, capDays, subscriberMultipliers } = REWARDS.STREAK;
 
   if (currentStreakDays === 0) {
     return { amountToReward: 0, effectiveDaysForReward: 0, message: 'No current streak.' };
+  }
+
+  // Non-subscribers don't get rewards
+  if (!subscriptionTier) {
+    return { 
+      amountToReward: 0, 
+      effectiveDaysForReward: Math.min(currentStreakDays, capDays), 
+      message: `${currentStreakDays}-day streak! Subscribe to earn daily rewards.` 
+    };
   }
 
   // Effective days for reward calculation is capped.
@@ -234,26 +310,37 @@ export const calculateStreakReward = (streakData: StreakData): { amountToReward:
 
   // We only reward for days *beyond* the last day we gave a reward for,
   // up to the current effective (capped) streak.
-  // Example: lastRewardedDay = 2, currentStreakDays = 4 (effectiveDaysForReward = 4)
-  //         Reward for day 3 and day 4. (4 - 2) * satsPerDay = 2 * 50 = 100
-  // Example: lastRewardedDay = 0, currentStreakDays = 1 (effectiveDaysForReward = 1)
-  //         Reward for day 1. (1 - 0) * satsPerDay = 1 * 50 = 50
-  // Example: lastRewardedDay = 7, currentStreakDays = 8 (effectiveDaysForReward = 7)
-  //         No new reward, already at cap. (7 - 7) * satsPerDay = 0
   let daysToRewardIncrement = 0;
   if (effectiveDaysForReward > lastRewardedDay) {
       daysToRewardIncrement = effectiveDaysForReward - lastRewardedDay;
   }
 
-  const amountToReward = daysToRewardIncrement * satsPerDay;
+  // Apply subscription multiplier
+  const multiplier = subscriptionTier === 'captain' ? subscriberMultipliers.captain : subscriberMultipliers.member;
+  const adjustedSatsPerDay = Math.floor(satsPerDay * multiplier);
+  
+  // Calculate base streak reward
+  const baseReward = daysToRewardIncrement * adjustedSatsPerDay;
+  
+  // Add captain bonus (only applies to captains and only for new reward days)
+  const dailyCaptainBonus = subscriptionTier === 'captain' ? captainBonus : 0;
+  const totalCaptainBonus = daysToRewardIncrement * dailyCaptainBonus;
+  
+  const amountToReward = baseReward + totalCaptainBonus;
 
   let message = '';
+  const tierLabel = subscriptionTier === 'captain' ? 'Captain' : 'Member';
+  
   if (amountToReward > 0) {
-      message = `Eligible for ${amountToReward} sats for reaching ${effectiveDaysForReward}-day streak (rewarded for ${daysToRewardIncrement} new day(s)).`;
+    if (subscriptionTier === 'captain' && totalCaptainBonus > 0) {
+      message = `${tierLabel} reward: ${amountToReward} sats for ${effectiveDaysForReward}-day streak! (${adjustedSatsPerDay} base + ${dailyCaptainBonus} team bonus/day)`;
+    } else {
+      message = `${tierLabel} reward: ${amountToReward} sats for ${effectiveDaysForReward}-day streak! (${adjustedSatsPerDay} sats/day)`;
+    }
   } else if (currentStreakDays > 0 && effectiveDaysForReward === lastRewardedDay && effectiveDaysForReward === capDays) {
-      message = `Streak at ${currentStreakDays} days (max reward cap of ${capDays} days reached, last rewarded for day ${lastRewardedDay}).`;
+      message = `Streak at ${currentStreakDays} days (max reward cap of ${capDays} days reached).`;
   } else if (currentStreakDays > 0 && effectiveDaysForReward <= lastRewardedDay) {
-      message = `Current streak: ${currentStreakDays} days. Last rewarded for day ${lastRewardedDay}. No new increment to reward.`;
+      message = `Current streak: ${currentStreakDays} days. Already rewarded through day ${lastRewardedDay}.`;
   } else {
       message = `Current streak: ${currentStreakDays} days.`;
   }
@@ -310,9 +397,26 @@ export const syncStreakWithStats = async (externalStreakDays: number, publicKey:
   };
   saveStreakData(merged);
 
+  // Check subscription status
+  let subscriptionTier: 'member' | 'captain' | null = null;
+  let captainBonus = 0;
+  
+  if (publicKey) {
+    try {
+      subscriptionTier = await enhancedSubscriptionService.getSubscriptionTier(publicKey);
+      
+      // Calculate captain bonus if user is a captain
+      if (subscriptionTier === 'captain') {
+        captainBonus = await teamMemberCountService.calculateCaptainBonus(publicKey);
+      }
+    } catch (error) {
+      console.error('[StreakUtils] syncStreakWithStats: Error checking subscription:', error);
+    }
+  }
+
   // Determine if a payout is needed (also enforces capDays)
-  const { amountToReward, effectiveDaysForReward } = calculateStreakReward(merged);
-  if (amountToReward > 0) {
+  const { amountToReward, effectiveDaysForReward } = calculateStreakReward(merged, subscriptionTier, captainBonus);
+  if (amountToReward > 0 && subscriptionTier) {
     const lightningAddress = localStorage.getItem('lightningAddress');
     if (!lightningAddress) {
       console.warn('[StreakRewards] Lightning address not set – cannot pay reward. Ask user to add it in Settings > Wallet.');
@@ -325,7 +429,8 @@ export const syncStreakWithStats = async (externalStreakDays: number, publicKey:
         if (result.success) {
           updateLastRewardedDay(effectiveDaysForReward);
           // Notify user
-          const successMsg = `🎉 Streak reward sent: ${amountToReward} sats for day ${effectiveDaysForReward}!`;
+          const tierLabel = subscriptionTier === 'captain' ? 'Captain' : 'Member';
+          const successMsg = `🎉 ${tierLabel} reward: ${amountToReward} sats for ${effectiveDaysForReward}-day streak!`;
           if ((window as any).Android?.showToast) {
             (window as any).Android.showToast(successMsg);
           } else if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {

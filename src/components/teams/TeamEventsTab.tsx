@@ -509,6 +509,31 @@ const TeamEventsTab: React.FC<TeamEventsTabProps> = ({
                           {event.description}
                         </p>
                       )}
+                      {/* Reward display */}
+                      {(event.participationReward || event.winnerRewards) && (
+                        <div className="flex items-center gap-3 mt-2">
+                          {event.participationReward && (
+                            <span className="text-xs font-medium text-black bg-yellow-400 px-2 py-1 rounded">
+                              {event.participationReward} sats participation
+                            </span>
+                          )}
+                          {event.winnerRewards?.first && (
+                            <span className="text-xs font-medium text-black bg-green-400 px-2 py-1 rounded">
+                              🥇 {event.winnerRewards.first} sats
+                            </span>
+                          )}
+                          {event.winnerRewards?.second && (
+                            <span className="text-xs font-medium text-black bg-gray-300 px-2 py-1 rounded">
+                              🥈 {event.winnerRewards.second} sats
+                            </span>
+                          )}
+                          {event.winnerRewards?.third && (
+                            <span className="text-xs font-medium text-black bg-orange-300 px-2 py-1 rounded">
+                              🥉 {event.winnerRewards.third} sats
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                   {getStatusBadge(status, event.date)}

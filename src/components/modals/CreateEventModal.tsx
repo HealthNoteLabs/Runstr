@@ -26,6 +26,12 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
   const [eventDate, setEventDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
+  
+  // Reward state
+  const [participationReward, setParticipationReward] = useState('');
+  const [firstPlaceReward, setFirstPlaceReward] = useState('');
+  const [secondPlaceReward, setSecondPlaceReward] = useState('');
+  const [thirdPlaceReward, setThirdPlaceReward] = useState('');
 
   const distancePresets = [
     { label: '5K', value: '5' },
@@ -103,6 +109,12 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
     const toastId = toast.loading('Creating event...');
 
     try {
+      // Parse reward values
+      const parsedParticipationReward = participationReward ? parseInt(participationReward) : undefined;
+      const parsedFirstPlace = firstPlaceReward ? parseInt(firstPlaceReward) : undefined;
+      const parsedSecondPlace = secondPlaceReward ? parseInt(secondPlaceReward) : undefined;
+      const parsedThirdPlace = thirdPlaceReward ? parseInt(thirdPlaceReward) : undefined;
+
       await createTeamEvent(ndk, {
         teamAIdentifier,
         name: eventName.trim(),
@@ -112,7 +124,13 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
         date: eventDate,
         startTime: startTime || undefined,
         endTime: endTime || undefined,
-        creatorPubkey: publicKey
+        creatorPubkey: publicKey,
+        participationReward: parsedParticipationReward,
+        winnerRewards: (parsedFirstPlace || parsedSecondPlace || parsedThirdPlace) ? {
+          first: parsedFirstPlace,
+          second: parsedSecondPlace,
+          third: parsedThirdPlace
+        } : undefined
       });
 
       toast.success('Event created successfully!', { id: toastId });
@@ -284,6 +302,75 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
             </div>
             <p className="text-xs text-gray-400 mt-1">
               Leave empty to allow participation all day
+            </p>
+          </div>
+
+          {/* Participation Reward (Optional) */}
+          <div>
+            <label className="block text-sm font-medium text-white mb-2">
+              Participation Reward (Optional)
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                value={participationReward}
+                onChange={(e) => setParticipationReward(e.target.value)}
+                placeholder="245"
+                min="0"
+                className="w-full px-4 py-2 pr-12 bg-black border border-white rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-gray-300"
+              />
+              <span className="absolute right-3 top-2 text-white text-sm">sats</span>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Reward for all participants who complete the event
+            </p>
+          </div>
+
+          {/* Winner Rewards (Optional) */}
+          <div>
+            <label className="block text-sm font-medium text-white mb-2">
+              Winner Rewards (Optional)
+            </label>
+            <div className="space-y-3">
+              <div className="relative">
+                <input
+                  type="number"
+                  value={firstPlaceReward}
+                  onChange={(e) => setFirstPlaceReward(e.target.value)}
+                  placeholder="1000"
+                  min="0"
+                  className="w-full px-4 py-2 pr-12 bg-black border border-white rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-gray-300"
+                />
+                <span className="absolute right-3 top-2 text-white text-sm">sats</span>
+                <span className="absolute left-3 top-2 text-white text-sm bg-black px-1">1st</span>
+              </div>
+              <div className="relative">
+                <input
+                  type="number"
+                  value={secondPlaceReward}
+                  onChange={(e) => setSecondPlaceReward(e.target.value)}
+                  placeholder="500"
+                  min="0"
+                  className="w-full px-4 py-2 pr-12 pl-12 bg-black border border-white rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-gray-300"
+                />
+                <span className="absolute right-3 top-2 text-white text-sm">sats</span>
+                <span className="absolute left-3 top-2 text-white text-sm bg-black px-1">2nd</span>
+              </div>
+              <div className="relative">
+                <input
+                  type="number"
+                  value={thirdPlaceReward}
+                  onChange={(e) => setThirdPlaceReward(e.target.value)}
+                  placeholder="250"
+                  min="0"
+                  className="w-full px-4 py-2 pr-12 pl-12 bg-black border border-white rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-gray-300"
+                />
+                <span className="absolute right-3 top-2 text-white text-sm">sats</span>
+                <span className="absolute left-3 top-2 text-white text-sm bg-black px-1">3rd</span>
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Rewards will be sent manually by the captain after the event
             </p>
           </div>
 

@@ -104,7 +104,9 @@ class RunDataService {
         if (newRun.distance >= minDistance) {
           // Fire and forget; we don't await to avoid blocking UI
           // Use the reliable UTC timestamp for streak calculation
-          updateUserStreak(new Date(newRun.timestamp), publicKey);
+          updateUserStreak(new Date(newRun.timestamp), publicKey).catch(err => {
+            console.error('[RunDataService] Failed to update user streak:', err);
+          });
         }
       } catch (err) {
         console.error('[RunDataService] Failed to update streak after saving run:', err);

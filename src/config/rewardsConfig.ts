@@ -1,6 +1,10 @@
 export interface StreakConfig {
   readonly satsPerDay: number;
   readonly capDays: number;
+  readonly subscriberMultipliers: {
+    readonly member: number;
+    readonly captain: number;
+  };
 }
 
 export interface LeaderboardConfig {
@@ -11,8 +15,12 @@ export interface LeaderboardConfig {
 
 export const REWARDS = {
   STREAK: {
-    satsPerDay: 100, // 100 sats for day 1; cumulative 200 day 2, etc.
-    capDays: 7 // maximum days considered when calculating payout
+    satsPerDay: 100, // Base rate: 100 sats for day 1
+    capDays: 7, // maximum days considered when calculating payout
+    subscriberMultipliers: {
+      member: 2.85,  // 285 sats/day for members (2k sats max/week)
+      captain: 3.0   // 300 sats/day for captains  
+    }
   },
   DAILY_LEADERBOARD: {
     first: 100,
