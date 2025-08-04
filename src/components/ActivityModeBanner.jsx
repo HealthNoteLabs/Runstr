@@ -77,19 +77,11 @@ export const ActivityModeBanner = ({ onSettingsClick }) => {
             {activityModes.map((activity) => (
               <button
                 key={activity.mode}
-                className={`action-button ${mode === activity.mode ? 'active' : ''}`}
+                className={`${mode === activity.mode 
+                  ? 'bg-white text-black border-white' 
+                  : 'bg-bg-secondary text-white border-border-secondary hover:bg-bg-tertiary'
+                } border text-xs font-semibold min-w-[65px] px-3 py-2 rounded-md flex-1 transition-colors`}
                 onClick={() => handleModeChange(activity.mode)}
-                style={{
-                  backgroundColor: mode === activity.mode ? '#ffffff' : '#000000',
-                  color: mode === activity.mode ? '#000000' : '#ffffff',
-                  border: `1px solid ${mode === activity.mode ? '#ffffff' : 'var(--border-color)'}`,
-                  fontSize: '0.7rem',
-                  fontWeight: '600',
-                  minWidth: '65px',
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  flex: 1
-                }}
                 title={`Switch to ${activity.label} mode`}
               >
                 {activity.label}
