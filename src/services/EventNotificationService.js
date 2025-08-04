@@ -6,6 +6,7 @@
  */
 
 import { NDKEvent } from '@nostr-dev-kit/ndk';
+import PokeyNotificationService from './PokeyNotificationService';
 
 // Nostr kinds
 const KIND_JOIN_REQUEST = 31001; // Custom kind for join requests
@@ -322,9 +323,212 @@ export async function markNotificationProcessed(ndk, notificationId, action = 'p
   }
 }
 
+/**
+ * POKEY INTEGRATION FUNCTIONS
+ * Real-time notification support via Pokey push notifications
+ */
+
+// Real-time notification state
+let pokeyNotificationListener = null;
+let isPokeyEnabled = false;
+
+/**
+ * Enable real-time notifications via Pokey
+ * Sets up listener for incoming join request notifications
+ */
+export async function enablePokeyNotifications(currentUserPubkey, onNotificationReceived) {
+  if (!currentUserPubkey || !onNotificationReceived) {
+    throw new Error('Missing required parameters for Pokey notifications');
+  }
+
+  try {
+    console.log('[EventNotificationService] Enabling Pokey real-time notifications');
+    
+    // Initialize Pokey service if not already done
+    PokeyNotificationService.initializePokeyService();
+    
+    // Set up listener for join request notifications
+    pokeyNotificationListener = PokeyNotificationService.addEventListener(
+      PokeyNotificationService.NOTIFICATION_EVENT_KINDS.JOIN_REQUEST,
+      async (pokeyNotification) => {
+        try {
+          console.log('[EventNotificationService] Received Pokey join request notification');
+          
+          // Convert Pokey notification to our format
+          const notification = {
+            id: pokeyNotification.id,
+            eventId: pokeyNotification.eventId,
+            eventName: pokeyNotification.eventName,
+            requesterPubkey: pokeyNotification.requesterPubkey,
+            requesterName: pokeyNotification.requesterName,
+            timestamp: pokeyNotification.timestamp,
+            message: pokeyNotification.message,
+            teamAIdentifier: pokeyNotification.teamAIdentifier || '',
+            source: 'pokey', // Mark as real-time
+            rawEvent: pokeyNotification
+          };
+          
+          // Notify the callback (typically a React hook or component)
+          onNotificationReceived(notification);
+          
+        } catch (error) {
+          console.error('[EventNotificationService] Error processing Pokey notification:', error);
+        }
+      }
+    );
+    
+    isPokeyEnabled = true;
+    console.log('[EventNotificationService] Pokey notifications enabled successfully');
+    
+    return {
+      enabled: true,
+      listenerActive: !!pokeyNotificationListener
+    };
+    
+  } catch (error) {
+    console.error('[EventNotificationService] Error enabling Pokey notifications:', error);
+    isPokeyEnabled = false;
+    throw error;
+  }
+}
+
+/**
+ * Disable real-time notifications via Pokey
+ */
+export function disablePokeyNotifications() {
+  try {
+    console.log('[EventNotificationService] Disabling Pokey notifications');
+    
+    if (pokeyNotificationListener) {
+      pokeyNotificationListener(); // Call the unsubscribe function
+      pokeyNotificationListener = null;
+    }
+    
+    isPokeyEnabled = false;
+    console.log('[EventNotificationService] Pokey notifications disabled');
+    
+    return { enabled: false };
+    
+  } catch (error) {
+    console.error('[EventNotificationService] Error disabling Pokey notifications:', error);
+  }
+}
+
+/**
+ * Check if Pokey notifications are enabled
+ */
+export function isPokeyNotificationsEnabled() {
+  return isPokeyEnabled && !!pokeyNotificationListener;
+}
+
+/**
+ * Get Pokey service status and debug info
+ */
+export function getPokeyStatus() {
+  return {
+    enabled: isPokeyEnabled,
+    listenerActive: !!pokeyNotificationListener,
+    serviceStatus: PokeyNotificationService.getServiceStatus()
+  };
+}
+
+/**
+ * Enhanced fetch function that supports both polling and real-time modes
+ * Automatically uses Pokey when available, falls back to polling
+ */
+export async function fetchJoinRequestNotificationsEnhanced(ndk, captainPubkey, eventId = null, teamUUID = null, options = {}) {
+  const { preferRealTime = true, forcePolling = false } = options;
+  
+  console.log(`[EventNotificationService] Fetching notifications - Pokey enabled: ${isPokeyEnabled}, Prefer real-time: ${preferRealTime}, Force polling: ${forcePolling}`);
+  
+  // If Pokey is enabled and we prefer real-time, and not forcing polling
+  if (isPokeyEnabled && preferRealTime && !forcePolling) {
+    console.log('[EventNotificationService] Using Pokey real-time notifications (background mode)');
+    // In real-time mode, notifications come through the listener
+    // Return empty array since real-time notifications are handled via callbacks
+    return [];
+  } else {
+    console.log('[EventNotificationService] Using traditional polling method');
+    // Fall back to traditional polling
+    return await fetchJoinRequestNotifications(ndk, captainPubkey, eventId, teamUUID);
+  }
+}
+
+/**
+ * Hybrid notification system coordinator
+ * Manages both real-time (Pokey) and polling systems
+ */
+export async function setupHybridNotificationSystem(ndk, currentUserPubkey, onNotificationReceived, options = {}) {
+  const { enablePokey = true, pollingInterval = 30000, fallbackToPolling = true } = options;
+  
+  console.log('[EventNotificationService] Setting up hybrid notification system');
+  
+  let pollingIntervalId;
+  let pokeyEnabled = false;
+  
+  try {
+    // Try to enable Pokey first
+    if (enablePokey) {
+      try {
+        await enablePokeyNotifications(currentUserPubkey, onNotificationReceived);
+        pokeyEnabled = true;
+        console.log('[EventNotificationService] Pokey enabled, reducing polling frequency');
+      } catch (pokeyError) {
+        console.warn('[EventNotificationService] Pokey setup failed, using polling only:', pokeyError.message);
+      }
+    }
+    
+    // Set up polling (with reduced frequency if Pokey is active)
+    if (fallbackToPolling) {
+      const actualPollingInterval = pokeyEnabled ? pollingInterval * 3 : pollingInterval; // Reduce polling when Pokey is active
+      
+      pollingIntervalId = setInterval(async () => {
+        try {
+          // Only poll if Pokey is not working properly
+          if (!pokeyEnabled || !isPokeyNotificationsEnabled()) {
+            console.log('[EventNotificationService] Polling fallback active');
+            const notifications = await fetchJoinRequestNotifications(ndk, currentUserPubkey);
+            if (notifications.length > 0) {
+              notifications.forEach(notification => {
+                onNotificationReceived({ ...notification, source: 'polling' });
+              });
+            }
+          }
+        } catch (error) {
+          console.error('[EventNotificationService] Polling error:', error);
+        }
+      }, actualPollingInterval);
+    }
+    
+    return {
+      pokeyEnabled,
+      pollingActive: !!pollingIntervalId,
+      cleanup: () => {
+        if (pollingIntervalId) {
+          clearInterval(pollingIntervalId);
+        }
+        if (pokeyEnabled) {
+          disablePokeyNotifications();
+        }
+      }
+    };
+    
+  } catch (error) {
+    console.error('[EventNotificationService] Error setting up hybrid notification system:', error);
+    throw error;
+  }
+}
+
 export default {
   sendJoinRequestNotification,
   sendDirectMessageNotification,
   fetchJoinRequestNotifications,
-  markNotificationProcessed
+  markNotificationProcessed,
+  // Pokey integration functions
+  enablePokeyNotifications,
+  disablePokeyNotifications,
+  isPokeyNotificationsEnabled,
+  getPokeyStatus,
+  fetchJoinRequestNotificationsEnhanced,
+  setupHybridNotificationSystem
 };

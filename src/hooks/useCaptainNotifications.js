@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNostr } from './useNostr';
 import EventNotificationService from '../services/EventNotificationService';
 
@@ -22,6 +22,11 @@ export const useCaptainNotifications = (captainPubkey, eventId = null, teamUUID 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+  
+  // Pokey real-time notification state
+  const [pokeyEnabled, setPokeyEnabled] = useState(false);
+  const [notificationSource, setNotificationSource] = useState('polling'); // 'polling' or 'pokey'
+  const hybridSystemRef = useRef(null);
 
   // Only show notifications if current user is the captain
   const isCurrentUserCaptain = publicKey === captainPubkey;
@@ -59,6 +64,71 @@ export const useCaptainNotifications = (captainPubkey, eventId = null, teamUUID 
       setIsLoading(false);
     }
   }, [ndk, ndkReady, captainPubkey, eventId, teamUUID, isCurrentUserCaptain]);
+
+  /**
+   * Handle incoming real-time notifications from Pokey
+   */
+  const handleRealtimeNotification = useCallback((notification) => {
+    console.log('[useCaptainNotifications] Received real-time notification:', notification);
+    
+    setNotifications(prev => {
+      // Check if we already have this notification (avoid duplicates)
+      const exists = prev.find(n => n.id === notification.id);
+      if (exists) {
+        console.log('[useCaptainNotifications] Duplicate notification ignored:', notification.id);
+        return prev;
+      }
+      
+      // Add the new notification at the beginning (most recent first)
+      const updated = [notification, ...prev];
+      console.log(`[useCaptainNotifications] Added real-time notification, total: ${updated.length}`);
+      return updated;
+    });
+    
+    setLastUpdated(new Date());
+    setNotificationSource(notification.source || 'pokey');
+  }, []);
+
+  /**
+   * Setup hybrid notification system (Pokey + polling fallback)
+   */
+  const setupNotificationSystem = useCallback(async () => {
+    if (!ndk || !ndkReady || !captainPubkey || !isCurrentUserCaptain) {
+      return;
+    }
+
+    try {
+      console.log('[useCaptainNotifications] Setting up hybrid notification system');
+      
+      // Clean up existing system
+      if (hybridSystemRef.current && hybridSystemRef.current.cleanup) {
+        hybridSystemRef.current.cleanup();
+        hybridSystemRef.current = null;
+      }
+      
+      // Setup hybrid system with Pokey + polling fallback
+      const hybridSystem = await EventNotificationService.setupHybridNotificationSystem(
+        ndk,
+        captainPubkey,
+        handleRealtimeNotification,
+        {
+          enablePokey: true,
+          pollingInterval: 30000, // 30 seconds (reduced if Pokey is active)
+          fallbackToPolling: true
+        }
+      );
+      
+      hybridSystemRef.current = hybridSystem;
+      setPokeyEnabled(hybridSystem.pokeyEnabled);
+      
+      console.log(`[useCaptainNotifications] Hybrid system setup complete - Pokey: ${hybridSystem.pokeyEnabled}, Polling: ${hybridSystem.pollingActive}`);
+      
+    } catch (error) {
+      console.error('[useCaptainNotifications] Error setting up notification system:', error);
+      setError(error.message || 'Failed to setup notifications');
+      setPokeyEnabled(false);
+    }
+  }, [ndk, ndkReady, captainPubkey, isCurrentUserCaptain, handleRealtimeNotification]);
 
   /**
    * Approve a join request - add user to official participant list
@@ -143,21 +213,28 @@ export const useCaptainNotifications = (captainPubkey, eventId = null, teamUUID 
     fetchNotifications();
   }, [fetchNotifications]);
 
-  // Initial load
+  // Initial load and setup hybrid notification system
   useEffect(() => {
+    if (!isCurrentUserCaptain || !ndkReady) {
+      setIsLoading(false);
+      return;
+    }
+
+    // First, do an initial fetch to get existing notifications
     fetchNotifications();
-  }, [fetchNotifications]);
-
-  // Auto-refresh every 30 seconds if captain
-  useEffect(() => {
-    if (!isCurrentUserCaptain || !ndkReady) return;
-
-    const interval = setInterval(() => {
-      fetchNotifications();
-    }, 30000); // 30 seconds
-
-    return () => clearInterval(interval);
-  }, [fetchNotifications, isCurrentUserCaptain, ndkReady]);
+    
+    // Then setup the hybrid system for real-time updates
+    setupNotificationSystem();
+    
+    // Cleanup on unmount or dependency change
+    return () => {
+      if (hybridSystemRef.current && hybridSystemRef.current.cleanup) {
+        console.log('[useCaptainNotifications] Cleaning up hybrid notification system');
+        hybridSystemRef.current.cleanup();
+        hybridSystemRef.current = null;
+      }
+    };
+  }, [isCurrentUserCaptain, ndkReady, setupNotificationSystem, fetchNotifications]);
 
   return {
     // Notification data
@@ -170,6 +247,11 @@ export const useCaptainNotifications = (captainPubkey, eventId = null, teamUUID 
     error,
     lastUpdated,
     
+    // Real-time notification status
+    pokeyEnabled,
+    notificationSource,
+    isRealTimeActive: pokeyEnabled,
+    
     // Actions
     approveJoinRequest,
     denyJoinRequest,
@@ -181,7 +263,10 @@ export const useCaptainNotifications = (captainPubkey, eventId = null, teamUUID 
       eventId,
       publicKey,
       ndkReady,
-      isCurrentUserCaptain
+      isCurrentUserCaptain,
+      pokeyEnabled,
+      notificationSource,
+      hybridSystemActive: !!hybridSystemRef.current
     }
   };
 };

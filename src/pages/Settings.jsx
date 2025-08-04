@@ -10,6 +10,7 @@ import { fetchRunDataFromWatch, mapWatchDataToRun } from '../services/BluetoothS
 import { SyncConfirmationModal } from '../components/modals/SyncConfirmationModal';
 import { testConnection } from '../lib/blossom';
 import { updateHapticsFromSettings } from '../utils/haptics';
+import EventNotificationService from '../services/EventNotificationService';
 
 const Settings = () => {
   const { 
@@ -50,6 +51,11 @@ const Settings = () => {
   const [isSyncingWatch, setIsSyncingWatch] = useState(false);
   const [syncedRun, setSyncedRun] = useState(null);
   const [showSyncModal, setShowSyncModal] = useState(false);
+  
+  // Pokey integration state
+  const [pokeyEnabled, setPokeyEnabled] = useState(false);
+  const [pokeyStatus, setPokeyStatus] = useState(null);
+  const [isTestingPokey, setIsTestingPokey] = useState(false);
   
   // Blossom connection test state
   const [isTestingConnection, setIsTestingConnection] = useState(false);
@@ -240,6 +246,95 @@ const Settings = () => {
       setIsTestingConnection(false);
       // Clear status after 5 seconds
       setTimeout(() => setConnectionStatus(null), 5000);
+    }
+  };
+
+  // Check Pokey status on component mount
+  useEffect(() => {
+    const checkPokeyStatus = () => {
+      try {
+        const status = EventNotificationService.getPokeyStatus();
+        setPokeyEnabled(status.enabled);
+        setPokeyStatus(status);
+      } catch (error) {
+        console.warn('[Settings] Error checking Pokey status:', error);
+        setPokeyEnabled(false);
+        setPokeyStatus({ enabled: false, error: error.message });
+      }
+    };
+
+    checkPokeyStatus();
+    
+    // Check status periodically
+    const statusInterval = setInterval(checkPokeyStatus, 5000);
+    return () => clearInterval(statusInterval);
+  }, []);
+
+  const handleTestPokeyConnection = async () => {
+    if (!publicKey) {
+      setPokeyStatus({ 
+        success: false, 
+        message: 'Please connect your Nostr account first' 
+      });
+      return;
+    }
+
+    setIsTestingPokey(true);
+    setPokeyStatus(null);
+
+    try {
+      console.log('[Settings] Testing Pokey connection...');
+      
+      // Test if we can enable Pokey notifications
+      await EventNotificationService.enablePokeyNotifications(
+        publicKey, 
+        (notification) => {
+          console.log('[Settings] Test notification received:', notification);
+        }
+      );
+      
+      // Get status after enabling
+      const status = EventNotificationService.getPokeyStatus();
+      
+      if (status.enabled) {
+        setPokeyStatus({ 
+          success: true, 
+          message: 'Pokey notifications enabled successfully!' 
+        });
+        setPokeyEnabled(true);
+      } else {
+        setPokeyStatus({ 
+          success: false, 
+          message: 'Pokey is available but not fully connected. Make sure Pokey app is installed and configured.' 
+        });
+      }
+    } catch (error) {
+      setPokeyStatus({ 
+        success: false, 
+        message: `Pokey setup failed: ${error.message}` 
+      });
+      setPokeyEnabled(false);
+    } finally {
+      setIsTestingPokey(false);
+      // Clear status after 8 seconds
+      setTimeout(() => setPokeyStatus(null), 8000);
+    }
+  };
+
+  const handleTogglePokey = async () => {
+    try {
+      if (pokeyEnabled) {
+        // Disable Pokey
+        EventNotificationService.disablePokeyNotifications();
+        setPokeyEnabled(false);
+        setPokeyStatus({ success: true, message: 'Pokey notifications disabled' });
+      } else {
+        // Enable Pokey
+        await handleTestPokeyConnection();
+      }
+    } catch (error) {
+      console.error('[Settings] Error toggling Pokey:', error);
+      setPokeyStatus({ success: false, message: error.message });
     }
   };
 
@@ -496,6 +591,51 @@ const Settings = () => {
 
       <div className="settings-section">
         <h3 className="section-heading">Integrations</h3>
+        
+        <div className="setting-item">
+          <label>Pokey Push Notifications</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <div className="toggle-switch">
+                <input 
+                  type="checkbox"
+                  id="pokeyToggle"
+                  checked={pokeyEnabled}
+                  onChange={handleTogglePokey}
+                  disabled={isTestingPokey}
+                />
+                <span className="toggle-slider"></span>
+              </div>
+              <Button 
+                onClick={handleTestPokeyConnection}
+                disabled={isTestingPokey || !publicKey}
+                size="sm"
+                variant="default"
+              >
+                {isTestingPokey ? 'Testing...' : 'Test Connection'}
+              </Button>
+              {pokeyStatus && (
+                <span className={pokeyStatus.success ? 'text-green-400' : 'text-red-400'}>
+                  {pokeyStatus.message}
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.875rem', color: '#888' }}>
+              <span>Status: {pokeyEnabled ? '✓ Active' : '○ Inactive'}</span>
+              {pokeyStatus && pokeyStatus.serviceStatus && (
+                <span>| Listeners: {pokeyStatus.serviceStatus.totalListeners}</span>
+              )}
+            </div>
+          </div>
+          <p className="setting-description">
+            Enable real-time push notifications via Pokey. Install Pokey from GitHub 
+            (<a href="https://github.com/KoalaSat/pokey" target="_blank" rel="noopener noreferrer" style={{color: '#007acc'}}>
+              github.com/KoalaSat/pokey
+            </a>) 
+            and configure it with your Nostr relays for instant team event notifications.
+          </p>
+        </div>
+        
         <div className="setting-item">
           <label>Bangle.js</label>
           <Button 

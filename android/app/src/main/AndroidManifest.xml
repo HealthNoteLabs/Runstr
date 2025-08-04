@@ -43,6 +43,15 @@
             android:name="com.getcapacitor.CapacitorService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!-- Pokey broadcast receiver for Nostr notifications -->
+        <receiver
+            android:name="com.runstr.app.PokeyBroadcastReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.shared.NOSTR" />
+            </intent-filter>
+        </receiver>
     </application>
 
     <!-- Permissions -->
