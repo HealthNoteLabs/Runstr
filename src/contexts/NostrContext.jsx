@@ -2,7 +2,7 @@ import { createContext, useState, useEffect, useMemo, useCallback } from 'react'
 import PropTypes from 'prop-types';
 // Import the NDK singleton
 import { ndk, ndkReadyPromise } from '../lib/ndkSingleton'; // Consistent import without extension
-import { NDKNip07Signer, NDKPrivateKeySigner } from '@nostr-dev-kit/ndk'; // Keep NDKSigner types
+// No additional NDK imports needed for Amber-only authentication
 import AmberAuth from '../services/AmberAuth.js';
 import { Platform } from '../utils/react-native-shim.js';
 
@@ -11,23 +11,7 @@ const attachSigner = async () => {
   try {
     // Check if window object exists (for browser environment)
     if (typeof window !== 'undefined') {
-      // --- Priority 1: Check for stored private key ---
-      const storedPrivKey = window.localStorage.getItem('runstr_privkey');
-      if (storedPrivKey) {
-        console.log('NostrContext: Found private key, using NDKPrivateKeySigner.');
-        try {
-          // Use the singleton ndk instance
-          ndk.signer = new NDKPrivateKeySigner(storedPrivKey);
-          const user = await ndk.signer.user();
-          console.log('NostrContext: Private key signer attached to singleton NDK, user pubkey:', user.pubkey);
-          return user.pubkey;
-        } catch (pkError) {
-            console.error('NostrContext: Error initializing NDKPrivateKeySigner:', pkError);
-            window.localStorage.removeItem('runstr_privkey');
-            ndk.signer = undefined;
-        }
-      }
-
+      // Amber-only authentication for Android
       if (Platform.OS === 'android' && await AmberAuth.isAmberInstalled()) {
         console.log('NostrContext: Amber is installed. Using Amber signer shim.');
         try {
@@ -51,42 +35,14 @@ const attachSigner = async () => {
           return null;
         }
       }
-
-      // --- Priority 2: Check for NIP-07 (window.nostr) ---
-      if (window.nostr) {
-        console.log('NostrContext: Using NIP-07 signer (window.nostr).');
-        const nip07signer = new NDKNip07Signer();
-        // Use the singleton ndk instance
-        ndk.signer = nip07signer;
-
-        try {
-          console.log('NostrContext: Waiting for NIP-07 signer to be ready (may require user interaction)...');
-          await ndk.signer.blockUntilReady();
-          console.log('NostrContext: NIP-07 signer is ready.');
-
-          console.log('NostrContext: Attempting to get user from NIP-07 signer...');
-          const user = await nip07signer.user();
-          console.log('NostrContext: NIP-07 Signer attached to singleton NDK, user pubkey:', user.pubkey);
-          return user.pubkey;
-
-        } catch (nip07Error) {
-            console.error('NostrContext: Error during NIP-07 signer interaction (blockUntilReady/user):', nip07Error);
-            if (nip07Error.message && (nip07Error.message.toLowerCase().includes('rejected') || nip07Error.message.toLowerCase().includes('cancelled'))) {
-                console.warn('NostrContext: NIP-07 operation rejected by user.');
-            }
-            // If blockUntilReady or user fetch fails, the signer isn't fully usable with the NDK instance.
-            ndk.signer = undefined; // Clear the signer on the NDK singleton.
-            return null; // Indicate failure to get a usable pubkey AND signer.
-        }
-      }
     }
 
-    console.log('NostrContext: No browser signer available (localStorage key or NIP-07). Signer will be undefined for singleton NDK.');
+    console.log('NostrContext: Amber authentication required. Signer will be undefined for singleton NDK.');
     ndk.signer = undefined;
     return null;
 
   } catch (error) {
-    console.error('NostrContext: Error attaching signer to singleton NDK (could be user rejection or extension issue):', error);
+    console.error('NostrContext: Error attaching signer to singleton NDK:', error);
     ndk.signer = undefined;
     return null;
   }
@@ -321,7 +277,7 @@ export const NostrProvider = ({ children }) => {
     // This function is primarily for logout or manual key changes, not initial connection.
     setPublicKeyInternal(pk);
     if (!pk && typeof window !== 'undefined') {
-        window.localStorage.removeItem('runstr_privkey');
+        // Private key storage no longer used with Amber-only authentication
         window.localStorage.removeItem('runstr_lightning_addr');
         ndk.signer = undefined; // Clear signer on explicit logout
         signerAttachmentPromise = null; // Allow re-attachment
@@ -342,7 +298,7 @@ export const NostrProvider = ({ children }) => {
   }, []);
 
   const requestNostrPermissions = useCallback(async () => {
-    // For Android, use Amber if available
+    // Amber-only authentication for Android
     if (Platform.OS === 'android' && isAmberAvailable) {
       try {
         const result = await AmberAuth.requestAuthentication();
@@ -352,23 +308,8 @@ export const NostrProvider = ({ children }) => {
         console.error('Error requesting Amber authentication:', error);
         return false;
       }
-    } 
-    // For web or if Amber is not available, use window.nostr
-    else if (window.nostr) {
-      try {
-        // This will trigger the extension permission dialog
-        const pubkey = await window.nostr.getPublicKey();
-        setPublicKeyInternal(pubkey);
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem('permissionsGranted', 'true');
-        }
-        return true;
-      } catch (error) {
-        console.error('Error getting Nostr public key:', error);
-        return false;
-      }
     } else {
-      console.warn('No authentication method available');
+      console.warn('Amber authentication required');
       return false;
     }
   }, [isAmberAvailable]);
