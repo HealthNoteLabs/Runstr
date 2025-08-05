@@ -905,9 +905,14 @@ export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null
       // If NDK failed AND a specific relay list was provided, do NOT fallback.
       // Throw an error indicating failure to publish to the specified relays.
       if (opts.relays && Array.isArray(opts.relays) && opts.relays.length > 0) {
-        const specificRelayMessage = `Failed to publish to the specified relay(s): ${opts.relays.join(', ')}. Please check the relay URL and connection.`;
-        console.error(specificRelayMessage, ndkResult.error);
-        throw new Error(specificRelayMessage);
+        const specificRelayMessage = `Failed to publish to the specified relay(s): ${opts.relays.join(', ')}. Please check the relay URL and ensure the relay is running and accepting connections.`;
+        console.error('[nostr.js] NDK publishing failed for specific relays:', specificRelayMessage, ndkResult.error);
+        
+        // For user-friendly error handling, include more context
+        const enhancedError = new Error(specificRelayMessage);
+        enhancedError.relayUrls = opts.relays;
+        enhancedError.originalError = ndkResult.error;
+        throw enhancedError;
       }
     } catch (ndkError) {
       console.error('Error in NDK publishing:', ndkError);
@@ -915,8 +920,13 @@ export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null
       // we should also prevent fallback and re-throw or throw a specific error.
       if (opts.relays && Array.isArray(opts.relays) && opts.relays.length > 0) {
         const specificRelayMessage = `Error publishing to the specified relay(s): ${opts.relays.join(', ')}. ${ndkError.message}`;
-        console.error(specificRelayMessage);
-        throw new Error(specificRelayMessage);
+        console.error('[nostr.js] NDK error for specific relays:', specificRelayMessage);
+        
+        // For user-friendly error handling, include more context
+        const enhancedError = new Error(specificRelayMessage);
+        enhancedError.relayUrls = opts.relays;
+        enhancedError.originalError = ndkError;
+        throw enhancedError;
       }
       // Otherwise, if no specific relays, allow progression to fallback.
     }

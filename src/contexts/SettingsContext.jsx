@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { relays as defaultRelays } from '../config/relays.js';
+import { addRelayToNDK, removeRelayFromNDK } from '../lib/ndkSingleton.js';
 
 // Define publishable metrics configuration
 export const PUBLISHABLE_METRICS = [
@@ -107,7 +108,11 @@ export const SettingsProvider = ({ children }) => {
   useEffect(() => localStorage.setItem('calorieIntensityPref', calorieIntensityPref), [calorieIntensityPref]);
   useEffect(() => localStorage.setItem('healthEncryptionPrefIsPlaintext', (healthEncryptionPref === 'plaintext').toString()), [healthEncryptionPref]);
   useEffect(() => localStorage.setItem('publishMode', publishMode), [publishMode]);
-  useEffect(() => localStorage.setItem('privateRelayUrl', privateRelayUrl), [privateRelayUrl]);
+  useEffect(() => {
+    localStorage.setItem('privateRelayUrl', privateRelayUrl);
+    // Dynamically manage relay connections when private relay URL changes
+    handlePrivateRelayChange(privateRelayUrl);
+  }, [privateRelayUrl]);
   useEffect(() => localStorage.setItem('blossomEndpoint', blossomEndpoint), [blossomEndpoint]);
   useEffect(() => localStorage.setItem('skipStartCountdown', skipStartCountdown.toString()), [skipStartCountdown]);
   useEffect(() => localStorage.setItem('usePedometer', usePedometer.toString()), [usePedometer]);
@@ -128,6 +133,47 @@ export const SettingsProvider = ({ children }) => {
 
   const toggleDistanceUnit = useCallback(() => setDistanceUnit(prev => prev === 'km' ? 'mi' : 'km'), []);
   const isHealthEncryptionEnabled = useCallback(() => healthEncryptionPref === 'encrypted', [healthEncryptionPref]);
+
+  // Track previous private relay URL to handle changes
+  const [previousPrivateRelayUrl, setPreviousPrivateRelayUrl] = useState('');
+
+  // Handle private relay URL changes with NDK connection management
+  const handlePrivateRelayChange = useCallback(async (newRelayUrl) => {
+    try {
+      // Remove previous relay if it exists and is different
+      if (previousPrivateRelayUrl && previousPrivateRelayUrl !== newRelayUrl) {
+        console.log('[SettingsContext] Removing previous private relay:', previousPrivateRelayUrl);
+        await removeRelayFromNDK(previousPrivateRelayUrl);
+      }
+
+      // Add new relay if it's valid and different from previous
+      if (newRelayUrl && newRelayUrl !== previousPrivateRelayUrl) {
+        console.log('[SettingsContext] Adding new private relay:', newRelayUrl);
+        const success = await addRelayToNDK(newRelayUrl);
+        if (success) {
+          console.log('[SettingsContext] Successfully connected to private relay:', newRelayUrl);
+        } else {
+          console.warn('[SettingsContext] Failed to connect to private relay:', newRelayUrl);
+        }
+      }
+
+      // Update the previous URL tracker
+      setPreviousPrivateRelayUrl(newRelayUrl);
+    } catch (error) {
+      console.error('[SettingsContext] Error managing private relay connection:', error);
+    }
+  }, [previousPrivateRelayUrl]);
+
+  // Initialize previous private relay URL on component mount
+  useEffect(() => {
+    if (privateRelayUrl && !previousPrivateRelayUrl) {
+      setPreviousPrivateRelayUrl(privateRelayUrl);
+      // Connect to the initial private relay if it exists
+      if (privateRelayUrl) {
+        handlePrivateRelayChange(privateRelayUrl);
+      }
+    }
+  }, [privateRelayUrl, previousPrivateRelayUrl, handlePrivateRelayChange]);
 
   useEffect(() => {
     const event = new CustomEvent('distanceUnitChanged', { detail: distanceUnit });

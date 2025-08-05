@@ -11,6 +11,7 @@ import { SyncConfirmationModal } from '../components/modals/SyncConfirmationModa
 import { testConnection } from '../lib/blossom';
 import { updateHapticsFromSettings } from '../utils/haptics';
 import EventNotificationService from '../services/EventNotificationService';
+import { testRelayConnection } from '../lib/ndkSingleton';
 
 const Settings = () => {
   const { 
@@ -60,6 +61,10 @@ const Settings = () => {
   // Blossom connection test state
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState(null);
+  
+  // Private relay connection test state
+  const [isTestingPrivateRelay, setIsTestingPrivateRelay] = useState(false);
+  const [privateRelayStatus, setPrivateRelayStatus] = useState(null);
   
   // Load settings from localStorage
   useEffect(() => {
@@ -249,6 +254,40 @@ const Settings = () => {
     }
   };
 
+  const handleTestPrivateRelayConnection = async () => {
+    if (!privateRelayUrl) {
+      setPrivateRelayStatus({ success: false, message: 'Please enter a private relay URL first' });
+      return;
+    }
+
+    setIsTestingPrivateRelay(true);
+    setPrivateRelayStatus(null);
+
+    try {
+      const isConnected = await testRelayConnection(privateRelayUrl);
+      if (isConnected) {
+        setPrivateRelayStatus({ 
+          success: true, 
+          message: 'Successfully connected to private relay!' 
+        });
+      } else {
+        setPrivateRelayStatus({ 
+          success: false, 
+          message: 'Could not connect to private relay. Please check the URL and ensure the relay is running.' 
+        });
+      }
+    } catch (error) {
+      setPrivateRelayStatus({ 
+        success: false, 
+        message: `Connection failed: ${error.message}` 
+      });
+    } finally {
+      setIsTestingPrivateRelay(false);
+      // Clear status after 5 seconds
+      setTimeout(() => setPrivateRelayStatus(null), 5000);
+    }
+  };
+
   // Check Pokey status on component mount
   useEffect(() => {
     const checkPokeyStatus = () => {
@@ -434,6 +473,24 @@ const Settings = () => {
                     placeholder="wss://your-relay.example.com"
                     className="w-full bg-bg-tertiary p-2 rounded-md text-text-primary border border-border-secondary focus:ring-primary focus:border-border-focus outline-none"
                   />
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
+                    <Button 
+                      onClick={handleTestPrivateRelayConnection}
+                      disabled={isTestingPrivateRelay || !privateRelayUrl}
+                      size="sm"
+                      variant="default"
+                    >
+                      {isTestingPrivateRelay ? 'Testing...' : 'Test Connection'}
+                    </Button>
+                    {privateRelayStatus && (
+                      <span className={privateRelayStatus.success ? 'text-green-400' : 'text-red-400'}>
+                        {privateRelayStatus.message}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-text-secondary mt-1">
+                    Test connection to your private relay (e.g., Citrine) to ensure kind 1301 notes will be delivered successfully.
+                  </p>
                 </>
               )}
               {/* Blossom endpoint is stored for export feature */}

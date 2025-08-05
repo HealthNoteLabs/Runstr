@@ -1,20 +1,25 @@
-import { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useState, useEffect, useContext } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { FloatingMusicPlayer } from './FloatingMusicPlayer';
 import { ActivityModeBanner } from './ActivityModeBanner';
 // import { DashboardWalletHeader } from './DashboardWalletHeader'; // Temporarily disabled - ecash wallet under development
 import { useActivityMode, ACTIVITY_TYPES } from '../contexts/ActivityModeContext';
 import { useSettings } from '../contexts/SettingsContext';
+import { NostrContext } from '../contexts/NostrContext';
 import rewardsPayoutService from '../services/rewardsPayoutService';
 import { testConnection, DEFAULT_SERVERS } from '../lib/blossom';
+import EventNotificationService from '../services/EventNotificationService';
+import { testRelayConnection } from '../lib/ndkSingleton';
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import './MenuBar.css';
 
 export const MenuBar = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { mode, setMode, getActivityText } = useActivityMode();
+  const { publicKey } = useContext(NostrContext);
   const { 
     distanceUnit, toggleDistanceUnit,
     healthEncryptionPref, setHealthEncryptionPref,
@@ -36,6 +41,15 @@ export const MenuBar = () => {
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState(null);
   const [customBlossomUrl, setCustomBlossomUrl] = useState('');
+  
+  // Pokey integration state
+  const [pokeyEnabled, setPokeyEnabled] = useState(false);
+  const [pokeyStatus, setPokeyStatus] = useState(null);
+  const [isTestingPokey, setIsTestingPokey] = useState(false);
+  
+  // Private relay connection test state
+  const [isTestingPrivateRelay, setIsTestingPrivateRelay] = useState(false);
+  const [privateRelayStatus, setPrivateRelayStatus] = useState(null);
 
   // Load manualLnAddress when settings modal becomes visible or component mounts - COMMENTED OUT (moving to manual weekly rewards)
   // useEffect(() => {
@@ -175,6 +189,129 @@ export const MenuBar = () => {
       setIsTestingConnection(false);
       // Clear status after 5 seconds
       setTimeout(() => setConnectionStatus(null), 5000);
+    }
+  };
+
+  // Check Pokey status on component mount
+  useEffect(() => {
+    const checkPokeyStatus = () => {
+      try {
+        const status = EventNotificationService.getPokeyStatus();
+        setPokeyEnabled(status.enabled);
+        setPokeyStatus(status);
+      } catch (error) {
+        console.warn('[MenuBar] Error checking Pokey status:', error);
+        setPokeyEnabled(false);
+        setPokeyStatus({ enabled: false, error: error.message });
+      }
+    };
+
+    checkPokeyStatus();
+    
+    // Check status periodically
+    const statusInterval = setInterval(checkPokeyStatus, 5000);
+    return () => clearInterval(statusInterval);
+  }, []);
+
+  const handleTestPokeyConnection = async () => {
+    if (!publicKey) {
+      setPokeyStatus({ 
+        success: false, 
+        message: 'Please connect your Nostr account first' 
+      });
+      return;
+    }
+
+    setIsTestingPokey(true);
+    setPokeyStatus(null);
+
+    try {
+      console.log('[MenuBar] Testing Pokey connection...');
+      
+      // Test if we can enable Pokey notifications
+      await EventNotificationService.enablePokeyNotifications(
+        publicKey, 
+        (notification) => {
+          console.log('[MenuBar] Test notification received:', notification);
+        }
+      );
+      
+      // Get status after enabling
+      const status = EventNotificationService.getPokeyStatus();
+      
+      if (status.enabled) {
+        setPokeyStatus({ 
+          success: true, 
+          message: 'Pokey notifications enabled successfully!' 
+        });
+        setPokeyEnabled(true);
+      } else {
+        setPokeyStatus({ 
+          success: false, 
+          message: 'Pokey is available but not fully connected. Make sure Pokey app is installed and configured.' 
+        });
+      }
+    } catch (error) {
+      setPokeyStatus({ 
+        success: false, 
+        message: `Pokey setup failed: ${error.message}` 
+      });
+      setPokeyEnabled(false);
+    } finally {
+      setIsTestingPokey(false);
+      // Clear status after 8 seconds
+      setTimeout(() => setPokeyStatus(null), 8000);
+    }
+  };
+
+  const handleTogglePokey = async () => {
+    try {
+      if (pokeyEnabled) {
+        // Disable Pokey
+        EventNotificationService.disablePokeyNotifications();
+        setPokeyEnabled(false);
+        setPokeyStatus({ success: true, message: 'Pokey notifications disabled' });
+      } else {
+        // Enable Pokey
+        await handleTestPokeyConnection();
+      }
+    } catch (error) {
+      console.error('[MenuBar] Error toggling Pokey:', error);
+      setPokeyStatus({ success: false, message: error.message });
+    }
+  };
+
+  const handleTestPrivateRelayConnection = async () => {
+    if (!privateRelayUrl) {
+      setPrivateRelayStatus({ success: false, message: 'Please enter a private relay URL first' });
+      return;
+    }
+
+    setIsTestingPrivateRelay(true);
+    setPrivateRelayStatus(null);
+
+    try {
+      const isConnected = await testRelayConnection(privateRelayUrl);
+      if (isConnected) {
+        setPrivateRelayStatus({ 
+          success: true, 
+          message: 'Successfully connected to private relay!' 
+        });
+      } else {
+        setPrivateRelayStatus({ 
+          success: false, 
+          message: 'Could not connect to private relay. Please check the URL and ensure the relay is running.' 
+        });
+      }
+    } catch (error) {
+      setPrivateRelayStatus({ 
+        success: false, 
+        message: `Connection failed: ${error.message}` 
+      });
+    } finally {
+      setIsTestingPrivateRelay(false);
+      // Clear status after 5 seconds
+      setTimeout(() => setPrivateRelayStatus(null), 5000);
     }
   };
 
@@ -368,6 +505,23 @@ export const MenuBar = () => {
                       placeholder="wss://your-private-relay.com"
                       className="w-full bg-bg-primary p-2 rounded-md text-text-primary text-sm border border-border-secondary focus:ring-primary focus:border-border-focus outline-none"
                     />
+                    <div className="flex items-center space-x-2 mt-2">
+                      <button 
+                        onClick={handleTestPrivateRelayConnection}
+                        disabled={isTestingPrivateRelay || !privateRelayUrl}
+                        className="px-3 py-1 bg-primary hover:bg-primary-hover disabled:bg-text-muted text-text-primary text-sm rounded-md transition-colors duration-normal"
+                      >
+                        {isTestingPrivateRelay ? 'Testing...' : 'Test Connection'}
+                      </button>
+                      {privateRelayStatus && (
+                        <span className={`text-sm ${privateRelayStatus.success ? 'text-success' : 'text-error'}`}>
+                          {privateRelayStatus.message}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-text-muted mt-1">
+                      Test connection to your private relay (e.g., Citrine) to ensure kind 1301 notes will be delivered successfully.
+                    </p>
                   </div>
                 )}
               </div>
@@ -515,6 +669,55 @@ export const MenuBar = () => {
               </div>
             </div>
             */}
+            
+            {/* Pokey Push Notifications Section */}
+            <div className="mb-6">
+              <h4 className="subsection-heading mb-3">Push Notifications</h4>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-text-secondary mb-2">Pokey Push Notifications</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <div className="flex items-center justify-between bg-bg-tertiary p-3 rounded-lg border border-border-secondary">
+                        <span className="text-sm text-text-secondary mr-3">Enable Pokey</span>
+                        <input
+                          type="checkbox"
+                          className="form-checkbox h-5 w-5 text-primary bg-bg-tertiary border-border-secondary focus:ring-primary rounded"
+                          checked={pokeyEnabled}
+                          onChange={handleTogglePokey}
+                          disabled={isTestingPokey}
+                        />
+                      </div>
+                      <button 
+                        onClick={handleTestPokeyConnection}
+                        disabled={isTestingPokey || !publicKey}
+                        className="px-3 py-1 bg-primary hover:bg-primary-hover disabled:bg-text-muted text-text-primary text-sm rounded-md transition-colors duration-normal"
+                      >
+                        {isTestingPokey ? 'Testing...' : 'Test Connection'}
+                      </button>
+                    </div>
+                    {pokeyStatus && (
+                      <div className={`text-sm ${pokeyStatus.success ? 'text-success' : 'text-error'} px-3 py-2 bg-bg-tertiary rounded border border-border-secondary`}>
+                        {pokeyStatus.message}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.875rem', color: '#888' }}>
+                      <span>Status: {pokeyEnabled ? '✓ Active' : '○ Inactive'}</span>
+                      {pokeyStatus && pokeyStatus.serviceStatus && (
+                        <span>| Listeners: {pokeyStatus.serviceStatus.totalListeners}</span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-text-muted mt-2">
+                    Enable real-time push notifications via Pokey. Install Pokey from GitHub 
+                    (<a href="https://github.com/KoalaSat/pokey" target="_blank" rel="noopener noreferrer" style={{color: '#007acc'}}>
+                      github.com/KoalaSat/pokey
+                    </a>) 
+                    and configure it with your Nostr relays for instant team event notifications.
+                  </p>
+                </div>
+              </div>
+            </div>
 
             <div className="flex flex-col space-y-4">
               <Link 

@@ -4,18 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Working Branch
 
-**IMPORTANT: Current Active Branch is `feed-0.6.0-20250728-205524-branch`**
+**IMPORTANT: Current Active Branch is `feed-0.7.0-20250804-200936-branch`**
 
-- **Working Branch**: `feed-0.6.0-20250728-205524-branch` 
-- **Base Tag**: `feed-0.6.0-20250728-205524`
+- **Working Branch**: `feed-0.7.0-20250804-200936-branch` 
+- **Base Tag**: `feed-0.7.0-20250804-200936`
 - **Repository**: HealthNoteLabs/Runstr
 
 **DO NOT USE THE DEVELOPMENT BRANCH** - It is broken and should be avoided.
 
-All new development, features, and bug fixes should be based on `feed-0.6.0-20250728-205524-branch`. This branch is based on a tested and working APK build.
+All new development, features, and bug fixes should be based on `feed-0.7.0-20250804-200936-branch`. This branch is based on a tested and working APK build.
 
 When pushing changes:
-- Push to: `feed-0.6.0-20250728-205524-branch`
+- Push to: `feed-0.7.0-20250804-200936-branch`
 - This branch generates working APK builds through GitHub Actions
 - All commits should be pushed to this branch for testing and releases
 
@@ -58,6 +58,16 @@ When pushing changes:
 - **State Management**: React Context API
 - **Routing**: React Router DOM
 - **Testing**: Vitest with Testing Library
+
+### User Interface Architecture
+
+**CRITICAL: Settings Modal vs Settings Page**
+- **Settings Modal**: `src/components/MenuBar.jsx` (lines 295-680) - This is the PRIMARY user interface for settings
+- **Settings Page**: `src/pages/Settings.jsx` - This is NOT accessible to users in normal flow
+- **Access**: Users click the settings gear icon in the Activity Mode Banner to open the settings modal
+- **Key Components**: Private relay URL input, test connection, publish destination options are all in MenuBar.jsx
+
+**Always modify the settings modal in MenuBar.jsx, not the Settings page**, unless specifically working on administrative features.
 
 ### Core Architecture Patterns
 
@@ -249,6 +259,19 @@ If anything breaks:
 
 ## Recent Updates
 
+### Citrine Relay Integration Fix (2025-01-05)
+**Issue**: Users could configure citrine relay URLs in settings but kind 1301 notes weren't actually being sent there.
+
+**Root Cause**: NDK singleton initialized with static relay list, never connected to user-configured private relays.
+
+**Solution**: Implemented dynamic relay management system:
+1. **`src/lib/ndkSingleton.js`**: Added `addRelayToNDK()`, `removeRelayFromNDK()`, `testRelayConnection()`
+2. **`src/contexts/SettingsContext.jsx`**: Auto-connects to private relays when URL changes
+3. **`src/components/MenuBar.jsx`**: Added "Test Connection" button for citrine relays in settings modal
+4. **`src/utils/nostr.js`**: Enhanced error handling for relay publishing failures
+
+**Result**: Kind 1301 notes now successfully reach user-configured citrine relays with connection validation.
+
 ### Kind 1 Notes Enhancement & Team Display (2025-01-29)
 **Issue**: Manual posting from dashboard didn't show workout summary like auto-posting did.
 
@@ -344,6 +367,6 @@ Each agent has a memory file in `src/agents/memory/` - check it for known issues
 
 ## Version Information
 
-**IMPORTANT: Current Active Version is v0.6.0 based on feed-0.6.0-20250728-205524**
+**IMPORTANT: Current Active Version is v0.7.0 based on feed-0.7.0-20250804-200936**
 
-When building for Android, the app will use version 0.6.0 (versionCode: 6) with the latest enhancements.
+When building for Android, the app will use version 0.7.0 (versionCode: 7) with the latest enhancements.
