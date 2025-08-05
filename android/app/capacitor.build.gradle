@@ -12,6 +12,7 @@ dependencies {
     implementation project(':capacitor-community-background-geolocation')
     implementation project(':capacitor-community-bluetooth-le')
     implementation project(':capacitor-community-keep-awake')
+    implementation project(':capacitor-camera')
     implementation project(':capacitor-haptics')
     implementation project(':capawesome-team-capacitor-android-battery-optimization')
 

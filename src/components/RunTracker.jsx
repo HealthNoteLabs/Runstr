@@ -19,6 +19,7 @@ import { publishRun } from '../utils/runPublisher';
 import appToast from '../utils/toast';
 import { getWorkoutAssociations } from '../utils/teamChallengeHelper';
 import { triggerRunStart, triggerRunStop, triggerRunPause, triggerSuccess, triggerError } from '../utils/haptics';
+import { captureAndUploadPhoto, isCameraAvailable, getCameraErrorMessage } from '../utils/cameraUtils';
 
 export const RunTracker = () => {
   const { 
@@ -57,6 +58,8 @@ export const RunTracker = () => {
   const [autoPublishing, setAutoPublishing] = useState(false);
   const [autoPublishingKind1, setAutoPublishingKind1] = useState(false);
   const [isAutoPost, setIsAutoPost] = useState(false);
+  const [capturedImage, setCapturedImage] = useState(null);
+  const [isTakingPhoto, setIsTakingPhoto] = useState(false);
 
   // Initialize events when the component mounts
   useEffect(() => {
@@ -236,6 +239,7 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
       setShowPostModal(false);
       setAdditionalContent('');
       setIsAutoPost(false);
+      setCapturedImage(null);
       
       // Show success message
       const successMsg = `Successfully posted to Nostr!`;
@@ -254,6 +258,54 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
       }
     } finally {
       setIsPosting(false);
+    }
+  };
+
+  // Handle taking a photo for the post
+  const handleTakePhoto = async () => {
+    if (!isCameraAvailable()) {
+      appToast.error('Camera is not available on this device');
+      return;
+    }
+
+    setIsTakingPhoto(true);
+    
+    try {
+      const result = await captureAndUploadPhoto({
+        quality: 80,
+        width: 1024,
+        height: 1024
+      }, `workout-${Date.now()}.jpg`);
+      
+      setCapturedImage({
+        url: result.imageUrl,
+        dataUrl: result.dataUrl
+      });
+      
+      // Add image URL to content if not already present
+      if (additionalContent && !additionalContent.includes(result.imageUrl)) {
+        setAdditionalContent(prev => prev + `\n\n${result.imageUrl}`);
+      } else if (!additionalContent) {
+        setAdditionalContent(result.imageUrl);
+      }
+      
+      appToast.success('Photo captured and uploaded successfully!');
+    } catch (error) {
+      console.error('Error capturing photo:', error);
+      const errorMessage = getCameraErrorMessage(error);
+      appToast.error(errorMessage);
+    } finally {
+      setIsTakingPhoto(false);
+    }
+  };
+
+  // Handle removing the captured photo
+  const handleRemovePhoto = () => {
+    if (capturedImage) {
+      // Remove the image URL from content
+      const imageUrl = capturedImage.url;
+      setAdditionalContent(prev => prev.replace(imageUrl, '').replace(/\n\n\n+/g, '\n\n').trim());
+      setCapturedImage(null);
     }
   };
 
@@ -878,6 +930,50 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
                 Your run summary has been prepared with your workout details.
               </p>
             )}
+            
+            {/* Camera Section */}
+            {isCameraAvailable() && !isAutoPost && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-text-secondary">Add Photo</span>
+                  {!capturedImage && (
+                    <Button
+                      onClick={handleTakePhoto}
+                      disabled={isTakingPhoto || isPosting}
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center space-x-2"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <span>{isTakingPhoto ? 'Taking Photo...' : 'Take Photo'}</span>
+                    </Button>
+                  )}
+                </div>
+                
+                {/* Image Preview */}
+                {capturedImage && (
+                  <div className="relative bg-bg-tertiary rounded-lg p-2 border border-border-secondary">
+                    <img 
+                      src={capturedImage.dataUrl} 
+                      alt="Workout photo preview" 
+                      className="w-full h-32 object-cover rounded"
+                    />
+                    <button
+                      onClick={handleRemovePhoto}
+                      disabled={isPosting}
+                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600 transition-colors"
+                    >
+                      ×
+                    </button>
+                    <p className="text-xs text-text-muted mt-1">Photo will be included in your post</p>
+                  </div>
+                )}
+              </div>
+            )}
+            
             <textarea
               value={additionalContent}
               onChange={(e) => setAdditionalContent(e.target.value)}
@@ -898,6 +994,7 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
                   setShowPostModal(false);
                   setAdditionalContent('');
                   setIsAutoPost(false);
+                  setCapturedImage(null);
                 }} 
                 disabled={isPosting}
                 variant="outline"
