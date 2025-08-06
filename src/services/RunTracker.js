@@ -66,6 +66,11 @@ class RunTracker extends EventEmitter {
     this.timerInterval = null; // For updating duration every second
     this.paceInterval = null; // For calculating pace at regular intervals
     this.smoothedSpeedMps = 0; // For smoothing speed calculations in cycling mode
+    
+    // GPS heartbeat monitoring
+    this.lastGPSUpdate = null;
+    this.gpsHeartbeatInterval = null;
+    this.gpsStallThreshold = 30000; // 30 seconds without GPS updates
   }
 
   // Helper method to get the current distance unit from localStorage
@@ -437,6 +442,100 @@ class RunTracker extends EventEmitter {
     }
   }
 
+  /**
+   * Check if the app is whitelisted from battery optimization
+   * @returns {Promise<boolean>} True if whitelisted or check unavailable
+   */
+  async checkBatteryOptimization() {
+    try {
+      const platform = navigator.userAgent.toLowerCase().includes('android') ? 'android' : 'other';
+      if (platform !== 'android') return true; // Not Android, assume OK
+      
+      const { BatteryOptimization } = await import('@capawesome-team/capacitor-android-battery-optimization');
+      if (!BatteryOptimization?.isIgnoringBatteryOptimizations) return true; // Plugin not available, assume OK
+      
+      const status = await BatteryOptimization.isIgnoringBatteryOptimizations();
+      return status?.value || false;
+    } catch (err) {
+      console.warn('Could not check battery optimization status:', err);
+      return true; // Assume OK if we can't check
+    }
+  }
+
+  /**
+   * Start GPS heartbeat monitoring to detect when GPS stops working
+   */
+  startGPSHeartbeat() {
+    // Clear any existing heartbeat
+    this.stopGPSHeartbeat();
+    
+    this.lastGPSUpdate = Date.now();
+    this.gpsHeartbeatInterval = setInterval(() => {
+      if (!this.isTracking || this.isPaused) {
+        return; // Don't check when not actively tracking
+      }
+      
+      const timeSinceLastUpdate = Date.now() - this.lastGPSUpdate;
+      if (timeSinceLastUpdate > this.gpsStallThreshold) {
+        console.warn(`GPS may have been killed by battery optimization. No updates for ${timeSinceLastUpdate}ms`);
+        this.emit('gpsStalled', { 
+          timeSinceLastUpdate,
+          message: 'GPS tracking may have been stopped by battery optimization. Please check your battery settings.'
+        });
+        
+        // Try to recover GPS automatically
+        this.attemptGPSRecovery();
+      }
+    }, 15000); // Check every 15 seconds
+    
+    console.log('GPS heartbeat monitoring started');
+  }
+
+  /**
+   * Stop GPS heartbeat monitoring
+   */
+  stopGPSHeartbeat() {
+    if (this.gpsHeartbeatInterval) {
+      clearInterval(this.gpsHeartbeatInterval);
+      this.gpsHeartbeatInterval = null;
+      console.log('GPS heartbeat monitoring stopped');
+    }
+  }
+
+  /**
+   * Attempt to recover GPS tracking when it appears to have stalled
+   */
+  async attemptGPSRecovery() {
+    console.log('Attempting GPS recovery...');
+    
+    try {
+      // Clean up existing watchers
+      await this.cleanupWatchers();
+      
+      // Wait a moment before restarting
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Restart tracking
+      await this.startTracking();
+      
+      // Reset the heartbeat timer
+      this.lastGPSUpdate = Date.now();
+      
+      this.emit('gpsRecoveryAttempt', { 
+        timestamp: Date.now(),
+        message: 'Attempted to restart GPS tracking'
+      });
+      
+      console.log('GPS recovery attempt completed');
+    } catch (error) {
+      console.error('GPS recovery failed:', error);
+      this.emit('gpsRecoveryFailed', { 
+        error: error.message,
+        message: 'Could not restart GPS tracking. Please stop and restart your run.'
+      });
+    }
+  }
+
   async startTracking() {
     try {
       // We should have already requested permissions by this point
@@ -537,6 +636,7 @@ class RunTracker extends EventEmitter {
           }
 
           // Successfully got location
+          this.lastGPSUpdate = Date.now(); // Update heartbeat timestamp
           this.addPosition(location);
         }
       );
@@ -586,6 +686,17 @@ class RunTracker extends EventEmitter {
   async start() {
     if (this.isTracking && !this.isPaused) return;
     
+    // Check battery optimization before starting
+    const isBatteryOptimized = await this.checkBatteryOptimization();
+    if (!isBatteryOptimized) {
+      console.warn('Battery optimization is enabled - GPS tracking may be unreliable');
+      this.emit('batteryOptimizationWarning', {
+        message: 'Battery optimization is enabled for Runstr. This may cause GPS tracking to stop unexpectedly. Please disable battery optimization in your device settings.',
+        canProceed: true // Allow user to proceed anyway
+      });
+      // Don't return here - let user proceed but warn them
+    }
+    
     // Update activityType from localStorage in case it changed
     this.activityType = localStorage.getItem('activityMode') || ACTIVITY_TYPES.RUN;
     
@@ -622,6 +733,7 @@ class RunTracker extends EventEmitter {
     this.startTracking();
     this.startTimer(); // Start the timer
     this.startPaceCalculator(); // Start the pace calculator
+    this.startGPSHeartbeat(); // Start GPS monitoring
     
     // Emit status change event
     this.emit('statusChange', { isTracking: this.isTracking, isPaused: this.isPaused });
@@ -638,6 +750,7 @@ class RunTracker extends EventEmitter {
 
     clearInterval(this.timerInterval); // Stop the timer
     clearInterval(this.paceInterval); // Stop the pace calculator
+    this.stopGPSHeartbeat(); // Stop GPS monitoring while paused
     
     // Emit status change event
     this.emit('statusChange', { isTracking: this.isTracking, isPaused: this.isPaused });
@@ -651,6 +764,7 @@ class RunTracker extends EventEmitter {
     this.startTracking();
     this.startTimer(); // Restart the timer
     this.startPaceCalculator(); // Restart the pace calculator
+    this.startGPSHeartbeat(); // Restart GPS monitoring
     
     // Emit status change event
     this.emit('statusChange', { isTracking: this.isTracking, isPaused: this.isPaused });
@@ -720,6 +834,7 @@ class RunTracker extends EventEmitter {
     this.stopTracking();
     this.stopTimer();
     this.stopPaceCalculator();
+    this.stopGPSHeartbeat();
     
     // Release CPU wake-lock
     try {
@@ -770,6 +885,7 @@ class RunTracker extends EventEmitter {
     this.startTracking();
     this.startTimer();
     this.startPaceCalculator();
+    this.startGPSHeartbeat();
     
     // Emit updated values
     this.emit('distanceChange', this.distance);

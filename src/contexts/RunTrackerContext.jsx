@@ -172,6 +172,30 @@ export const RunTrackerProvider = ({ children }) => {
         stopRun(); // This already has access to publicKey via lightningAddress || publicKey
       };
 
+      // Handler for battery optimization warnings
+      const handleBatteryOptimizationWarning = (warningData) => {
+        console.warn('Battery optimization warning:', warningData);
+        alert(warningData.message + '\n\nYou can still proceed, but GPS tracking may be interrupted.');
+      };
+
+      // Handler for GPS stall detection
+      const handleGPSStalled = (stallData) => {
+        console.warn('GPS stalled:', stallData);
+        alert(`GPS Warning: ${stallData.message}\n\nAttempting to restart GPS automatically.`);
+      };
+
+      // Handler for GPS recovery attempts
+      const handleGPSRecoveryAttempt = (recoveryData) => {
+        console.log('GPS recovery attempted:', recoveryData);
+        // Could show a toast notification here instead of alert
+      };
+
+      // Handler for GPS recovery failures
+      const handleGPSRecoveryFailed = (failureData) => {
+        console.error('GPS recovery failed:', failureData);
+        alert(`GPS Recovery Failed: ${failureData.message}`);
+      };
+
       // Subscribe to events from the run tracker
       runTracker.on('distanceChange', handleDistanceChange);
       runTracker.on('durationChange', handleDurationChange);
@@ -183,6 +207,10 @@ export const RunTrackerProvider = ({ children }) => {
       runTracker.on('stepsChange', handleStepsChange);
       runTracker.on('speedChange', handleSpeedChange);
       runTracker.on('goalReached', handleGoalReached);
+      runTracker.on('batteryOptimizationWarning', handleBatteryOptimizationWarning);
+      runTracker.on('gpsStalled', handleGPSStalled);
+      runTracker.on('gpsRecoveryAttempt', handleGPSRecoveryAttempt);
+      runTracker.on('gpsRecoveryFailed', handleGPSRecoveryFailed);
 
       // Check for active run state in localStorage on mount
       const savedRunState = localStorage.getItem('activeRunState');
@@ -238,6 +266,10 @@ export const RunTrackerProvider = ({ children }) => {
         runTracker.off('stepsChange', handleStepsChange);
         runTracker.off('speedChange', handleSpeedChange);
         runTracker.off('goalReached', handleGoalReached);
+        runTracker.off('batteryOptimizationWarning', handleBatteryOptimizationWarning);
+        runTracker.off('gpsStalled', handleGPSStalled);
+        runTracker.off('gpsRecoveryAttempt', handleGPSRecoveryAttempt);
+        runTracker.off('gpsRecoveryFailed', handleGPSRecoveryFailed);
       };
     } catch (error) {
       console.error('Error setting up run tracker event listeners:', error);
