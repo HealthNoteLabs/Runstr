@@ -794,7 +794,7 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
             <Button 
               onClick={handleResumeRun}
               variant="success"
-              className="flex-1 mr-2 font-semibold !bg-black border border-white"
+              className="flex-1 mr-2 font-semibold bg-bg-secondary border border-border-secondary hover:bg-bg-tertiary"
             >
               Resume
             </Button>
@@ -802,7 +802,7 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
             <Button 
               onClick={handlePauseRun}
               variant="warning"
-              className="flex-1 mr-2 font-semibold !bg-black border border-white"
+              className="flex-1 mr-2 font-semibold bg-bg-secondary border border-border-secondary hover:bg-bg-tertiary"
             >
               Pause
             </Button>
@@ -810,7 +810,7 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
           <Button 
             onClick={handleStopRun}
             variant="error"
-            className="flex-1 ml-2 font-semibold !bg-black border border-white"
+            className="flex-1 ml-2 font-semibold bg-bg-secondary border border-border-secondary hover:bg-bg-tertiary"
           >
             Stop
           </Button>

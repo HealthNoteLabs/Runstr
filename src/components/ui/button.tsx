@@ -30,7 +30,7 @@ const buttonVariants = cva(
         link: 
           "text-primary underline-offset-4 hover:underline hover:text-primary-hover",
         "start-run":
-          "bg-black hover:bg-gray-900 text-white border-2 border-white shadow-lg font-semibold",
+          "bg-bg-secondary hover:bg-bg-tertiary text-text-primary border-2 border-border-secondary shadow-lg font-semibold",
       },
       size: {
         default: "h-10 px-4 py-2 min-w-[44px]", // Mobile-friendly touch target

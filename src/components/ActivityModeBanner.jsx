@@ -77,12 +77,11 @@ export const ActivityModeBanner = ({ onSettingsClick }) => {
             {activityModes.map((activity) => (
               <button
                 key={activity.mode}
-                className={`action-button ${mode === activity.mode ? 'active' : ''}`}
+                className={`action-button ${mode === activity.mode ? 'active' : ''} bg-bg-secondary border border-border-secondary hover:bg-bg-tertiary transition-colors duration-200`}
                 onClick={() => handleModeChange(activity.mode)}
                 style={{
-                  backgroundColor: mode === activity.mode ? '#ffffff' : '#000000',
-                  color: mode === activity.mode ? '#000000' : '#ffffff',
-                  border: `1px solid ${mode === activity.mode ? '#ffffff' : 'var(--border-color)'}`,
+                  backgroundColor: mode === activity.mode ? 'var(--bg-tertiary)' : undefined,
+                  color: mode === activity.mode ? 'var(--text-primary)' : 'var(--text-primary)',
                   fontSize: '0.7rem',
                   fontWeight: '600',
                   minWidth: '65px',
