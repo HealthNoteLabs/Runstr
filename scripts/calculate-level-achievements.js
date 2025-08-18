@@ -19,7 +19,11 @@ const RELAYS = [
 
 const RUNSTR_IDENTIFIERS = ['RUNSTR', 'runstr'];
 const FETCH_TIMEOUT_MS = 30000;
-const WEEK_IN_SECONDS = 7 * 24 * 60 * 60;
+
+// Custom date range: August 3-15, 2025
+const START_DATE = new Date('2025-08-03T00:00:00Z');
+const END_DATE = new Date('2025-08-15T23:59:59Z');
+const PERIOD_DAYS = Math.ceil((END_DATE - START_DATE) / (1000 * 60 * 60 * 24));
 
 // XP Configuration (from level_system.md)
 const XP_CONFIG = {
@@ -135,7 +139,7 @@ function saveTrackingData(data) {
 }
 
 // Helper function to fetch events via subscribe with timeout
-async function fetchWorkoutEvents(ndkInstance, sinceTimestamp) {
+async function fetchWorkoutEvents(ndkInstance, sinceTimestamp, untilTimestamp) {
   return new Promise((resolve) => {
     const collected = new Map();
 
@@ -143,6 +147,7 @@ async function fetchWorkoutEvents(ndkInstance, sinceTimestamp) {
       {
         kinds: [1301],
         since: sinceTimestamp,
+        until: untilTimestamp,
       },
       { closeOnEose: false }
     );
@@ -166,21 +171,23 @@ async function fetchWorkoutEvents(ndkInstance, sinceTimestamp) {
   });
 }
 
-// Fetch all workout events
+// Fetch all workout events for the specified period
 async function fetchAllWorkouts() {
   const ndk = new NDK({
     explicitRelayUrls: RELAYS,
   });
   
-  const sinceTimestamp = Math.floor(Date.now() / 1000) - (90 * 24 * 60 * 60); // Last 90 days for complete picture
+  const sinceTimestamp = Math.floor(START_DATE.getTime() / 1000);
+  const untilTimestamp = Math.floor(END_DATE.getTime() / 1000);
   
   console.log(`${colors.blue}🔄 Connecting to Nostr relays...${colors.reset}`);
+  console.log(`${colors.cyan}📅 Fetching events for Aug 3-15, 2025 (${PERIOD_DAYS} days)${colors.reset}`);
   
   try {
     await ndk.connect();
     console.log(`${colors.green}✅ Connected to ${RELAYS.length} relays.${colors.reset}`);
     
-    let events = await fetchWorkoutEvents(ndk, sinceTimestamp);
+    let events = await fetchWorkoutEvents(ndk, sinceTimestamp, untilTimestamp);
     
     console.log(`${colors.cyan}📥 Fetched ${events.size} total kind:1301 events${colors.reset}`);
     
@@ -248,11 +255,11 @@ function calculateCurrentLevels(events) {
   return userLevels;
 }
 
-// Calculate level achievements for the week
+// Calculate level achievements for the period
 function calculateWeeklyAchievements(currentLevels, previousData) {
   const weeklyAchievements = [];
   const currentTime = Date.now();
-  const weekAgo = currentTime - (WEEK_IN_SECONDS * 1000);
+  const periodAgo = START_DATE.getTime();
   
   let totalLevelsGained = 0;
   let totalXPGained = 0;
@@ -299,22 +306,21 @@ function calculateWeeklyAchievements(currentLevels, previousData) {
 // Generate formatted output
 function generateOutput(achievementsData) {
   const { achievements, totalLevelsGained, totalXPGained, highestLevel, activeUsers } = achievementsData;
-  const startDate = new Date(Date.now() - (WEEK_IN_SECONDS * 1000));
-  const endDate = new Date();
   
   console.log('\n' + '═'.repeat(80));
-  console.log(`${colors.magenta}${colors.bold}🏆 WEEKLY LEVEL ACHIEVEMENTS${colors.reset}`);
+  console.log(`${colors.magenta}${colors.bold}🏆 LEVEL ACHIEVEMENTS (AUG 3-15, 2025)${colors.reset}`);
   console.log('═'.repeat(80));
-  console.log(`${colors.cyan}📅 Period: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}${colors.reset}`);
+  console.log(`${colors.cyan}📅 Period: ${START_DATE.toLocaleDateString()} to ${END_DATE.toLocaleDateString()}${colors.reset}`);
+  console.log(`${colors.cyan}📊 Days covered: ${PERIOD_DAYS} days${colors.reset}`);
   console.log(`${colors.cyan}   • Users who leveled up: ${achievements.length}${colors.reset}`);
   console.log(`${colors.cyan}   • Total levels gained: ${totalLevelsGained}${colors.reset}`);
   console.log(`${colors.cyan}   • Total XP gained: ${totalXPGained.toLocaleString()}${colors.reset}`);
   console.log(`${colors.cyan}   • Average levels gained: ${achievements.length > 0 ? (totalLevelsGained / achievements.length).toFixed(1) : 0}${colors.reset}`);
   console.log(`${colors.cyan}   • Highest level achieved: ${highestLevel}${colors.reset}`);
-  console.log(`${colors.cyan}   • Total active users this week: ${activeUsers}${colors.reset}`);
+  console.log(`${colors.cyan}   • Total active users this period: ${activeUsers}${colors.reset}`);
   
   if (achievements.length === 0) {
-    console.log(`\n${colors.yellow}⚠ No users leveled up this week${colors.reset}`);
+    console.log(`\n${colors.yellow}⚠ No users leveled up this period${colors.reset}`);
     return;
   }
   
@@ -361,7 +367,7 @@ function updateTrackingData(currentLevels) {
 
 // Main execution
 async function main() {
-  console.log(`${colors.magenta}${colors.bold}🏆 RUNSTR Level Achievements Calculator${colors.reset}\n`);
+  console.log(`${colors.magenta}${colors.bold}🏆 RUNSTR Level Achievements Calculator (Aug 3-15, 2025)${colors.reset}\n`);
   
   // Load previous tracking data
   const previousData = loadTrackingData();
@@ -370,7 +376,7 @@ async function main() {
   const events = await fetchAllWorkouts();
   
   if (events.length === 0) {
-    console.log(`${colors.yellow}⚠ No RUNSTR workout events found${colors.reset}`);
+    console.log(`${colors.yellow}⚠ No RUNSTR workout events found for this period${colors.reset}`);
     return;
   }
   

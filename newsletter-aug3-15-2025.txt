@@ -1,0 +1,60 @@
+🏃‍♂️ RUNSTR Update: Aug 3-15, 2025 🏃‍♀️
+
+"Every mile begins with a single step. Every PR begins with showing up." 💪
+
+🏃‍♂️💰 PERIOD STATS RECAP (13 DAYS)
+════════════════════════════════
+💸 Total workouts: 228
+👥 Active runners: 39
+🏃 Total distance: 715 miles
+📊 Average distance: 3.1 miles
+📅 Period: 8/2/2025 to 8/15/2025
+
+🏆 TOP PERFORMERS
+═══════════════════════════════
+🥇 npub1aqehzv2jgn3x3hr...: 17 workouts
+🥈 npub1yekzsdjyh6qyy6r...: 16 workouts
+🥉 npub1w30t22wsuskjlfk...: 16 workouts
+
+💰 PERIOD REWARDS (AUG 3-15)
+════════════════════════════════
+🎯 Reward System:
+• 1 run: 20 sats
+• 2 runs: 40 sats (total 60)
+• 3 runs: 60 sats (total 120)
+• 4 runs: 80 sats (total 200)
+• 5 runs: 100 sats (total 300)
+• 6 runs: 120 sats (total 420)
+• 7 runs: 140 sats (total 560)
+
+🏅 Level Bonuses:
+• Level 1: +50 base reward
+• Level 2: +5 sats per streak day
+
+💡 Tag your runs with RUNSTR to earn rewards!
+Run the rewards calculator for detailed payouts.
+
+🏆 LEVEL ACHIEVEMENTS (AUG 3-15)
+═══════════════════════════════
+🎉 Check level achievements with the level calculator!
+Run the level achievements script for detailed results.
+
+📢 PROJECT UPDATE
+═════════════════
+RUNSTR continues to grow as the premier Bitcoin-native fitness app! We're building the future of decentralized fitness tracking with Nostr integration, Lightning rewards, and a thriving community of runners. Our open-source approach ensures your data stays yours while connecting you with like-minded athletes worldwide. 🌍⚡
+
+📱 GET THE APP
+══════════════
+Download RUNSTR for Android/CalyxOS/GrapheneOS:
+🏪 Zap.Store (recommended)
+💻 GitHub Releases
+📖 Visit runstr.club for the latest blog updates
+
+❤️ SUPPORT RUNSTR
+═════════════════
+Help us build the future of Bitcoin fitness!
+💰 Donate: https://geyser.fund/project/runstr?hero=runstr
+🔗 Share: Tell your running friends about RUNSTR
+🧪 Test: Try new features and report bugs
+
+#RUNSTR #cyclestr #walkstr #Bitcoin #Lightning #Nostr #Fitness #Running #OpenSource #Decentralized

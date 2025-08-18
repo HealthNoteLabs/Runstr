@@ -259,18 +259,37 @@ export const NostrProvider = ({ children }) => {
   const connectSigner = useCallback(async () => {
     console.log("NostrContext: connectSigner called by component.");
     signerAttachmentPromise = null; // Reset to allow re-attempt
-    const signerResult = await ensureSignerAttached();
-    const finalPubkey = signerResult?.pubkey || null;
-    const signerError = signerResult?.error || null;
-    if (finalPubkey) {
-        setPublicKeyInternal(finalPubkey);
-        setNdkError(prev => prev && prev.includes("Signer:") ? null : prev); // Clear signer part of error if successful
-    } else if (signerError) {
-        setNdkError(prevError => prevError ? `${prevError} Signer: ${signerError}` : `Signer: ${signerError}`);
+    setNdkError(null); // Clear previous errors
+    
+    try {
+      // Use the new retry authentication mechanism
+      const pubkey = await AmberAuth.retryAuthentication(3);
+      if (pubkey) {
+        setPublicKeyInternal(pubkey);
+        setSignerAvailable(true);
+        
+        // Update the NDK signer
+        ndk.signer = {
+          _pubkey: pubkey,
+          user: async function() {
+            return { pubkey: this._pubkey };
+          },
+          sign: async (event) => {
+            const signedEvent = await AmberAuth.signEvent(event);
+            return signedEvent.sig;
+          }
+        };
+        
+        console.log('NostrContext: Successfully connected with Amber, pubkey:', pubkey);
+        return { pubkey, error: null };
+      }
+    } catch (error) {
+      console.error('NostrContext: connectSigner failed:', error);
+      setNdkError(error.message);
+      setSignerAvailable(false);
+      ndk.signer = undefined;
+      return { pubkey: null, error: error.message };
     }
-    // After connection attempt, update the signer state
-    setSignerAvailable(!!ndk.signer);
-    return signerResult;
   }, []);
 
   const setPublicKey = useCallback((pk) => {

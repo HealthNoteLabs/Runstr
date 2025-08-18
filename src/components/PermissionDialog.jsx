@@ -32,12 +32,10 @@ export const PermissionDialog = ({ onContinue, onCancel }) => {
     setIsProcessing(true);
     
     try {
-      // This will show the Amber Signer dialog
-      if (window.nostr) {
-        const nostrSuccess = await requestNostrPermissions();
-        if (!nostrSuccess) {
-          console.warn('Failed to get Nostr permissions');
-        }
+      // Request Amber authentication
+      const nostrSuccess = await requestNostrPermissions();
+      if (!nostrSuccess) {
+        console.warn('Failed to get Amber authentication');
       }
       
       // Request location permissions immediately after Amber permissions
@@ -103,7 +101,15 @@ export const PermissionDialog = ({ onContinue, onCancel }) => {
         
         // Show a more helpful error message for GrapheneOS users
         if (locationError.message?.includes('permission') || locationError.code === 'NOT_AUTHORIZED') {
-          alert('Location permission was not granted. Runstr requires location access to track your runs. Please enable location permission in your device settings and restart the app.');
+          const isGrapheneOS = navigator.userAgent.toLowerCase().includes('grapheneos') || 
+                              localStorage.getItem('isGrapheneOS') === 'true' ||
+                              navigator.userAgent.toLowerCase().includes('vanadium');
+          
+          const message = isGrapheneOS 
+            ? 'Location permission was not granted. On GrapheneOS:\n\n1. Go to Settings > Apps > Runstr > Permissions\n2. Set Location to "Allow all the time"\n3. Set Network permission to "Allow"\n4. Go to Settings > Apps > Runstr > Battery\n5. Select "Don\'t optimize"\n6. Restart Runstr\n\nGrapheneOS requires these specific settings for GPS tracking apps.'
+            : 'Location permission was not granted. Runstr requires location access to track your runs. Please enable location permission in your device settings and restart the app.';
+          
+          alert(message);
           
           // Try to open settings
           try {

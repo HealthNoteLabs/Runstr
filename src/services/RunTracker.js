@@ -78,6 +78,20 @@ class RunTracker extends EventEmitter {
     return localStorage.getItem('distanceUnit') || 'km';
   }
 
+  // Helper method to detect GrapheneOS
+  isGrapheneOS() {
+    // Check multiple indicators for GrapheneOS
+    const userAgent = navigator.userAgent.toLowerCase();
+    const isGrapheneUserAgent = userAgent.includes('grapheneos');
+    const isGrapheneStored = localStorage.getItem('isGrapheneOS') === 'true';
+    
+    // Additional checks for GrapheneOS indicators
+    const hasGrapheneFeatures = window.location.protocol === 'https:' && 
+                               (userAgent.includes('vanadium') || userAgent.includes('chromium'));
+    
+    return isGrapheneUserAgent || isGrapheneStored || hasGrapheneFeatures;
+  }
+
   toRadians(degrees) {
     return (degrees * Math.PI) / 180;
   }
@@ -202,14 +216,32 @@ class RunTracker extends EventEmitter {
   addPosition(newPosition) {
     // Only process position updates if actively tracking (not paused and tracking is on)
     if (!this.isTracking || this.isPaused) {
-      // Don't process position updates when not actively tracking
+      console.log('[GPS Debug] Position rejected: not tracking or paused', { isTracking: this.isTracking, isPaused: this.isPaused });
       return;
     }
 
-    // Filter out positions with poor GPS accuracy (> 20 meters)
+    // Enhanced GPS debugging for GrapheneOS
     const accuracy = newPosition.accuracy ?? newPosition.coords?.accuracy ?? 999;
-    if (accuracy > 20) {
-      console.log(`Position filtered: poor accuracy (${accuracy}m)`);
+    const isGrapheneOS = this.isGrapheneOS();
+    const rawLat = newPosition.latitude ?? newPosition.coords?.latitude;
+    const rawLon = newPosition.longitude ?? newPosition.coords?.longitude;
+    
+    // COMPREHENSIVE GRAPHENE DIAGNOSTIC - Log every detail
+    console.log('[GPS COMPREHENSIVE DEBUG]', {
+      raw_accuracy: accuracy,
+      raw_lat: rawLat,
+      raw_lon: rawLon,
+      timestamp: newPosition.timestamp || Date.now(),
+      isGrapheneOS: isGrapheneOS,
+      positionCount: this.positions.length,
+      currentDistance: this.distance,
+      full_position_object: newPosition
+    });
+
+    // More lenient accuracy threshold for GrapheneOS due to stricter privacy controls
+    const accuracyThreshold = isGrapheneOS ? 50 : 20; // Even more lenient for GrapheneOS
+    if (accuracy > accuracyThreshold) {
+      console.log(`[GPS Debug] Position filtered: poor accuracy (${accuracy}m) - threshold: ${accuracyThreshold}m`);
       return;
     }
 
@@ -232,7 +264,14 @@ class RunTracker extends EventEmitter {
     const lat = currentPositionStd.coords.latitude;
     const lon = currentPositionStd.coords.longitude;
     if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-      console.log(`Position filtered: invalid coordinates (${lat}, ${lon})`);
+      console.log(`[GPS Debug] Position filtered: invalid coordinates (${lat}, ${lon})`);
+      console.log('[GPS Debug] Invalid coordinate details:', { 
+        lat_isNaN: isNaN(lat), 
+        lon_isNaN: isNaN(lon),
+        lat_range_valid: lat >= -90 && lat <= 90,
+        lon_range_valid: lon >= -180 && lon <= 180,
+        originalPosition: newPosition
+      });
       return;
     }
 
@@ -247,20 +286,57 @@ class RunTracker extends EventEmitter {
 
       // Use the shared filtering logic to decide whether to accept the point.
       // If the point fails the quality checks, we ignore it entirely.
-      if (!filterLocation(currentPositionStd, lastPositionStd)) {
-        console.log('[RunTracker] Position rejected by quality filter');
+      // HOWEVER: GrapheneOS emergency bypass if we have many positions but zero distance
+      const shouldBypassFilter = isGrapheneOS && this.positions.length > 5 && this.distance === 0;
+      
+      if (!shouldBypassFilter && !filterLocation(currentPositionStd, lastPositionStd)) {
+        console.log('[GPS Debug] Position rejected by quality filter');
+        console.log('[GPS Debug] Filter rejection details:', {
+          currentPos: { lat: currentPositionStd.coords.latitude, lon: currentPositionStd.coords.longitude },
+          lastPos: { lat: lastPositionStd.coords.latitude, lon: lastPositionStd.coords.longitude },
+          timeDiff: currentPositionStd.timestamp - lastPositionStd.timestamp,
+          isGrapheneOS: isGrapheneOS
+        });
         return;
       }
+      
+      if (shouldBypassFilter) {
+        console.log('[GrapheneOS] EMERGENCY BYPASS: Skipping quality filter due to zero distance issue');
+      }
 
-      const distanceIncrement = this.calculateDistance(
-        lastRawPosition.latitude,
-        lastRawPosition.longitude,
-        newPosition.latitude,
-        newPosition.longitude
+      let distanceIncrement = this.calculateDistance(
+        lastRawPosition.latitude || lastRawPosition.coords?.latitude,
+        lastRawPosition.longitude || lastRawPosition.coords?.longitude,
+        newPosition.latitude || newPosition.coords?.latitude,
+        newPosition.longitude || newPosition.coords?.longitude
       );
+      
+      // GrapheneOS fallback calculation if main calc returns 0 or NaN
+      if (isGrapheneOS && (isNaN(distanceIncrement) || distanceIncrement === 0)) {
+        console.log('[GrapheneOS] Primary distance calculation failed, trying fallback');
+        
+        // Try with standardized coordinates
+        const fallbackDistance = this.calculateDistance(
+          lastPositionStd.coords.latitude,
+          lastPositionStd.coords.longitude,
+          currentPositionStd.coords.latitude,
+          currentPositionStd.coords.longitude
+        );
+        
+        console.log(`[GrapheneOS] Fallback distance: ${fallbackDistance}m`);
+        if (!isNaN(fallbackDistance) && fallbackDistance > 0) {
+          distanceIncrement = fallbackDistance;
+          console.log('[GrapheneOS] Using fallback distance calculation');
+        }
+      }
 
       // Minimum threshold to additionally smooth out micro-jitter.
-      const MOVEMENT_THRESHOLD = 0.5; // metres - reduced for cycling sensitivity
+      // Very sensitive threshold for GrapheneOS to capture movement data
+      const MOVEMENT_THRESHOLD = isGrapheneOS ? 0.1 : 0.5; // metres - very sensitive for GrapheneOS
+      
+      console.log(`[Distance Debug] Increment: ${distanceIncrement.toFixed(3)}m, Threshold: ${MOVEMENT_THRESHOLD}m, Total: ${this.distance.toFixed(2)}m`);
+      console.log(`[Distance Debug] Movement acceptance test: ${distanceIncrement >= MOVEMENT_THRESHOLD ? 'ACCEPTED' : 'REJECTED'}`);
+      
       if (distanceIncrement >= MOVEMENT_THRESHOLD) {
         this.distance += distanceIncrement;
         this.emit('distanceChange', this.distance); // Emit distance change
@@ -340,6 +416,27 @@ class RunTracker extends EventEmitter {
     }
 
     this.positions.push(currentPositionStd);
+    
+    // GrapheneOS Zero Distance Debugging - track position acceptance
+    if (isGrapheneOS) {
+      this.grapheneDebugCounter = (this.grapheneDebugCounter || 0) + 1;
+      this.grapheneLastPositionTime = Date.now();
+      
+      console.log(`[GrapheneOS] POSITION ACCEPTED #${this.grapheneDebugCounter}`);
+      console.log(`[GrapheneOS] Total positions stored: ${this.positions.length}`);
+      console.log(`[GrapheneOS] Current total distance: ${this.distance.toFixed(3)}m`);
+      console.log(`[GrapheneOS] Time since last position: ${this.grapheneLastPositionTime - (this.positions[this.positions.length - 2]?.timestamp || this.grapheneLastPositionTime)}ms`);
+      
+      // If we have multiple positions but zero distance, this is the core issue
+      if (this.positions.length > 3 && this.distance === 0) {
+        console.log(`[GrapheneOS] CRITICAL: ${this.positions.length} positions accepted but ZERO distance accumulated!`);
+        console.log('[GrapheneOS] Last 3 positions:', this.positions.slice(-3).map(p => ({
+          lat: p.coords.latitude,
+          lon: p.coords.longitude,
+          timestamp: p.timestamp
+        })));
+      }
+    }
   }
 
   startTimer() {
@@ -408,36 +505,38 @@ class RunTracker extends EventEmitter {
   }
 
   /**
-   * Get GPS configuration optimized for the current activity type
+   * Get GPS configuration optimized for the current activity type and GrapheneOS
    * @returns {Object} GPS configuration object
    */
   getGpsConfig() {
+    const isGrapheneOS = this.isGrapheneOS();
+    
     const baseConfig = {
       highAccuracy: true,
-      staleLocationThreshold: 30000,
-      interval: 5000,
-      fastestInterval: 5000,
+      staleLocationThreshold: isGrapheneOS ? 45000 : 30000, // More lenient for GrapheneOS
+      interval: isGrapheneOS ? 3000 : 5000, // More frequent updates for GrapheneOS
+      fastestInterval: isGrapheneOS ? 3000 : 5000,
       activitiesInterval: 10000,
-      locationProvider: 3,
+      locationProvider: isGrapheneOS ? 'gps' : 3, // Explicit GPS provider for GrapheneOS
       saveBatteryOnBackground: false,
       stopOnTerminate: false,
       startOnBoot: false,
-      debug: false
+      debug: isGrapheneOS // Enable debug mode for GrapheneOS
     };
 
     // Activity-specific optimizations
     if (this.activityType === ACTIVITY_TYPES.CYCLE) {
       return {
         ...baseConfig,
-        distanceFilter: 2, // More frequent updates for cycling (vs 5m default)
-        interval: 3000,    // More frequent intervals for better cycling tracking
-        fastestInterval: 3000,
+        distanceFilter: isGrapheneOS ? 1 : 2, // More sensitive for GrapheneOS cycling
+        interval: isGrapheneOS ? 2000 : 3000,    // More frequent intervals
+        fastestInterval: isGrapheneOS ? 2000 : 3000,
       };
     } else {
       // Running and walking use more conservative settings
       return {
         ...baseConfig,
-        distanceFilter: 5, // Standard distance filter for running/walking
+        distanceFilter: isGrapheneOS ? 2 : 5, // More sensitive for GrapheneOS
       };
     }
   }
@@ -620,9 +719,9 @@ class RunTracker extends EventEmitter {
               this.cleanupWatchers();
               
               // Show a user-friendly message for GrapheneOS users
-              const isGrapheneOS = navigator.userAgent.includes('GrapheneOS') || localStorage.getItem('isGrapheneOS') === 'true';
+              const isGrapheneOS = this.isGrapheneOS();
               const message = isGrapheneOS 
-                ? 'Location permission was revoked. On GrapheneOS, please go to Settings > Apps > Runstr > Permissions and ensure Location access is enabled with "Allow all the time" selected.'
+                ? 'Location permission was revoked. On GrapheneOS, please:\n1. Go to Settings > Apps > Runstr > Permissions\n2. Set Location to "Allow all the time"\n3. Disable battery optimization: Settings > Apps > Runstr > Battery > Don\'t optimize\n4. Check Network permission is enabled'
                 : 'Location permission was revoked. Please go to Settings > Apps > Runstr > Permissions and re-enable Location access.';
               
               alert(message);
@@ -653,9 +752,9 @@ class RunTracker extends EventEmitter {
         this.emit('permissionError', error);
         
         // Enhanced error message for GrapheneOS users
-        const isGrapheneOS = navigator.userAgent.includes('GrapheneOS') || localStorage.getItem('isGrapheneOS') === 'true';
+        const isGrapheneOS = this.isGrapheneOS();
         const message = isGrapheneOS
-          ? 'Location permission is required. On GrapheneOS, please enable location permission with "Allow all the time" and disable battery optimization for Runstr in Settings > Apps > Runstr.'
+          ? 'Location permission is required. On GrapheneOS, please:\n1. Settings > Apps > Runstr > Permissions > Location: "Allow all the time"\n2. Settings > Apps > Runstr > Battery > Don\'t optimize\n3. Check Network permission is enabled\n4. Restart the app after changes'
           : 'Location permission is required. Please enable it in Settings > Apps > Runstr > Permissions.';
         
         alert(message);
@@ -686,12 +785,36 @@ class RunTracker extends EventEmitter {
   async start() {
     if (this.isTracking && !this.isPaused) return;
     
+    // GrapheneOS diagnostic on startup
+    const isGrapheneOS = this.isGrapheneOS();
+    if (isGrapheneOS) {
+      console.log('[GrapheneOS] DETAILED DIAGNOSTIC START');
+      console.log('[GrapheneOS] User Agent:', navigator.userAgent);
+      console.log('[GrapheneOS] Local Storage isGrapheneOS:', localStorage.getItem('isGrapheneOS'));
+      console.log('[GrapheneOS] Network Permission Available:', navigator.permissions ? 'Yes' : 'No');
+      console.log('[GrapheneOS] Geolocation Available:', navigator.geolocation ? 'Yes' : 'No');
+      console.log('[GrapheneOS] Online Status:', navigator.onLine);
+      console.log('[GrapheneOS] Enhanced GPS settings enabled');
+      
+      this.emit('grapheneOSDetected', {
+        message: 'GrapheneOS detected - using optimized GPS settings for privacy-focused OS'
+      });
+      
+      // GrapheneOS Zero Distance Debugging
+      this.grapheneDebugCounter = 0;
+      this.grapheneLastPositionTime = 0;
+    }
+    
     // Check battery optimization before starting
     const isBatteryOptimized = await this.checkBatteryOptimization();
     if (!isBatteryOptimized) {
       console.warn('Battery optimization is enabled - GPS tracking may be unreliable');
+      const message = isGrapheneOS 
+        ? 'Battery optimization is enabled. On GrapheneOS, go to Settings > Apps > Runstr > Battery and select "Don\'t optimize" for reliable GPS tracking.'
+        : 'Battery optimization is enabled for Runstr. This may cause GPS tracking to stop unexpectedly. Please disable battery optimization in your device settings.';
+      
       this.emit('batteryOptimizationWarning', {
-        message: 'Battery optimization is enabled for Runstr. This may cause GPS tracking to stop unexpectedly. Please disable battery optimization in your device settings.',
+        message: message,
         canProceed: true // Allow user to proceed anyway
       });
       // Don't return here - let user proceed but warn them

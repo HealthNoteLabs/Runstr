@@ -814,16 +814,27 @@ export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null
           created_at: Math.floor(Date.now() / 1000)
         };
         
-        // Sign using Amber
-        signedEvent = await AmberAuth.signEvent(event);
-        publishResult.signMethod = 'amber';
-        
-        // If signedEvent is null, the signing is happening asynchronously
-        // and we'll need to handle it via deep linking
-        if (!signedEvent) {
-          // In a real implementation, you would return a Promise that
-          // resolves when the deep link callback is received
-          return null;
+        // Sign using Amber - this is now properly async with timeout handling
+        try {
+          signedEvent = await AmberAuth.signEvent(event);
+          publishResult.signMethod = 'amber';
+          
+          // Validate that we got a properly signed event
+          if (!signedEvent || !signedEvent.sig || !signedEvent.id) {
+            throw new Error('Amber signing failed - invalid signed event returned');
+          }
+        } catch (amberError) {
+          console.error('Amber signing failed:', amberError);
+          // Provide specific error messages based on the error type
+          if (amberError.message.includes('timeout')) {
+            throw new Error('Amber signing timed out. Please ensure Amber is running and try again.');
+          } else if (amberError.message.includes('not found')) {
+            throw new Error('Amber app not found. Please install Amber from https://github.com/greenart7c3/Amber');
+          } else if (amberError.message.includes('cancelled')) {
+            throw new Error('Signing was cancelled by user.');
+          } else {
+            throw new Error(`Amber signing failed: ${amberError.message}`);
+          }
         }
       }
     }
@@ -942,13 +953,37 @@ export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null
     } catch (fallbackError) {
       console.error('Fallback to nostr-tools also failed:', fallbackError);
       publishResult.error = fallbackError.message;
-      throw new Error(`Failed to publish with both NDK and nostr-tools: ${fallbackError.message}`);
+      
+      // Provide specific error messages based on the failure type
+      if (fallbackError.message.includes('network') || fallbackError.message.includes('timeout')) {
+        throw new Error('Publishing failed due to network issues. Please check your internet connection and try again.');
+      } else if (fallbackError.message.includes('relay') || fallbackError.message.includes('connection')) {
+        throw new Error('Could not connect to Nostr relays. Please try again in a moment.');
+      } else if (fallbackError.message.includes('sign')) {
+        throw new Error('Event signing failed. Please ensure Amber is working properly and try again.');
+      } else {
+        throw new Error(`Publishing failed: ${fallbackError.message}. Please try again.`);
+      }
     }
     
     return { ...signedEvent, ...publishResult };
   } catch (error) {
     console.error('Error in createAndPublishEvent:', error);
-    throw error;
+    
+    // Enhance error message if it's not already user-friendly
+    if (error.message && (
+      error.message.includes('Amber') || 
+      error.message.includes('timeout') || 
+      error.message.includes('network') ||
+      error.message.includes('relay') ||
+      error.message.includes('Publishing failed')
+    )) {
+      // Already has a user-friendly message, pass it through
+      throw error;
+    } else {
+      // Generic error, provide helpful guidance
+      throw new Error('Failed to publish to Nostr. Please check your connection and ensure Amber is working properly, then try again.');
+    }
   }
 };
 

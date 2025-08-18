@@ -17,7 +17,11 @@ const RELAYS = [
 ];
 
 const RUNSTR_IDENTIFIERS = ['RUNSTR', 'runstr'];
-const WEEK_IN_SECONDS = 7 * 24 * 60 * 60;
+
+// Custom date range: August 3-15, 2025
+const START_DATE = new Date('2025-08-03T00:00:00Z');
+const END_DATE = new Date('2025-08-15T23:59:59Z');
+const PERIOD_DAYS = Math.ceil((END_DATE - START_DATE) / (1000 * 60 * 60 * 24));
 
 // ANSI color codes
 const colors = {
@@ -31,36 +35,55 @@ const colors = {
   bold: '\x1b[1m'
 };
 
-// Get current week number
-function getWeekNumber() {
-  const now = new Date();
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
-  const days = Math.floor((now - startOfYear) / (24 * 60 * 60 * 1000));
-  return Math.ceil((days + startOfYear.getDay() + 1) / 7);
-}
-
-// Get date range for the week
-function getWeekDateRange() {
-  const now = new Date();
-  const weekAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
-  
+// Get date range for the period
+function getDateRange() {
   return {
-    start: weekAgo.toLocaleDateString(),
-    end: now.toLocaleDateString()
+    start: START_DATE.toLocaleDateString(),
+    end: END_DATE.toLocaleDateString()
   };
 }
 
-// Fetch weekly data (simplified version combining both scripts)
+// Fetch data for the period (using NDK instead of SimplePool)
 async function fetchWeeklyData() {
-  const pool = new SimplePool();
-  const sinceTimestamp = Math.floor(Date.now() / 1000) - WEEK_IN_SECONDS;
+  const NDK = (await import("@nostr-dev-kit/ndk")).default;
+  const ndk = new NDK({
+    explicitRelayUrls: RELAYS,
+  });
   
-  console.log(`${colors.blue}🔄 Fetching weekly data...${colors.reset}`);
+  const sinceTimestamp = Math.floor(START_DATE.getTime() / 1000);
+  const untilTimestamp = Math.floor(END_DATE.getTime() / 1000);
+  
+  console.log(`${colors.blue}🔄 Fetching data for Aug 3-15, 2025...${colors.reset}`);
   
   try {
-    const events = await pool.querySync(RELAYS, {
-      kinds: [1301],
-      since: sinceTimestamp,
+    await ndk.connect();
+    
+    const events = await new Promise((resolve) => {
+      const collected = [];
+      const sub = ndk.subscribe(
+        {
+          kinds: [1301],
+          since: sinceTimestamp,
+          until: untilTimestamp,
+        },
+        { closeOnEose: false }
+      );
+      
+      const done = () => {
+        try { sub.stop(); } catch (_) {}
+        resolve(collected);
+      };
+      
+      const timeoutId = setTimeout(done, 30000);
+      
+      sub.on("event", (ev) => {
+        collected.push(ev);
+      });
+      
+      sub.on("eose", () => {
+        clearTimeout(timeoutId);
+        done();
+      });
     });
     
     const runstrEvents = events.filter(event => 
@@ -76,8 +99,6 @@ async function fetchWeeklyData() {
   } catch (error) {
     console.error(`${colors.red}❌ Error fetching events:${colors.reset}`, error);
     return [];
-  } finally {
-    pool.close(RELAYS);
   }
 }
 
@@ -127,23 +148,22 @@ function calculateSummaryStats(events) {
 
 // Generate newsletter content
 function generateNewsletter(weeklyStats) {
-  const weekNumber = getWeekNumber();
-  const dateRange = getWeekDateRange();
+  const dateRange = getDateRange();
   
   let newsletter = '';
   
   // Header
-  newsletter += `🏃‍♂️ RUNSTR Weekly Update #${weekNumber} 🏃‍♀️\n\n`;
+  newsletter += `🏃‍♂️ RUNSTR Update: Aug 3-15, 2025 🏃‍♀️\n\n`;
   newsletter += `"Every mile begins with a single step. Every PR begins with showing up." 💪\n\n`;
   
-  // Weekly Stats Recap
-  newsletter += `🏃‍♂️💰 WEEKLY STATS RECAP\n`;
+  // Stats Recap
+  newsletter += `🏃‍♂️💰 PERIOD STATS RECAP (${PERIOD_DAYS} DAYS)\n`;
   newsletter += `════════════════════════════════\n`;
   newsletter += `💸 Total workouts: ${weeklyStats.totalWorkouts}\n`;
   newsletter += `👥 Active runners: ${weeklyStats.activeUsers}\n`;
   newsletter += `🏃 Total distance: ${weeklyStats.totalDistance} miles\n`;
   newsletter += `📊 Average distance: ${weeklyStats.averageDistance} miles\n`;
-  newsletter += `📅 Week: ${dateRange.start} to ${dateRange.end}\n\n`;
+  newsletter += `📅 Period: ${dateRange.start} to ${dateRange.end}\n\n`;
   
   // Top Performers
   if (weeklyStats.topUsers.length > 0) {
@@ -156,8 +176,8 @@ function generateNewsletter(weeklyStats) {
     newsletter += `\n`;
   }
   
-  // Weekly Rewards Section
-  newsletter += `💰 WEEKLY REWARDS\n`;
+  // Rewards Section
+  newsletter += `💰 PERIOD REWARDS (AUG 3-15)\n`;
   newsletter += `════════════════════════════════\n`;
   newsletter += `🎯 Reward System:\n`;
   newsletter += `• 1 run: 20 sats\n`;
@@ -169,14 +189,14 @@ function generateNewsletter(weeklyStats) {
   newsletter += `• 7 runs: 140 sats (total 560)\n`;
   newsletter += `\n`;
   newsletter += `🏅 Level Bonuses:\n`;
-  newsletter += `• Level 1: +50 weekly base reward\n`;
+  newsletter += `• Level 1: +50 base reward\n`;
   newsletter += `• Level 2: +5 sats per streak day\n`;
   newsletter += `\n`;
-  newsletter += `💡 Tag your runs with RUNSTR to earn weekly rewards!\n`;
+  newsletter += `💡 Tag your runs with RUNSTR to earn rewards!\n`;
   newsletter += `Run the rewards calculator for detailed payouts.\n\n`;
   
   // Level Achievements Placeholder
-  newsletter += `🏆 WEEKLY LEVEL ACHIEVEMENTS\n`;
+  newsletter += `🏆 LEVEL ACHIEVEMENTS (AUG 3-15)\n`;
   newsletter += `═══════════════════════════════\n`;
   newsletter += `🎉 Check level achievements with the level calculator!\n`;
   newsletter += `Run the level achievements script for detailed results.\n\n`;
@@ -210,8 +230,7 @@ function generateNewsletter(weeklyStats) {
 
 // Save newsletter to file
 function saveNewsletter(content) {
-  const weekNumber = getWeekNumber();
-  const filename = `scripts/newsletter-week-${weekNumber}.txt`;
+  const filename = `scripts/newsletter-aug3-15-2025.txt`;
   
   try {
     fs.writeFileSync(filename, content);
@@ -223,13 +242,13 @@ function saveNewsletter(content) {
 
 // Main execution
 async function main() {
-  console.log(`${colors.magenta}${colors.bold}📰 RUNSTR Weekly Newsletter Generator${colors.reset}\n`);
+  console.log(`${colors.magenta}${colors.bold}📰 RUNSTR Newsletter Generator (Aug 3-15, 2025)${colors.reset}\n`);
   
-  // Fetch weekly data
+  // Fetch data
   const events = await fetchWeeklyData();
   
   if (events.length === 0) {
-    console.log(`${colors.yellow}⚠ No RUNSTR workout events found for this week${colors.reset}`);
+    console.log(`${colors.yellow}⚠ No RUNSTR workout events found for this period${colors.reset}`);
     console.log(`${colors.cyan}📄 Generating newsletter with placeholder data...${colors.reset}`);
   }
   

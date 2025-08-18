@@ -18,7 +18,11 @@ const RELAYS = [
 
 const RUNSTR_IDENTIFIERS = ['RUNSTR', 'runstr'];
 const FETCH_TIMEOUT_MS = 30000; // 30 seconds
-const WEEK_IN_SECONDS = 7 * 24 * 60 * 60;
+
+// Custom date range: August 3-15, 2025
+const START_DATE = new Date('2025-08-03T00:00:00Z');
+const END_DATE = new Date('2025-08-15T23:59:59Z');
+const PERIOD_DAYS = Math.ceil((END_DATE - START_DATE) / (1000 * 60 * 60 * 24));
 
 // Reward configuration
 const REWARD_CONFIG = {
@@ -83,11 +87,8 @@ function formatDate(timestamp) {
 }
 
 // Helper function to get date range string
-function getDateRangeString(sinceTimestamp) {
-  const startDate = new Date(sinceTimestamp * 1000);
-  const endDate = new Date();
-  
-  return `${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`;
+function getDateRangeString() {
+  return `${START_DATE.toLocaleDateString()} to ${END_DATE.toLocaleDateString()}`;
 }
 
 // Helper function to truncate npub for display
@@ -96,7 +97,7 @@ function truncateNpub(npub) {
 }
 
 // Helper function to fetch events via subscribe with timeout
-async function fetchWeeklyWorkoutEvents(ndkInstance, sinceTimestamp) {
+async function fetchWeeklyWorkoutEvents(ndkInstance, sinceTimestamp, untilTimestamp) {
   return new Promise((resolve) => {
     const collected = new Map();
 
@@ -104,6 +105,7 @@ async function fetchWeeklyWorkoutEvents(ndkInstance, sinceTimestamp) {
       {
         kinds: [1301],
         since: sinceTimestamp,
+        until: untilTimestamp,
       },
       { closeOnEose: false }
     );
@@ -127,13 +129,14 @@ async function fetchWeeklyWorkoutEvents(ndkInstance, sinceTimestamp) {
   });
 }
 
-// Fetch all workout events from the last week
+// Fetch all workout events for the specified period
 async function fetchWeeklyWorkouts() {
   const ndk = new NDK({
     explicitRelayUrls: RELAYS,
   });
   
-  const sinceTimestamp = Math.floor(Date.now() / 1000) - WEEK_IN_SECONDS;
+  const sinceTimestamp = Math.floor(START_DATE.getTime() / 1000);
+  const untilTimestamp = Math.floor(END_DATE.getTime() / 1000);
   
   console.log(`${colors.blue}🔄 Connecting to Nostr relays...${colors.reset}`);
   
@@ -141,10 +144,10 @@ async function fetchWeeklyWorkouts() {
     await ndk.connect();
     console.log(`${colors.green}✅ Connected to ${RELAYS.length} relays.${colors.reset}`);
     
-    console.log(`${colors.blue}🔍 Fetching workout events from the last 7 days...${colors.reset}`);
-    console.log(`${colors.cyan}📅 Time range: ${getDateRangeString(sinceTimestamp)}${colors.reset}`);
+    console.log(`${colors.blue}🔍 Fetching workout events for ${PERIOD_DAYS} days...${colors.reset}`);
+    console.log(`${colors.cyan}📅 Time range: ${getDateRangeString()}${colors.reset}`);
     
-    let events = await fetchWeeklyWorkoutEvents(ndk, sinceTimestamp);
+    let events = await fetchWeeklyWorkoutEvents(ndk, sinceTimestamp, untilTimestamp);
     
     console.log(`${colors.cyan}📥 Fetched ${events.size} total kind:1301 events${colors.reset}`);
     
@@ -158,15 +161,15 @@ async function fetchWeeklyWorkouts() {
     
     console.log(`${colors.green}✅ Found ${runstrEvents.length} RUNSTR workout events${colors.reset}`);
     
-    return { events: runstrEvents, sinceTimestamp };
+    return { events: runstrEvents };
   } catch (error) {
     console.error(`${colors.red}❌ Error fetching events:${colors.reset}`, error);
-    return { events: [], sinceTimestamp };
+    return { events: [] };
   }
 }
 
 // Calculate rewards for all users
-function calculateRewards(events, sinceTimestamp) {
+function calculateRewards(events) {
   const userWorkouts = new Map();
   
   // Group events by user
@@ -226,7 +229,7 @@ function calculateRewards(events, sinceTimestamp) {
     userRewards,
     totalUsers: userRewards.length,
     totalPayout,
-    dateRange: getDateRangeString(sinceTimestamp)
+    dateRange: getDateRangeString()
   };
 }
 
@@ -235,9 +238,10 @@ function generateOutput(rewardsData) {
   const { userRewards, totalUsers, totalPayout, dateRange } = rewardsData;
   
   console.log('\n' + '='.repeat(80));
-  console.log(`${colors.magenta}${colors.bold}🏃 RUNSTR WEEKLY REWARDS CALCULATION${colors.reset}`);
+  console.log(`${colors.magenta}${colors.bold}🏃 RUNSTR REWARDS CALCULATION (AUG 3-15, 2025)${colors.reset}`);
   console.log('='.repeat(80));
   console.log(`${colors.cyan}📅 Period: ${dateRange}${colors.reset}`);
+  console.log(`${colors.cyan}📊 Days covered: ${PERIOD_DAYS} days${colors.reset}`);
   console.log(`${colors.cyan}💰 Rate: Streak multipliers + level bonuses${colors.reset}`);
   console.log(`${colors.cyan}👥 Total users: ${totalUsers}${colors.reset}`);
   console.log(`${colors.cyan}💸 Total payout: ${totalPayout.toLocaleString()} sats${colors.reset}`);
@@ -293,16 +297,16 @@ function generateOutput(rewardsData) {
 
 // Main execution
 async function main() {
-  console.log(`${colors.magenta}${colors.bold}🏃‍♂️ RUNSTR Weekly Rewards Calculator${colors.reset}\n`);
+  console.log(`${colors.magenta}${colors.bold}🏃‍♂️ RUNSTR Rewards Calculator (Aug 3-15, 2025)${colors.reset}\n`);
   
-  const { events, sinceTimestamp } = await fetchWeeklyWorkouts();
+  const { events } = await fetchWeeklyWorkouts();
   
   if (events.length === 0) {
-    console.log(`${colors.yellow}⚠ No RUNSTR workout events found for the last week${colors.reset}`);
+    console.log(`${colors.yellow}⚠ No RUNSTR workout events found for the specified period${colors.reset}`);
     return;
   }
   
-  const rewardsData = calculateRewards(events, sinceTimestamp);
+  const rewardsData = calculateRewards(events);
   generateOutput(rewardsData);
 }
 
