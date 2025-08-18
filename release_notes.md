@@ -1,28 +1,32 @@
-# Release v0.7.0 - Team Events Release 🏃‍♂️🎯
+# Release v0.7.1 - Enhanced Security & GPS Reliability 🔐📍
 
 ## What's New
 
-### 🏆 Team Events Are Here!
-- **Create Team Events**: Team captains can now organize events and challenges for their teams
-- **Events Tab**: Discover and join team events in the new dedicated Events section
-- **Team Pride**: Your team name now displays prominently at the top of your dashboard
-- **Share Your Team Spirit**: Team affiliation automatically appears in your Nostr activity posts
+### 🔐 Enhanced Security & Authentication
+- **Improved Amber Authentication**: Added 60-second timeout handling with better error messages
+- **Secure ID Generation**: Now uses crypto.getRandomValues for secure authentication requests
+- **Better State Management**: Enhanced authentication state tracking (isLoggedIn, publicKey)
+- **Robust Error Handling**: More descriptive error messages and graceful failure recovery
 
-### Improvements
+### 📍 GPS & Location Tracking Major Improvements  
+- **GrapheneOS Support**: Added detection and optimized GPS handling for privacy-focused GrapheneOS
+- **Adaptive Accuracy**: Dynamic GPS accuracy thresholds (50m for GrapheneOS, 20m for standard Android)
+- **Comprehensive Debugging**: Enhanced GPS diagnostic logging for better troubleshooting
+- **Battery Optimization**: Improved GPS heartbeat monitoring to reduce battery drain
 
-#### 📱 Better User Experience
-- **Pull to Refresh**: Swipe down to refresh your feed and stay updated with the latest activities
-- **Enhanced Location Tracking**: Improved GPS performance and reliability across all devices
-- **Non-Android Support**: Better location tracking experience for users on alternative platforms
+### ⚡ Nostr Integration Updates
+- **Enhanced Connection Management**: Better relay connection handling and state management
+- **Improved Error Recovery**: Robust error handling and retry logic for Nostr operations
+- **Optimized Publishing**: Enhanced event publishing with better reliability
 
-### Performance Updates
-- Optimized location tracking for reduced battery consumption
-- Faster feed loading and smoother scrolling
-- Improved sync reliability with Nostr relays
+### 🎨 UI/UX Improvements
+- **Consistent Theming**: Updated all UI buttons to use consistent theme colors
+- **Smoother Authentication Flow**: Enhanced ConnectNostrKeyBanner experience
+- **Better User Feedback**: Improved PermissionDialog with clearer messaging
 
 ---
 
-*Join a team, create events, and run together! Update now to experience the power of team running with Runstr v0.7.0.*
+*Enhanced security and GPS reliability for privacy-focused runners! Update now to experience more robust authentication and tracking with Runstr v0.7.1.*
 
 # Release v0.6.0
 
