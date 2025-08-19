@@ -634,6 +634,10 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
       try {
         setAutoPublishingKind1(true);
         
+        // Fetch team associations to include in the post
+        const associations = await getWorkoutAssociations();
+        const teamInfo = associations.teamAssociation;
+        
         // Generate the kind 1 content using the same format as manual posts
         const run = recentRun;
         const activity = run.activityType || ACTIVITY_TYPES.RUN;
@@ -665,7 +669,10 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
           introMessage = `Just completed a run with RUNSTR! 🏃‍♂️💨`;
         }
         
-        const generatedContent = `
+        // Add team info if available (same format as manual posting)
+        const teamLine = teamInfo?.teamName ? `\n🏆 Team: ${teamInfo.teamName}` : '';
+        
+        const generatedContent = `${teamLine ? teamLine + '\n' : ''}
 ${introMessage}
 
 ⏱️ Duration: ${runDataService.formatTime(run.duration)}
