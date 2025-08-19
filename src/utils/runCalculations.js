@@ -1,3 +1,6 @@
+// Import GrapheneOS detection utilities
+import { isGrapheneOS, getAccuracyThreshold, getMovementThreshold } from './grapheneDetection';
+
 // Constants for accuracy thresholds
 const MINIMUM_ACCURACY = 20; // meters - relaxed for cycling compatibility
 const SPEED_THRESHOLD = 18; // meters/second (~65 km/h) - increased for cycling
@@ -80,10 +83,11 @@ export function filterLocation(location, lastLocation) {
     return false;
   }
 
-  // Check for minimum accuracy
-  if (location.coords.accuracy > MINIMUM_ACCURACY) {
+  // Check for minimum accuracy (GrapheneOS-aware)
+  const accuracyThreshold = getAccuracyThreshold();
+  if (location.coords.accuracy > accuracyThreshold) {
     console.warn(
-      `Point filtered: poor accuracy (${location.coords.accuracy}m)`
+      `Point filtered: poor accuracy (${location.coords.accuracy}m > ${accuracyThreshold}m threshold)`
     );
     return false;
   }
@@ -116,8 +120,9 @@ export function filterLocation(location, lastLocation) {
     return false;
   }
 
-  // Filter out stationary points
-  if (distance < MINIMUM_DISTANCE) {
+  // Filter out stationary points (GrapheneOS-aware)
+  const movementThreshold = getMovementThreshold();
+  if (distance < movementThreshold) {
     return false;
   }
 
@@ -289,14 +294,16 @@ export function calculateStats(positions, elapsedTime = null) {
           position.coords.longitude
         );
 
-        // Validate segment with stricter criteria
+        // Validate segment with GrapheneOS-aware criteria
         const speed = timeDiff > 0 ? distance / timeDiff : 0;
+        const movementThreshold = getMovementThreshold();
+        const accuracyThreshold = getAccuracyThreshold();
         const isValidSegment =
-          distance >= MINIMUM_DISTANCE &&
+          distance >= movementThreshold &&
           distance <= MAXIMUM_DISTANCE_PER_POINT &&
           timeDiff >= MINIMUM_TIME_DIFF &&
           speed <= SPEED_THRESHOLD &&
-          position.coords.accuracy <= MINIMUM_ACCURACY;
+          position.coords.accuracy <= accuracyThreshold;
 
         if (isValidSegment) {
           totalDistance += distance;
