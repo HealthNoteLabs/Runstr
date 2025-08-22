@@ -2,7 +2,7 @@ import { createContext, useState, useEffect, useMemo, useCallback } from 'react'
 import PropTypes from 'prop-types';
 // Import the NDK singleton
 import { ndk, ndkReadyPromise } from '../lib/ndkSingleton'; // Consistent import without extension
-// No additional NDK imports needed for Amber-only authentication
+import { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk'; // Restore private key signer support
 import AmberAuth from '../services/AmberAuth.js';
 import { Platform } from '../utils/react-native-shim.js';
 
@@ -11,7 +11,24 @@ const attachSigner = async () => {
   try {
     // Check if window object exists (for browser environment)
     if (typeof window !== 'undefined') {
-      // Amber-only authentication for Android
+      // --- Priority 1: Check for stored private key ---
+      const storedPrivKey = window.localStorage.getItem('runstr_privkey');
+      if (storedPrivKey) {
+        console.log('NostrContext: Found private key, using NDKPrivateKeySigner.');
+        try {
+          // Use the singleton ndk instance
+          ndk.signer = new NDKPrivateKeySigner(storedPrivKey);
+          const user = await ndk.signer.user();
+          console.log('NostrContext: Private key signer attached to singleton NDK, user pubkey:', user.pubkey);
+          return user.pubkey;
+        } catch (pkError) {
+            console.error('NostrContext: Error initializing NDKPrivateKeySigner:', pkError);
+            window.localStorage.removeItem('runstr_privkey');
+            ndk.signer = undefined;
+        }
+      }
+
+      // --- Priority 2: Amber authentication for Android ---
       if (Platform.OS === 'android' && await AmberAuth.isAmberInstalled()) {
         console.log('NostrContext: Amber is installed. Using Amber signer shim.');
         try {
@@ -296,7 +313,7 @@ export const NostrProvider = ({ children }) => {
     // This function is primarily for logout or manual key changes, not initial connection.
     setPublicKeyInternal(pk);
     if (!pk && typeof window !== 'undefined') {
-        // Private key storage no longer used with Amber-only authentication
+        window.localStorage.removeItem('runstr_privkey');
         window.localStorage.removeItem('runstr_lightning_addr');
         ndk.signer = undefined; // Clear signer on explicit logout
         signerAttachmentPromise = null; // Allow re-attachment

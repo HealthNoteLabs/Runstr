@@ -114,6 +114,23 @@ export function prepareNip101eTeamEventTemplate(
   return eventTemplate;
 }
 
+// --- Helper function to check if a team is marked as deleted ---
+
+/**
+ * Checks if a team event indicates the team has been deleted or disbanded
+ * @param teamEvent The team event to check
+ * @returns true if the team appears to be deleted
+ */
+function isTeamDeleted(teamEvent: NostrTeamEvent): boolean {
+  const teamName = getTeamName(teamEvent);
+  const teamDescription = getTeamDescription(teamEvent);
+  
+  // Check for common deletion patterns in name or content
+  const deletionPatterns = /\[deleted\]|\(deleted\)|^\s*deleted\s*$|^\s*removed\s*$|^\s*disbanded\s*$/i;
+  
+  return deletionPatterns.test(teamName) || deletionPatterns.test(teamDescription);
+}
+
 // --- Updated NDK-based fetch functions ---
 
 /**
@@ -146,7 +163,8 @@ export async function fetchPublicTeams(
     const publicTeamsMap = new Map<string, NostrTeamEvent>();
 
     allTeamEvents.forEach(event => {
-      if (isTeamPublic(event)) {
+      // Filter out deleted teams
+      if (isTeamPublic(event) && !isTeamDeleted(event)) {
         const captain = getTeamCaptain(event); // Use pubkey as part of unique ID for the replaceable event
         const uuid = getTeamUUID(event);
         if (uuid) {
@@ -204,8 +222,16 @@ export async function fetchTeamById(
       // If multiple are returned somehow, sort to be sure.
       const eventsArray = Array.from(eventsSet).map(ndkEvent => ndkEvent.rawEvent() as NostrTeamEvent);
       eventsArray.sort((a, b) => b.created_at - a.created_at);
-      console.log("Fetched team event:", eventsArray[0]);
-      return eventsArray[0];
+      const teamEvent = eventsArray[0];
+      
+      // Check if team is deleted
+      if (isTeamDeleted(teamEvent)) {
+        console.log("Team is marked as deleted:", teamEvent);
+        return null;
+      }
+      
+      console.log("Fetched team event:", teamEvent);
+      return teamEvent;
     }
     console.log("No team event found for the given ID.");
     return null;
@@ -282,7 +308,10 @@ export async function fetchUserMemberTeams(
     const result: NostrTeamEvent[] = [];
     memberTeamIds.forEach(id => {
       const ev = latestTeamMap.get(id);
-      if (ev) result.push(ev);
+      // Filter out deleted teams
+      if (ev && !isTeamDeleted(ev)) {
+        result.push(ev);
+      }
     });
 
     console.log(`fetchUserMemberTeams → ${result.length} teams for user ${userPubkey}`);

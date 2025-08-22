@@ -43,6 +43,12 @@ When pushing changes:
 - `npx cap sync android` - Sync web assets to Android
 - `npx cap open android` - Open Android project
 
+### ZapStore Publishing
+- See `ZAPSTORE_PUBLISH_GUIDE.md` for complete publishing process
+- `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"` - Set Java for gradlew
+- `cd android && ./gradlew clean assembleDebug` - Build APK with correct versioning
+- `zapstore publish --overwrite-release` - Publish to ZapStore (requires SIGN_WITH env var)
+
 ### Testing & Debugging
 - `npm run debug` - Run Nostr debugging script
 - `npm run diagnose-feed` - Diagnose feed issues
@@ -323,6 +329,42 @@ node scripts/claude-learning-system.js update
 
 ### Current Learning Insights
 *This section will be automatically populated as mistakes are detected and logged.*
+
+### Key Learning: ZapStore Publishing Critical Issues (August 2025)
+
+**CRITICAL GRADLE PATH BUG**: The Android build configuration had a critical path issue that prevented proper versioning.
+
+**Problem**: In `android/app/build.gradle` line ~40, the gradle.properties path was incorrectly set to:
+```gradle
+def propsFile = rootProject.file('android/gradle.properties')  // WRONG
+```
+
+**Solution**: Must be corrected to:
+```gradle
+def propsFile = rootProject.file('gradle.properties')  // CORRECT
+```
+
+**Root Cause**: The build script runs from the `android/` directory, so `'android/gradle.properties'` looks for `android/android/gradle.properties` which doesn't exist. This caused the build to fall back to default version `0.0.0-dev` instead of reading the actual version from `android/gradle.properties`.
+
+**Signs of This Issue**:
+- APK shows version `0.0.0-dev` instead of intended version (e.g., `0.7.1`)
+- Version code shows `1` instead of intended code (e.g., `8`)
+- ZapStore publish shows wrong version tags
+
+**Prevention**: Always verify APK version information in ZapStore publish preview before confirming.
+
+**Version Configuration Process**:
+1. Update `android/gradle.properties` with new version
+2. Verify gradle path is correct in `android/app/build.gradle`
+3. Run `./gradlew clean assembleDebug` to build fresh APK
+4. Check ZapStore preview shows correct version before publishing
+
+**RECENT SUCCESS**: v0.7.2 published successfully (August 19, 2025) following this workflow with zero version-related errors. The gradle path fix and documented process are now validated and working reliably. See `ZAPSTORE_SUCCESS_LOG.md` for complete success documentation.
+
+**ZapStore Configuration Requirements**:
+- `zapstore.yaml` must NOT contain `version` field (auto-extracted from APK)
+- Asset paths must contain slash prefix (`./apk-build/file.apk`)
+- Requires `SIGN_WITH` environment variable for Nostr signing
 
 ### Key Learning: Avoid Over-Engineering
 **Most Important Lesson**: The biggest mistakes in this codebase come from over-engineering simple problems.

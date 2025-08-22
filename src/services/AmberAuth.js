@@ -42,6 +42,10 @@ function processDeepLink(url) {
         if (req.type === 'pubkey' && parsed.pubkey) {
           authenticationState.isLoggedIn = true;
           authenticationState.publicKey = parsed.pubkey;
+          // Also store in localStorage for app-wide access
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem('userPublicKey', parsed.pubkey);
+          }
         }
         
         req.resolve(parsed);
@@ -279,6 +283,10 @@ const getCurrentPublicKey = () => {
 const clearAuthenticationState = () => {
   authenticationState.isLoggedIn = false;
   authenticationState.publicKey = null;
+  // Also clear from localStorage
+  if (typeof window !== 'undefined' && window.localStorage) {
+    window.localStorage.removeItem('userPublicKey');
+  }
 };
 
 // Retry authentication with exponential backoff

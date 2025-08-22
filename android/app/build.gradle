@@ -37,7 +37,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
 
         // Read version code and name from gradle.properties
-        def propsFile = rootProject.file('android/gradle.properties')
+        def propsFile = rootProject.file('gradle.properties')
         def runstrProps = new Properties()
         if (propsFile.exists()) {
             runstrProps.load(new FileInputStream(propsFile))

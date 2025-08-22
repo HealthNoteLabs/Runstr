@@ -1,24 +1,8 @@
-runstr:
-  android:
-    name: RUNSTR
-    description: A running app built on the Nostr protocol. Track runs, view a global feed, and listen to Wavlake music.
-    repository: https://github.com/HealthNoteLabs/Runstr
-    license: MIT
-    categories:
-      - health_and_fitness
-      - sports
-      - social
-    author: TheWildHustle
-    tags:
-      - running
-      - fitness
-      - tracker
-      - nostr
-      - wavlake
-      - bitcoin
-    icons:
-      - file: runstr_logo.png
-        type: image/png
-    sources:
-      - file: ./apk-build/runstr-test.apk
-        version: 0.7.1
+name: RUNSTR
+description: A running app built on the Nostr protocol. Track runs, view a global feed, and listen to Wavlake music.
+repository: https://github.com/HealthNoteLabs/Runstr
+license: MIT
+tags: running fitness tracker nostr wavlake bitcoin health sports social
+icon: runstr_logo.png
+assets:
+  - ./apk-build/runstr-v0.7.2-release.apk

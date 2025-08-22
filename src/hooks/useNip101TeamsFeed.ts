@@ -39,7 +39,19 @@ export const useNip101TeamsFeed = () => {
       teamUUID: getTeamUUID(event) || '', 
       isPublic: event.tags.some(tag => tag[0] === 'public' && tag[1] === 'true'), 
       originalEvent: event,
-    })).filter(team => team.teamUUID && team.captainPubkey); 
+    })).filter(team => {
+      // Filter out teams without required fields
+      if (!team.teamUUID || !team.captainPubkey) return false;
+      
+      // Additional filter for deleted teams (double-check at UI layer)
+      const deletionPatterns = /\[deleted\]|\(deleted\)|^\s*deleted\s*$|^\s*removed\s*$|^\s*disbanded\s*$/i;
+      if (deletionPatterns.test(team.name) || deletionPatterns.test(team.description)) {
+        console.log('Filtering out deleted team:', team.name);
+        return false;
+      }
+      
+      return true;
+    }); 
   };
 
   const loadTeams = useCallback(async (ndkInstance: any) => {
