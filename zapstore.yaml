@@ -5,4 +5,4 @@ license: MIT
 tags: running fitness tracker nostr wavlake bitcoin health sports social
 icon: runstr_logo.png
 assets:
-  - ./apk-build/runstr-v0.7.2-release.apk
+  - ./apk-build/runstr-v0.7.3-release.apk
