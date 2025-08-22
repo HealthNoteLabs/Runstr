@@ -45,6 +45,11 @@ const attachSigner = async () => {
           };
           const user = await ndk.signer.user();
           console.log('NostrContext: Amber signer attached, user pubkey:', user.pubkey);
+          // Store Amber pubkey in localStorage for persistence
+          if (user.pubkey && typeof window !== 'undefined') {
+            window.localStorage.setItem('userPublicKey', user.pubkey);
+            console.log('NostrContext: Stored Amber pubkey in localStorage');
+          }
           return user.pubkey;
         } catch (amberError) {
           console.error('NostrContext: Error initializing AmberSigner:', amberError);
@@ -118,7 +123,17 @@ export const NostrContext = createContext({
 });
 
 export const NostrProvider = ({ children }) => {
-  const [publicKey, setPublicKeyInternal] = useState(null);
+  const [publicKey, setPublicKeyInternal] = useState(() => {
+    // Initialize from localStorage if available (for Amber persistence)
+    if (typeof window !== 'undefined') {
+      const storedPubkey = window.localStorage.getItem('userPublicKey');
+      if (storedPubkey) {
+        console.log('NostrContext: Initializing publicKey from localStorage:', storedPubkey);
+        return storedPubkey;
+      }
+    }
+    return null;
+  });
   const [ndkReady, setNdkReady] = useState(false);
   const [signerAvailable, setSignerAvailable] = useState(false);
   const [currentRelayCount, setCurrentRelayCount] = useState(0);
@@ -285,6 +300,12 @@ export const NostrProvider = ({ children }) => {
         setPublicKeyInternal(pubkey);
         setSignerAvailable(true);
         
+        // Store pubkey in localStorage for persistence
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('userPublicKey', pubkey);
+          console.log('NostrContext: Stored reconnected Amber pubkey in localStorage');
+        }
+        
         // Update the NDK signer
         ndk.signer = {
           _pubkey: pubkey,
@@ -314,6 +335,7 @@ export const NostrProvider = ({ children }) => {
     setPublicKeyInternal(pk);
     if (!pk && typeof window !== 'undefined') {
         window.localStorage.removeItem('runstr_privkey');
+        window.localStorage.removeItem('userPublicKey'); // Clear Amber pubkey
         window.localStorage.removeItem('runstr_lightning_addr');
         ndk.signer = undefined; // Clear signer on explicit logout
         signerAttachmentPromise = null; // Allow re-attachment

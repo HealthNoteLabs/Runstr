@@ -7,7 +7,7 @@ import { Platform, Linking, AppState } from '../utils/react-native-shim.js';
 
 let _deepLinkListener = null;
 const pendingRequests = new Map();
-const REQUEST_TIMEOUT = 60000; // 60 second timeout for authentication requests
+const REQUEST_TIMEOUT = 30000; // 30 second timeout for authentication requests
 let authenticationState = { isLoggedIn: false, publicKey: null };
 
 function processDeepLink(url) {
@@ -289,7 +289,7 @@ const clearAuthenticationState = () => {
   }
 };
 
-// Retry authentication with exponential backoff
+// Retry authentication with optimized delays
 const retryAuthentication = async (maxRetries = 3) => {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -303,8 +303,9 @@ const retryAuthentication = async (maxRetries = 3) => {
         throw new Error(`Authentication failed after ${maxRetries} attempts. ${error.message}`);
       }
       
-      // Exponential backoff: wait 2^attempt seconds
-      const delayMs = Math.pow(2, attempt) * 1000;
+      // Optimized delays: 1s, 2s, 4s (instead of exponential 2s, 4s, 8s)
+      const delays = [1000, 2000, 4000];
+      const delayMs = delays[attempt - 1] || 4000;
       console.log(`Waiting ${delayMs/1000}s before retry...`);
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
