@@ -122,8 +122,13 @@ export const NostrProvider = ({ children }) => {
   
   useEffect(() => {
     if (Platform.OS === 'android') {
-      AmberAuth.isAmberInstalled().then(installed => {
-        setIsAmberAvailable(installed);
+      // Check if Amber is installed (for compatibility with old code)
+      import('../services/AmberAuth.js').then(({ default: AmberAuth }) => {
+        AmberAuth.isAmberInstalled().then(installed => {
+          setIsAmberAvailable(installed);
+        });
+      }).catch(() => {
+        setIsAmberAvailable(false);
       });
     }
   }, []);
@@ -147,8 +152,12 @@ export const NostrProvider = ({ children }) => {
     console.log('>>> NostrProvider useEffect START (using NDK Singleton) <<<');
     let isMounted = true;
 
-    // Setup Amber deep link handler once.
-    AmberAuth.setupDeepLinkHandling();
+    // Setup Amber deep link handler once (only if needed for legacy code)
+    import('../services/AmberAuth.js').then(({ default: AmberAuth }) => {
+      AmberAuth.setupDeepLinkHandling();
+    }).catch(err => {
+      console.warn('NostrProvider: Could not setup Amber deep link handling:', err);
+    });
 
     const initializeNostrSystem = async () => {
       console.log('>>> NostrProvider: Awaiting ndkReadyPromise (initial connection attempt) <<<');
@@ -253,8 +262,8 @@ export const NostrProvider = ({ children }) => {
     setNdkError(null); // Clear previous errors
     
     try {
-      // Use the new retry authentication mechanism
-      const pubkey = await AmberAuth.retryAuthentication(3);
+      // Use AuthService for authentication
+      const pubkey = await AuthService.login();
       if (pubkey) {
         setPublicKeyInternal(pubkey);
         setSignerAvailable(true);
@@ -267,8 +276,7 @@ export const NostrProvider = ({ children }) => {
             return { pubkey: this._pubkey };
           },
           sign: async (event) => {
-            const signedEvent = await AmberAuth.signEvent(event);
-            return signedEvent.sig;
+            return await AuthService.signEvent(event);
           }
         };
         
