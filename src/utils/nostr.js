@@ -1,6 +1,6 @@
 import { NDKEvent, NDKRelaySet } from '@nostr-dev-kit/ndk';
 import { Platform } from '../utils/react-native-shim.js';
-import AmberAuth from '../services/AmberAuth.js';
+import AuthService from '../services/AuthService.js';
 // Import nostr-tools implementation for fallback
 import { createAndPublishEvent as publishWithNostrTools } from './nostrClient.js';
 import { getFastestRelays, directFetchRunningPosts } from './feedFetcher.js';

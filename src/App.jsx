@@ -20,6 +20,8 @@ import { NostrContext } from './contexts/NostrContext.jsx';
 import './utils/errorSilencer';
 import { Toaster } from 'react-hot-toast';
 import SafePullToRefresh from './components/SafePullToRefresh';
+import AuthService from './services/AuthService';
+import AmberLoginModal from './components/AmberLoginModal';
 
 console.log("App.jsx is loading");
 
@@ -72,6 +74,8 @@ const AppRoutes = lazy(() =>
 
 const App = () => {
   const [hasError, setHasError] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   
   // Phase 2: Basic refresh using existing proven mechanisms
   const handleAppRefresh = async () => {
@@ -179,6 +183,26 @@ const App = () => {
     
     initializeApp();
   }, []);
+
+  // Check authentication status on app start
+  useEffect(() => {
+    const checkAuth = () => {
+      const isAuth = AuthService.isAuthenticated();
+      setIsAuthenticated(isAuth);
+      setAuthChecked(true);
+      console.log('[App] Authentication status checked:', isAuth);
+    };
+    
+    checkAuth();
+  }, []);
+
+  // Handle successful login
+  const handleLoginSuccess = (pubkey) => {
+    console.log('[App] Login successful:', pubkey.substring(0, 8) + '...');
+    setIsAuthenticated(true);
+    // Trigger a reload of the app to reinitialize contexts with the new auth state
+    window.location.reload();
+  };
   
   // Global error handler
   useEffect(() => {
@@ -195,6 +219,27 @@ const App = () => {
     return <ErrorFallback />;
   }
   
+  // Show loading while checking authentication
+  if (!authChecked) {
+    return <EnhancedLoadingFallback />;
+  }
+
+  // Show login modal if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-bg-primary">
+        <AmberLoginModal 
+          onSuccess={handleLoginSuccess}
+          onCancel={() => {
+            // For now, just refresh the page if user cancels
+            // In the future, we might want to show an offline mode
+            window.location.reload();
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <Router>
       <NostrProvider>
