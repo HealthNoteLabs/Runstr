@@ -23,7 +23,12 @@ const REQUEST_TIMEOUT = 30000; // 30 seconds
  * Process deep link callbacks from Amber
  */
 function processDeepLink(url) {
-  if (!url || !url.startsWith('runstr://callback')) return;
+  console.log('[AuthService] Processing deep link:', url);
+  
+  if (!url || !url.startsWith('runstr://callback')) {
+    console.log('[AuthService] URL does not match callback format');
+    return;
+  }
   
   try {
     const urlObj = new URL(url);
@@ -31,8 +36,11 @@ function processDeepLink(url) {
     const response = urlObj.searchParams.get('response');
     const req = id ? pendingRequests.get(id) : null;
     
+    console.log('[AuthService] Parsed deep link - ID:', id, 'Has response:', !!response, 'Has pending request:', !!req);
+    
     if (!req) {
       console.warn('[AuthService] Deep link received but no pending request found for id:', id);
+      console.warn('[AuthService] Current pending requests:', Array.from(pendingRequests.keys()));
       return;
     }
 
@@ -127,11 +135,14 @@ async function requestFromAmber(eventTemplate, type = 'sign') {
   return new Promise(async (resolve, reject) => {
     const id = `${type}_${generateSecureId()}`;
     
+    console.log(`[AuthService] Creating ${type} request with ID:`, id);
+    
     // Set up timeout
     const timeoutId = setTimeout(() => {
       if (pendingRequests.has(id)) {
         const req = pendingRequests.get(id);
         pendingRequests.delete(id);
+        console.log('[AuthService] Request timed out for ID:', id);
         req.reject(new Error('Request timed out. Please ensure Amber is installed and try again.'));
       }
     }, REQUEST_TIMEOUT);
@@ -139,10 +150,12 @@ async function requestFromAmber(eventTemplate, type = 'sign') {
     pendingRequests.set(id, {
       resolve: (response) => {
         clearTimeout(timeoutId);
+        console.log('[AuthService] Request resolved for ID:', id, 'Response:', response);
         resolve(response);
       },
       reject: (error) => {
         clearTimeout(timeoutId);
+        console.log('[AuthService] Request rejected for ID:', id, 'Error:', error);
         reject(error);
       },
       timeout: timeoutId,
@@ -153,9 +166,13 @@ async function requestFromAmber(eventTemplate, type = 'sign') {
     const callbackUrl = encodeURIComponent(`runstr://callback?id=${id}`);
     const amberUri = `nostrsigner:sign?event=${encodedEvent}&callback=${callbackUrl}`;
     
+    console.log('[AuthService] Opening Amber with URI:', amberUri.substring(0, 100) + '...');
+    
     try {
       await Linking.openURL(amberUri);
+      console.log('[AuthService] Successfully opened Amber app');
     } catch (e) {
+      console.error('[AuthService] Failed to open Amber app:', e);
       clearTimeout(timeoutId);
       pendingRequests.delete(id);
       if (e.message && e.message.includes('Activity not found')) {
@@ -167,8 +184,7 @@ async function requestFromAmber(eventTemplate, type = 'sign') {
   });
 }
 
-// Initialize deep link handling
-setupDeepLinkHandling();
+// Deep link handling will be initialized on first use
 
 /**
  * AuthService - Simple, unified authentication API
@@ -187,6 +203,9 @@ export default class AuthService {
       throw new Error('Amber app not found. Please install Amber from https://github.com/greenart7c3/Amber and try again.');
     }
     
+    // Setup deep link handling if not already done
+    setupDeepLinkHandling();
+    
     // Create authentication event
     const authEvent = {
       kind: 22242, // Auth event kind
@@ -199,8 +218,13 @@ export default class AuthService {
       ]
     };
     
+    console.log('[AuthService] Starting login process...');
+    
     try {
+      console.log('[AuthService] Sending authentication request to Amber...');
       const response = await requestFromAmber(authEvent, 'auth');
+      
+      console.log('[AuthService] Received response from Amber:', response);
       
       if (!response.pubkey) {
         throw new Error('No public key received from Amber');
@@ -209,6 +233,7 @@ export default class AuthService {
       // Store the public key in single location
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem(PUBKEY_STORAGE_KEY, response.pubkey);
+        console.log('[AuthService] Stored pubkey in localStorage');
       }
       
       console.log('[AuthService] Successfully authenticated with Amber, pubkey:', response.pubkey);
@@ -252,6 +277,9 @@ export default class AuthService {
     if (!await isAmberAvailable()) {
       throw new Error('Amber app not found. Please install Amber and try again.');
     }
+    
+    // Setup deep link handling if not already done
+    setupDeepLinkHandling();
     
     if (!event.created_at) {
       event.created_at = Math.floor(Date.now() / 1000);

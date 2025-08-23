@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { useRunTracker } from '../contexts/RunTrackerContext';
 import { useActivityMode } from '../contexts/ActivityModeContext';
 import runDataService, { ACTIVITY_TYPES } from '../services/RunDataService';
-import { PermissionDialog } from './PermissionDialog';
 import { formatPaceWithUnit, displayDistance, convertDistance, formatElevation } from '../utils/formatters';
 import { createAndPublishEvent, createWorkoutEvent } from '../utils/nostr';
 import SplitsTable from './SplitsTable';
@@ -43,7 +42,6 @@ export const RunTracker = () => {
   const { distanceUnit, skipStartCountdown, skipEndCountdown, autoPostToNostr, autoPostKind1Note } = useSettings();
   const { publicKey, lightningAddress } = useContext(NostrContext);
 
-  const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const [isCountingDown, setIsCountingDown] = useState(false);
   const [countdown, setCountdown] = useState(5);
   const [countdownType, setCountdownType] = useState('start');
@@ -309,35 +307,16 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
     }
   };
 
-  // Check if permissions have been granted on component mount
-  useEffect(() => {
-    const permissionsGranted = localStorage.getItem('permissionsGranted') === 'true';
-    
-    // If this is the first time the user opens the app, show the permission dialog
-    if (!permissionsGranted) {
-      setShowPermissionDialog(true);
-    }
-  }, []);
 
   const initiateRun = () => {
     // Trigger haptic feedback for starting a run
     triggerRunStart();
     
-    // Check if the user has already granted permissions
-    const permissionsGranted = localStorage.getItem('permissionsGranted');
-    
-    if (permissionsGranted === 'true') {
-      // If permissions already granted, start the countdown or run directly
-      if (skipStartCountdown) {
-        startRun();
-      } else {
-        startCountdown('start');
-      }
+    // Start the countdown or run directly
+    if (skipStartCountdown) {
+      startRun();
     } else {
-      // If permissions haven't been granted yet, show a message
-      appToast.error('Location permission is required for tracking. Please restart the app to grant permissions.');
-      // Set the flag to show permission dialog next time the app starts
-      localStorage.removeItem('permissionsGranted');
+      startCountdown('start');
     }
   };
 
@@ -361,16 +340,6 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
     }
   };
 
-  const handlePermissionContinue = () => {
-    // User has acknowledged the permission requirements
-    localStorage.setItem('permissionsGranted', 'true');
-    setShowPermissionDialog(false);
-  };
-
-  const handlePermissionCancel = () => {
-    // User declined to proceed
-    setShowPermissionDialog(false);
-  };
 
   const startCountdown = (type) => {
     setCountdownType(type);
@@ -905,13 +874,6 @@ ${run.elevation && run.elevation.loss ? `\n📉 Elevation Loss: ${formatElevatio
         </div>
       )}
       
-      {/* Display permission dialog if needed */}
-      {showPermissionDialog && (
-        <PermissionDialog
-          onContinue={handlePermissionContinue}
-          onCancel={handlePermissionCancel}
-        />
-      )}
       
       {/* Countdown overlay */}
       {isCountingDown && (
