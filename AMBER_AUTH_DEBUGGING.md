@@ -214,7 +214,43 @@ Need to trace the EXACT flow:
 - useNostrRunStats: Check context first, then localStorage 'userPublicKey' directly
 - Removed all console.log debugging (won't work on Android)
 **Rationale**: If Amber stores pubkey in localStorage but context doesn't get it, bypass the context
-**Result**: 🔄 Testing...
+**Result**: ❌ Still getting "Error: No user pubkey"
+**Learning**: Band-aid approach doesn't fix the root cause
+
+## 🎯 **COMPREHENSIVE ROOT CAUSE ANALYSIS** (Deep Dive)
+
+### The Real Problem: Broken Authentication Persistence Pattern
+
+**What SHOULD happen (like private key auth worked):**
+1. User authenticates once → pubkey stored in localStorage
+2. App restart → NostrContext immediately loads stored pubkey → sets context state
+3. Profile tab loads → gets pubkey from context → works ✅
+
+**What ACTUALLY happens (broken Amber flow):**
+1. User authenticates → pubkey stored correctly in localStorage ✅
+2. App restart → NostrContext sets up lazy signer but **never checks stored pubkey** ❌
+3. Context publicKey remains null until signer is explicitly called ❌
+4. Profile tab loads → context pubkey null → shows error ❌
+5. When signer IS called → **triggers NEW authentication** instead of using stored pubkey ❌
+
+### Specific Technical Bugs Identified:
+
+**Bug 1: NostrContext.attachSigner() Missing Amber Pubkey Check**
+- Lines 14-29 check for private key and immediately set context pubkey
+- Lines 32-56 set up Amber signer but **never check AmberAuth.getCurrentPublicKey()**
+- Should follow same pattern as private key: check stored pubkey → set context immediately
+
+**Bug 2: AmberAuth.getPublicKey() Always Re-authenticates** 
+- Lines 115-167 always create new authentication request
+- Should check `authenticationState.publicKey` first and return it if available
+- Only trigger new auth flow if no stored pubkey exists
+
+**Bug 3: No Context State Update After Authentication**
+- processDeepLink() stores pubkey but NostrContext never knows auth completed
+- Context publicKey state remains null even after successful authentication
+
+### Why User Experiences 60s Timeout:
+Every time app needs pubkey, lazy signer calls getPublicKey() → opens Amber → waits 30s → if user doesn't complete, timeout → pubkey remains null
 
 ## Lessons Learned
 

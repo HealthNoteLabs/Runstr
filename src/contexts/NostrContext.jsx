@@ -340,9 +340,27 @@ export const NostrProvider = ({ children }) => {
     // Amber-only authentication for Android
     if (Platform.OS === 'android' && isAmberAvailable) {
       try {
-        const result = await AmberAuth.requestAuthentication();
-        // The actual public key will be set by the signer attachment process
-        return result;
+        const pubkey = await AmberAuth.requestAuthentication();
+        if (pubkey) {
+          // Set the context pubkey immediately when authentication succeeds
+          setPublicKeyInternal(pubkey);
+          setSignerAvailable(true);
+          
+          // Update the NDK signer with the authenticated pubkey
+          ndk.signer = {
+            _pubkey: pubkey,
+            user: async function() {
+              return { pubkey: this._pubkey };
+            },
+            sign: async (event) => {
+              const signedEvent = await AmberAuth.signEvent(event);
+              return signedEvent.sig;
+            }
+          };
+          
+          return true;
+        }
+        return false;
       } catch (error) {
         console.error('Error requesting Amber authentication:', error);
         return false;

@@ -237,7 +237,7 @@ const isAmberInstalled = async () => {
 /**
  * Request authentication using Amber
  * This will open Amber and prompt the user for authentication
- * @returns {Promise<boolean>} Success status
+ * @returns {Promise<string>} The user's public key
  */
 const requestAuthentication = async () => {
   if (Platform.OS !== 'android') {
@@ -245,7 +245,32 @@ const requestAuthentication = async () => {
     return false;
   }
   
-  try {
+  // Use the same proper callback system as getPublicKey()
+  return new Promise(async (resolve, reject) => {
+    const id = `auth_${generateSecureId()}`;
+    
+    // Set up timeout
+    const timeoutId = setTimeout(() => {
+      if (pendingRequests.has(id)) {
+        const req = pendingRequests.get(id);
+        pendingRequests.delete(id);
+        req.reject(new Error('Authentication request timed out. Please ensure Amber is installed and try again.'));
+      }
+    }, REQUEST_TIMEOUT);
+    
+    pendingRequests.set(id, {
+      resolve: (signedAuthEvent) => {
+        clearTimeout(timeoutId);
+        resolve(signedAuthEvent.pubkey);
+      },
+      reject: (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      },
+      timeout: timeoutId,
+      type: 'pubkey'
+    });
+
     // Create an authentication request event
     const authEvent = {
       kind: 22242, // Auth event kind
@@ -258,29 +283,22 @@ const requestAuthentication = async () => {
       ]
     };
     
-    // Convert to JSON and encode for URL
-    const eventJson = JSON.stringify(authEvent);
-    const encodedEvent = encodeURIComponent(eventJson);
-    
-    // Create the URI with the nostrsigner scheme and add callback URL
-    const callbackUrl = encodeURIComponent('runstr://callback');
+    const encodedEvent = encodeURIComponent(JSON.stringify(authEvent));
+    const callbackUrl = encodeURIComponent(`runstr://callback?id=${id}`);
     const amberUri = `nostrsigner:sign?event=${encodedEvent}&callback=${callbackUrl}`;
     
-    console.log('Opening Amber with URI:', amberUri);
-    
-    // Open Amber using the URI
-    await Linking.openURL(amberUri);
-    
-    // Authentication success will be handled by deep linking callback
-    return true;
-  } catch (error) {
-    console.error('Error authenticating with Amber:', error);
-    if (error.message && error.message.includes('Activity not found')) {
-      console.error('Amber app not found or not responding');
-      return false;
+    try {
+      await Linking.openURL(amberUri);
+    } catch (e) {
+      clearTimeout(timeoutId);
+      pendingRequests.delete(id);
+      if (e.message && e.message.includes('Activity not found')) {
+        reject(new Error('Amber app not found. Please install Amber from https://github.com/greenart7c3/Amber and try again.'));
+      } else {
+        reject(new Error('Failed to open Amber app. Please ensure Amber is installed and try again.'));
+      }
     }
-    return false;
-  }
+  });
 };
 
 // Check if user is currently authenticated
