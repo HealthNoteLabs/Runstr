@@ -23,6 +23,13 @@ let authenticationState = (() => {
 })();
 
 function processDeepLink(url) {
+  // DEBUG: Show that deep link was received
+  if (typeof window !== 'undefined' && window.Android?.showToast) {
+    try {
+      window.Android.showToast(`DEBUG: Deep link received: ${url ? url.substring(0, 30) + '...' : 'null'}`);
+    } catch (e) {}
+  }
+  
   if (!url || !url.startsWith('runstr://callback')) return;
   try {
     const urlObj = new URL(url);
@@ -32,6 +39,12 @@ function processDeepLink(url) {
     
     if (!req) {
       console.warn('Deep link received but no pending request found for id:', id);
+      // DEBUG: Show the mismatch
+      if (typeof window !== 'undefined' && window.Android?.showToast) {
+        try {
+          window.Android.showToast(`DEBUG: No request for ID: ${id || 'null'}`);
+        } catch (e) {}
+      }
       return;
     }
 
@@ -257,6 +270,13 @@ const requestAuthentication = async () => {
   // Use the same proper callback system as getPublicKey()
   return new Promise(async (resolve, reject) => {
     const id = `auth_${generateSecureId()}`;
+    
+    // DEBUG: Show the request ID being created
+    if (typeof window !== 'undefined' && window.Android?.showToast) {
+      try {
+        window.Android.showToast(`DEBUG: Creating auth request with ID: ${id}`);
+      } catch (e) {}
+    }
     
     // Set up timeout
     const timeoutId = setTimeout(() => {
