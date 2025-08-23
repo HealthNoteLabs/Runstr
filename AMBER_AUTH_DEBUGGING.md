@@ -252,9 +252,130 @@ Need to trace the EXACT flow:
 ### Why User Experiences 60s Timeout:
 Every time app needs pubkey, lazy signer calls getPublicKey() → opens Amber → waits 30s → if user doesn't complete, timeout → pubkey remains null
 
-## Lessons Learned
+## 🎯 **BREAKTHROUGH: Found The REAL Problem!**
 
-1. **Understand the full context** - The working version had multiple auth methods, not just Amber
-2. **Check dependencies** - Many parts of the app expect localStorage pubkey storage
-3. **Don't just revert** - The Amber-only consolidation created a new requirement (localStorage storage)
-4. **Root cause first** - The issue wasn't persistence patterns, it was missing persistence entirely
+### User's Actual Login Flow (Not What We Were Debugging!)
+
+**User reports:** "As soon as I open the app for the first time I get a purple Nostr login box that asks me to log in. When I click login and connect I see 3 options nsec.app amber and other key stores. The user chooses amber. after logging in they go to profile and see the same Error: No user pubkey."
+
+**This revealed we were debugging the WRONG authentication flow!**
+
+### The Real Authentication Flow:
+1. **Purple login dialog appears** (`PermissionDialog.jsx`)
+2. **User clicks "Login"** → calls `requestNostrPermissions()`
+3. **This calls** `AmberAuth.requestAuthentication()` (NOT `getPublicKey()`)
+4. **User chooses Amber** → Amber app opens
+5. **User approves** → Amber calls back to app
+6. **User goes to Profile** → "Error: No user pubkey"
+
+### The Critical Bug Found:
+
+**`requestAuthentication()` vs `getPublicKey()` Callback System Mismatch:**
+
+- **`getPublicKey()`** (working): Uses callback with unique ID: `runstr://callback?id=pubkey_12345`
+- **`requestAuthentication()`** (BROKEN): Uses simple callback: `runstr://callback` (NO ID!)
+
+**Result:** 
+- `processDeepLink()` looks for pending request matching the ID
+- No ID provided = No matching request found = **PUBKEY NEVER STORED**
+- User thinks they logged in, but app has no record of their pubkey
+
+### The Fix Applied:
+
+**Issue 1: Broken Callback System**
+- Fixed `requestAuthentication()` to use same ID-based callback system as `getPublicKey()`
+- Now uses: `runstr://callback?id=auth_12345`
+- processDeepLink() can properly match and process the authentication
+
+**Issue 2: localStorage Key Compatibility** 
+- Amber stores pubkey in both `'userPublicKey'` and `'userPubkey'` for compatibility
+- Different parts of codebase expect different key names
+- Now normalized to work with both
+
+**Issue 3: Context State Not Updated After Auth**
+- NostrContext now immediately sets pubkey when `requestAuthentication()` succeeds  
+- No need to wait for lazy signer calls
+- Profile tab gets pubkey from context immediately
+
+### Code Changes Made:
+
+**1. `AmberAuth.js` - `requestAuthentication()` Function:**
+```javascript
+// BEFORE: Broken - no ID in callback
+const callbackUrl = encodeURIComponent('runstr://callback');
+
+// AFTER: Fixed - proper ID system
+const id = `auth_${generateSecureId()}`;
+const callbackUrl = encodeURIComponent(`runstr://callback?id=${id}`);
+```
+
+**2. `AmberAuth.js` - localStorage Compatibility:**
+```javascript
+// Store in both keys for compatibility
+window.localStorage.setItem('userPublicKey', parsed.pubkey);
+window.localStorage.setItem('userPubkey', parsed.pubkey);
+```
+
+**3. `NostrContext.jsx` - Immediate Context Update:**
+```javascript
+// Set context pubkey immediately when authentication succeeds
+setPublicKeyInternal(pubkey);
+setSignerAvailable(true);
+```
+
+### Expected Result:
+1. ✅ User clicks login → Amber opens
+2. ✅ User approves in Amber → pubkey stored in localStorage (both keys)
+3. ✅ Context pubkey updated immediately
+4. ✅ Profile tab loads user data successfully
+5. ✅ No more "Error: No user pubkey"
+
+## 🎓 **Lessons Learned From This Debug Session**
+
+### Critical Debugging Insights:
+
+**1. Always Understand The User's Actual Flow**
+- We spent hours debugging `getPublicKey()` and lazy signer authentication
+- User was actually using `requestAuthentication()` from the login dialog
+- **Lesson:** Ask user to describe exact steps, don't assume the flow
+
+**2. Deep Link Callback Systems Are Fragile**
+- Same app, two different functions, two different callback formats
+- Missing ID in callback = complete system failure with no obvious error
+- **Lesson:** Standardize callback patterns across authentication methods
+
+**3. localStorage Key Naming Matters**
+- `'userPublicKey'` vs `'userPubkey'` - tiny difference, major impact
+- Different parts of legacy codebase expected different key names
+- **Lesson:** Normalize storage keys during migration, don't assume consistency
+
+**4. Authentication State Must Be Synchronized**
+- Storage, in-memory state, and React context can get out of sync
+- Authentication success should immediately update ALL state locations
+- **Lesson:** Design single source of truth with proper state synchronization
+
+**5. Mobile App Debugging Challenges**
+- Can't see console logs on Android device
+- Had to reason through code instead of runtime debugging
+- **Lesson:** Build in visible debugging tools for mobile authentication flows
+
+### What We Initially Got Wrong:
+
+1. **Assumed the wrong entry point** - Focused on NDK signer instead of login dialog
+2. **Over-engineered solutions** - Added complex fallback logic instead of fixing root cause  
+3. **Missed callback system differences** - Two auth functions with incompatible callbacks
+4. **Didn't validate user's actual experience** - Debugged theoretical flows instead of real usage
+
+### The Real Fix Was Simple:
+- Make `requestAuthentication()` use same callback system as `getPublicKey()`
+- Store pubkey in both localStorage keys for compatibility
+- Update context state immediately on authentication success
+
+**Total time debugging complex theories:** 8+ attempts over multiple sessions  
+**Time to fix actual problem once identified:** 15 minutes
+
+### For Future Authentication Issues:
+1. **Map user's exact flow first** - Don't assume, trace the actual code path
+2. **Check callback systems match** - Deep link callbacks are critical failure points  
+3. **Verify state synchronization** - Storage → memory → context → UI
+4. **Test with fresh app state** - Authentication bugs often only appear on first run
