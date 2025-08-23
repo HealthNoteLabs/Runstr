@@ -17,11 +17,19 @@
       "stopOnTerminate": false,
       "startForeground": true,
       "foregroundServiceType": "location"
+    },
+    "App": {
+      "appUrlOpen": {
+        "enabled": true
+      }
     }
   },
   "android": {
     "useLegacyBridge": true,
     "backgroundColor": "#0F1419",
-    "webContentsDebuggingEnabled": false
+    "webContentsDebuggingEnabled": false,
+    "scheme": "https",
+    "hostname": "runstr.app",
+    "customSchemes": ["runstr"]
   }
 }

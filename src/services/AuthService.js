@@ -7,14 +7,17 @@
  * - AuthService.getPublicKey() - Get stored public key
  * - AuthService.signEvent() - Sign a Nostr event
  * - AuthService.logout() - Clear authentication
+ * 
+ * CAPACITOR VERSION - Uses Capacitor APIs for Android app communication
  */
 
-import { Platform, Linking, AppState } from '../utils/react-native-shim.js';
+import { Capacitor } from '@capacitor/core';
+import { App } from '@capacitor/app';
 
 // Single storage key for the user's public key
 const PUBKEY_STORAGE_KEY = 'runstr_user_pubkey';
 
-// Deep link handling
+// Deep link handling - Capacitor version
 let _deepLinkListener = null;
 const pendingRequests = new Map();
 const REQUEST_TIMEOUT = 30000; // 30 seconds
@@ -70,7 +73,8 @@ function processDeepLink(url) {
     pendingRequests.delete(id);
   } catch (e) {
     console.error('[AuthService] Deep link processing error:', e);
-    const id = new URL(url).searchParams.get('id');
+    const urlObj = new URL(url);
+    const id = urlObj.searchParams.get('id');
     if (id && pendingRequests.has(id)) {
       const req = pendingRequests.get(id);
       if (req.timeout) clearTimeout(req.timeout);
@@ -81,24 +85,21 @@ function processDeepLink(url) {
 }
 
 /**
- * Setup deep link handling for Amber callbacks
+ * Setup deep link handling for Amber callbacks - Capacitor version
  */
 function setupDeepLinkHandling() {
-  if (_deepLinkListener) _deepLinkListener.remove();
+  console.log('[AuthService] Setting up Capacitor deep link handling');
   
-  let appState = AppState.currentState;
-  if (appState === 'active') {
-    Linking.getInitialURL().then(url => {
-      if (url) processDeepLink(url);
-    }).catch(err => console.warn('[AuthService] Linking error:', err));
+  // Remove existing listener if any
+  if (_deepLinkListener) {
+    _deepLinkListener.remove();
   }
   
-  const handleAppStateChange = (nextAppState) => {
-    appState = nextAppState;
-  };
-  
-  AppState.addEventListener('change', handleAppStateChange);
-  _deepLinkListener = Linking.addEventListener('url', ({ url }) => processDeepLink(url));
+  // Use Capacitor App plugin for URL handling
+  _deepLinkListener = App.addListener('appUrlOpen', ({ url }) => {
+    console.log('[AuthService] Received app URL open event:', url);
+    processDeepLink(url);
+  });
 }
 
 /**
@@ -114,18 +115,20 @@ function generateSecureId() {
 }
 
 /**
- * Check if Amber is installed
+ * Check if Amber is installed - Capacitor version
  */
 async function isAmberAvailable() {
-  if (Platform.OS !== 'android') return false;
+  const platform = Capacitor.getPlatform();
+  console.log('[AuthService] Current platform:', platform);
   
-  try {
-    const canOpen = await Linking.canOpenURL('nostrsigner:');
-    return canOpen;
-  } catch (error) {
-    console.error('[AuthService] Error checking if Amber is installed:', error);
+  if (platform !== 'android') {
+    console.log('[AuthService] Not on Android platform');
     return false;
   }
+  
+  // On Capacitor Android, we can't easily check if an app is installed
+  // We'll assume Amber might be available and let the URL opening fail gracefully
+  return true;
 }
 
 /**
@@ -169,17 +172,19 @@ async function requestFromAmber(eventTemplate, type = 'sign') {
     console.log('[AuthService] Opening Amber with URI:', amberUri.substring(0, 100) + '...');
     
     try {
-      await Linking.openURL(amberUri);
-      console.log('[AuthService] Successfully opened Amber app');
+      // Use window.open which should trigger the intent on Android
+      // The browser will handle the nostrsigner:// scheme and launch Amber
+      const result = window.open(amberUri, '_system');
+      console.log('[AuthService] window.open result:', result);
+      
+      // On Android, window.open might return null but still work
+      console.log('[AuthService] Successfully attempted to open Amber app');
+      
     } catch (e) {
       console.error('[AuthService] Failed to open Amber app:', e);
       clearTimeout(timeoutId);
       pendingRequests.delete(id);
-      if (e.message && e.message.includes('Activity not found')) {
-        reject(new Error('Amber app not found. Please install Amber from https://github.com/greenart7c3/Amber and try again.'));
-      } else {
-        reject(new Error('Failed to open Amber app. Please ensure Amber is installed and try again.'));
-      }
+      reject(new Error('Failed to open Amber app. Please ensure Amber is installed and try again.'));
     }
   });
 }
@@ -195,7 +200,9 @@ export default class AuthService {
    * @returns {Promise<string>} The user's public key
    */
   static async login() {
-    if (Platform.OS !== 'android') {
+    const platform = Capacitor.getPlatform();
+    
+    if (platform !== 'android') {
       throw new Error('Amber authentication is only available on Android devices. Please install Amber.');
     }
     
@@ -270,7 +277,9 @@ export default class AuthService {
    * @returns {Promise<Object>} The signed event
    */
   static async signEvent(event) {
-    if (Platform.OS !== 'android') {
+    const platform = Capacitor.getPlatform();
+    
+    if (platform !== 'android') {
       throw new Error('Amber signing is only available on Android devices.');
     }
     
