@@ -1,7 +1,8 @@
-import { createWorkoutEvent, createAndPublishEvent } from './nostr';
+import { createWorkoutEvent, createAndPublishEvent } from './nostr_simple';
 import { getActiveRelayList } from '../contexts/SettingsContext';
 import { resolveTeamName, resolveChallengeNames, cacheTeamName, cacheChallengeNames } from '../services/nameResolver';
 import { getDefaultPostingTeamIdentifier } from './settingsManager';
+import AuthService from '../services/AuthService';
 
 /**
  * Publish a run's workout summary (kind 1301) plus optional NIP-101h events.
@@ -18,11 +19,9 @@ export const publishRun = async (run, distanceUnit = 'km', settings = {}, teamCh
   const relayList = getActiveRelayList();
 
   // 🏷️ Get user's public key for team member identification
-  let userPubkey = null;
-  try {
-    userPubkey = localStorage.getItem('userPublicKey') || (typeof window !== 'undefined' && window.nostr ? await window.nostr.getPublicKey() : null);
-  } catch (pubkeyErr) {
-    console.warn('runPublisher: could not get user public key', pubkeyErr);
+  const userPubkey = AuthService.getPublicKey();
+  if (!userPubkey) {
+    throw new Error('No user public key available. Please log in first.');
   }
 
   // 🏷️ Determine team and challenge associations with enhanced fallback logic

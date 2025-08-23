@@ -2,93 +2,38 @@ import { createContext, useState, useEffect, useMemo, useCallback } from 'react'
 import PropTypes from 'prop-types';
 // Import the NDK singleton
 import { ndk, ndkReadyPromise } from '../lib/ndkSingleton'; // Consistent import without extension
-import { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk'; // Restore private key signer support
-import AmberAuth from '../services/AmberAuth.js';
+import AuthService from '../services/AuthService.js';
 import { Platform } from '../utils/react-native-shim.js';
 
-// Function to attach the appropriate signer TO THE SINGLETON NDK
+// Simplified function to attach AuthService signer to NDK
 const attachSigner = async () => {
   try {
-    // Check if window object exists (for browser environment)
-    if (typeof window !== 'undefined') {
-      // --- Priority 1: Check for stored private key ---
-      const storedPrivKey = window.localStorage.getItem('runstr_privkey');
-      if (storedPrivKey) {
-        console.log('NostrContext: Found private key, using NDKPrivateKeySigner.');
-        try {
-          // Use the singleton ndk instance
-          ndk.signer = new NDKPrivateKeySigner(storedPrivKey);
-          const user = await ndk.signer.user();
-          console.log('NostrContext: Private key signer attached to singleton NDK, user pubkey:', user.pubkey);
-          return user.pubkey;
-        } catch (pkError) {
-            console.error('NostrContext: Error initializing NDKPrivateKeySigner:', pkError);
-            window.localStorage.removeItem('runstr_privkey');
-            ndk.signer = undefined;
+    // Check if user is authenticated via AuthService
+    const userPubkey = AuthService.getPublicKey();
+    
+    if (userPubkey) {
+      console.log('NostrContext: Found authenticated user, setting up AuthService signer');
+      
+      // Create simple signer that uses AuthService
+      ndk.signer = {
+        _pubkey: userPubkey,
+        user: async function() {
+          return { pubkey: this._pubkey };
+        },
+        sign: async (event) => {
+          return await AuthService.signEvent(event);
         }
-      }
-
-      // --- Priority 2: Amber authentication for Android ---
-      if (Platform.OS === 'android' && await AmberAuth.isAmberInstalled()) {
-        console.log('NostrContext: Amber is installed. Checking for stored pubkey...');
-        
-        // First check if we already have a stored Amber pubkey (like we do for private key)
-        const storedAmberPubkey = AmberAuth.getCurrentPublicKey();
-        if (storedAmberPubkey) {
-          console.log('NostrContext: Found stored Amber pubkey, using immediately without re-authentication.');
-          try {
-            // Create signer with the stored pubkey - no authentication needed
-            ndk.signer = {
-              _pubkey: storedAmberPubkey,
-              user: async function() {
-                return { pubkey: this._pubkey };
-              },
-              sign: async (event) => {
-                const signedEvent = await AmberAuth.signEvent(event);
-                return signedEvent.sig;
-              }
-            };
-            console.log('NostrContext: Amber signer attached with stored pubkey:', storedAmberPubkey);
-            return storedAmberPubkey; // Return immediately to set context
-          } catch (error) {
-            console.error('NostrContext: Error creating signer with stored pubkey:', error);
-            ndk.signer = undefined;
-          }
-        }
-        
-        // Only use lazy authentication if no stored pubkey exists
-        console.log('NostrContext: No stored Amber pubkey found. Setting up lazy authentication.');
-        try {
-          ndk.signer = {
-            _pubkey: null,
-            user: async function() {
-              if (!this._pubkey) {
-                this._pubkey = await AmberAuth.getPublicKey();
-              }
-              return { pubkey: this._pubkey };
-            },
-            sign: async (event) => {
-              const signedEvent = await AmberAuth.signEvent(event);
-              return signedEvent.sig;
-            }
-          };
-          // Don't call signer.user() here - let it be lazy
-          console.log('NostrContext: Amber lazy signer configured. Authentication will happen on first use.');
-          return null; // No pubkey yet, will authenticate when needed
-        } catch (amberError) {
-          console.error('NostrContext: Error initializing AmberSigner:', amberError);
-          ndk.signer = undefined;
-          return null;
-        }
-      }
+      };
+      
+      console.log('NostrContext: AuthService signer attached, user pubkey:', userPubkey);
+      return userPubkey;
+    } else {
+      console.log('NostrContext: No authenticated user found');
+      ndk.signer = undefined;
+      return null;
     }
-
-    console.log('NostrContext: Amber authentication required. Signer will be undefined for singleton NDK.');
-    ndk.signer = undefined;
-    return null;
-
   } catch (error) {
-    console.error('NostrContext: Error attaching signer to singleton NDK:', error);
+    console.error('NostrContext: Error attaching AuthService signer:', error);
     ndk.signer = undefined;
     return null;
   }
@@ -364,48 +309,11 @@ export const NostrProvider = ({ children }) => {
   }, []);
 
   const requestNostrPermissions = useCallback(async () => {
-    // Amber-only authentication for Android
-    if (Platform.OS === 'android' && isAmberAvailable) {
-      try {
-        const pubkey = await AmberAuth.requestAuthentication();
-        if (pubkey) {
-          // Set the context pubkey immediately when authentication succeeds
-          setPublicKeyInternal(pubkey);
-          setSignerAvailable(true);
-          
-          // Update the NDK signer with the authenticated pubkey
-          ndk.signer = {
-            _pubkey: pubkey,
-            user: async function() {
-              return { pubkey: this._pubkey };
-            },
-            sign: async (event) => {
-              const signedEvent = await AmberAuth.signEvent(event);
-              return signedEvent.sig;
-            }
-          };
-          
-          // DEBUG: Show toast to verify context update works
-          if (typeof window !== 'undefined' && window.Android?.showToast) {
-            try {
-              window.Android.showToast(`DEBUG: Context pubkey set: ${pubkey.substring(0, 8)}...`);
-            } catch (e) {
-              console.error('Toast error:', e);
-            }
-          }
-          
-          return true;
-        }
-        return false;
-      } catch (error) {
-        console.error('Error requesting Amber authentication:', error);
-        return false;
-      }
-    } else {
-      console.warn('Amber authentication required');
-      return false;
-    }
-  }, [isAmberAvailable]);
+    // This function is no longer needed with the new AuthService system
+    // Authentication is handled in App.jsx with AmberLoginModal
+    console.warn('NostrContext: requestNostrPermissions deprecated - use AuthService.login() instead');
+    return AuthService.isAuthenticated();
+  }, []);
 
   const value = useMemo(() => ({
     publicKey,

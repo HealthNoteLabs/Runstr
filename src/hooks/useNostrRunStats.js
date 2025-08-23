@@ -1,7 +1,6 @@
-import { useState, useEffect, useContext, useCallback } from 'react';
-import { NostrContext } from '../contexts/NostrContext';
-import { fetchEvents } from '../utils/nostr';
-import AmberAuth from '../services/AmberAuth';
+import { useState, useEffect, useCallback } from 'react';
+import AuthService from '../services/AuthService';
+import { fetchEvents } from '../utils/nostr_simple';
 
 /**
  * Hook: useNostrRunStats
@@ -9,7 +8,6 @@ import AmberAuth from '../services/AmberAuth';
  * aggregated statistics plus the raw events for further UI needs.
  */
 export const useNostrRunStats = () => {
-  const { publicKey: userPubkey } = useContext(NostrContext);
   const [workoutEvents, setWorkoutEvents] = useState([]);
   const [stats, setStats] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -218,30 +216,10 @@ export const useNostrRunStats = () => {
   }, [calculateWorkoutXP, calculateLevelData]);
 
   const loadEvents = useCallback(async () => {
-    // Try multiple sources for pubkey (context first, then localStorage)
-    let effectivePubkey = userPubkey;
+    // Get pubkey from AuthService - single source of truth
+    const userPubkey = AuthService.getPublicKey();
     
-    if (!effectivePubkey && typeof window !== 'undefined') {
-      // Fallback to localStorage 'userPublicKey' (where Amber stores it)
-      effectivePubkey = window.localStorage.getItem('userPublicKey');
-    }
-    
-    if (!effectivePubkey) {
-      // DEBUG: Show what we actually found
-      if (typeof window !== 'undefined' && window.Android?.showToast) {
-        try {
-          const contextPubkey = userPubkey ? userPubkey.substring(0, 8) + '...' : 'null';
-          const storagePubkey = window.localStorage.getItem('userPublicKey');
-          const storageShort = storagePubkey ? storagePubkey.substring(0, 8) + '...' : 'null';
-          const storagePubkey2 = window.localStorage.getItem('userPubkey');
-          const storage2Short = storagePubkey2 ? storagePubkey2.substring(0, 8) + '...' : 'null';
-          
-          window.Android.showToast(`DEBUG Profile: context=${contextPubkey}, storage1=${storageShort}, storage2=${storage2Short}`);
-        } catch (e) {
-          console.error('Toast error:', e);
-        }
-      }
-      
+    if (!userPubkey) {
       setError('No user pubkey');
       return;
     }
@@ -249,7 +227,7 @@ export const useNostrRunStats = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const evSet = await fetchEvents({ kinds: [1301], authors: [effectivePubkey], limit: 1000 });
+      const evSet = await fetchEvents({ kinds: [1301], authors: [userPubkey], limit: 1000 });
       const evArr = Array.from(evSet).map(e => e.rawEvent ? e.rawEvent() : e);
       setWorkoutEvents(evArr);
       setStats(aggregateStats(evArr));
@@ -259,7 +237,7 @@ export const useNostrRunStats = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [userPubkey, aggregateStats]);
+  }, [aggregateStats]);
 
   useEffect(() => {
     loadEvents();
