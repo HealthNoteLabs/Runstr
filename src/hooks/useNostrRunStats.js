@@ -220,20 +220,25 @@ export const useNostrRunStats = () => {
   const loadEvents = useCallback(async () => {
     // Try multiple sources for pubkey with fallback strategy
     let effectiveUserPubkey = userPubkey;
+    console.log('useNostrRunStats: Starting pubkey detection. NostrContext.publicKey:', userPubkey);
     
     if (!effectiveUserPubkey) {
       // Fallback 1: Try localStorage
       effectiveUserPubkey = typeof window !== 'undefined' ? window.localStorage?.getItem('userPublicKey') : null;
+      console.log('useNostrRunStats: Fallback 1 - localStorage userPublicKey:', effectiveUserPubkey);
     }
     
     if (!effectiveUserPubkey) {
       // Fallback 2: Try AmberAuth
       try {
         effectiveUserPubkey = AmberAuth.getCurrentPublicKey();
+        console.log('useNostrRunStats: Fallback 2 - AmberAuth.getCurrentPublicKey():', effectiveUserPubkey);
       } catch (err) {
         console.warn('useNostrRunStats: Could not get pubkey from AmberAuth:', err);
       }
     }
+    
+    console.log('useNostrRunStats: Final effectiveUserPubkey:', effectiveUserPubkey);
     
     if (!effectiveUserPubkey) {
       setError('No user pubkey found. Please authenticate with Nostr (via browser extension, private key, or Amber on Android).');

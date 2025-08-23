@@ -8,7 +8,16 @@ import { Platform, Linking, AppState } from '../utils/react-native-shim.js';
 let _deepLinkListener = null;
 const pendingRequests = new Map();
 const REQUEST_TIMEOUT = 30000; // 30 second timeout for authentication requests
-let authenticationState = { isLoggedIn: false, publicKey: null };
+// Initialize authentication state from localStorage if available
+const initAuthState = () => {
+  const storedPubkey = typeof window !== 'undefined' ? window.localStorage?.getItem('userPublicKey') : null;
+  return {
+    isLoggedIn: !!storedPubkey,
+    publicKey: storedPubkey
+  };
+};
+
+let authenticationState = initAuthState();
 
 function processDeepLink(url) {
   if (!url || !url.startsWith('runstr://callback')) return;
