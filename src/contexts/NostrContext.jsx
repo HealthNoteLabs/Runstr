@@ -30,7 +30,34 @@ const attachSigner = async () => {
 
       // --- Priority 2: Amber authentication for Android ---
       if (Platform.OS === 'android' && await AmberAuth.isAmberInstalled()) {
-        console.log('NostrContext: Amber is installed. Using Amber signer shim.');
+        console.log('NostrContext: Amber is installed. Checking for stored pubkey...');
+        
+        // First check if we already have a stored Amber pubkey (like we do for private key)
+        const storedAmberPubkey = AmberAuth.getCurrentPublicKey();
+        if (storedAmberPubkey) {
+          console.log('NostrContext: Found stored Amber pubkey, using immediately without re-authentication.');
+          try {
+            // Create signer with the stored pubkey - no authentication needed
+            ndk.signer = {
+              _pubkey: storedAmberPubkey,
+              user: async function() {
+                return { pubkey: this._pubkey };
+              },
+              sign: async (event) => {
+                const signedEvent = await AmberAuth.signEvent(event);
+                return signedEvent.sig;
+              }
+            };
+            console.log('NostrContext: Amber signer attached with stored pubkey:', storedAmberPubkey);
+            return storedAmberPubkey; // Return immediately to set context
+          } catch (error) {
+            console.error('NostrContext: Error creating signer with stored pubkey:', error);
+            ndk.signer = undefined;
+          }
+        }
+        
+        // Only use lazy authentication if no stored pubkey exists
+        console.log('NostrContext: No stored Amber pubkey found. Setting up lazy authentication.');
         try {
           ndk.signer = {
             _pubkey: null,
@@ -45,9 +72,9 @@ const attachSigner = async () => {
               return signedEvent.sig;
             }
           };
-          const user = await ndk.signer.user();
-          console.log('NostrContext: Amber signer attached, user pubkey:', user.pubkey);
-          return user.pubkey;
+          // Don't call signer.user() here - let it be lazy
+          console.log('NostrContext: Amber lazy signer configured. Authentication will happen on first use.');
+          return null; // No pubkey yet, will authenticate when needed
         } catch (amberError) {
           console.error('NostrContext: Error initializing AmberSigner:', amberError);
           ndk.signer = undefined;

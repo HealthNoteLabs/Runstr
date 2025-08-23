@@ -139,6 +139,14 @@ const generateSecureId = () => {
 };
 
 const getPublicKey = () => {
+  // First check if we already have a stored pubkey
+  const existingPubkey = getCurrentPublicKey();
+  if (existingPubkey) {
+    // Return immediately without re-authenticating
+    return Promise.resolve(existingPubkey);
+  }
+  
+  // Only authenticate if no stored pubkey exists
   return new Promise(async (resolve, reject) => {
     if (Platform.OS !== 'android') {
       return reject(new Error('Amber authentication is only available on Android devices. Please install Amber from https://github.com/greenart7c3/Amber'));
