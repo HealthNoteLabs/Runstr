@@ -230,6 +230,26 @@ export const NostrProvider = ({ children }) => {
           const signerError = signerResult?.error || null;
           if (finalPubkey) {
             setPublicKeyInternal(finalPubkey);
+          } else if (publicKey && !ndk.signer) {
+            // If we have a stored pubkey but no active signer, restore Amber signer
+            console.log('NostrContext: Found stored pubkey without signer, attempting to restore Amber signer');
+            if (Platform.OS === 'android') {
+              ndk.signer = {
+                _pubkey: publicKey,
+                user: async function() {
+                  return { pubkey: this._pubkey };
+                },
+                sign: async (event) => {
+                  const signedEvent = await AmberAuth.signEvent(event);
+                  return signedEvent.sig;
+                }
+              };
+              setSignerAvailable(true);
+              console.log('NostrContext: Restored Amber signer for stored pubkey:', publicKey);
+            }
+          }
+          
+          if (finalPubkey || publicKey) {
             if (!initialNdkConnectionSuccess && !signerError) {
               // If NDK wasn't ready but signer IS, clear NDK error if it was generic
               // setNdkError(null); // This might be too optimistic if relays are still down
@@ -238,7 +258,8 @@ export const NostrProvider = ({ children }) => {
             }
             // Fetch lightning address
             try {
-              const user = ndk.getUser({ pubkey: finalPubkey });
+              const effectivePubkey = finalPubkey || publicKey;
+              const user = ndk.getUser({ pubkey: effectivePubkey });
               user.fetchProfile().then(() => {
                 if (!isMounted) return;
                 const profile = user.profile || {};
