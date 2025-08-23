@@ -8,7 +8,16 @@ import { Platform, Linking, AppState } from '../utils/react-native-shim.js';
 let _deepLinkListener = null;
 const pendingRequests = new Map();
 const REQUEST_TIMEOUT = 30000; // 30 second timeout for authentication requests
-let authenticationState = { isLoggedIn: false, publicKey: null };
+// Initialize authentication state from localStorage (like other auth methods)
+let authenticationState = (() => {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const storedPubkey = window.localStorage.getItem('userPublicKey');
+    if (storedPubkey) {
+      return { isLoggedIn: true, publicKey: storedPubkey };
+    }
+  }
+  return { isLoggedIn: false, publicKey: null };
+})();
 
 function processDeepLink(url) {
   if (!url || !url.startsWith('runstr://callback')) return;
@@ -42,6 +51,12 @@ function processDeepLink(url) {
         if (req.type === 'pubkey' && parsed.pubkey) {
           authenticationState.isLoggedIn = true;
           authenticationState.publicKey = parsed.pubkey;
+          
+          // Store in localStorage for app-wide access (like other auth methods)
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem('userPublicKey', parsed.pubkey);
+            console.log('AmberAuth: Stored pubkey in localStorage for persistence');
+          }
         }
         
         req.resolve(parsed);
@@ -279,6 +294,11 @@ const getCurrentPublicKey = () => {
 const clearAuthenticationState = () => {
   authenticationState.isLoggedIn = false;
   authenticationState.publicKey = null;
+  
+  // Also clear from localStorage
+  if (typeof window !== 'undefined' && window.localStorage) {
+    window.localStorage.removeItem('userPublicKey');
+  }
 };
 
 // Retry authentication with optimized delays
