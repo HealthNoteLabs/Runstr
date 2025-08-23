@@ -11,8 +11,11 @@ const REQUEST_TIMEOUT = 30000; // 30 second timeout for authentication requests
 // Initialize authentication state from localStorage (like other auth methods)
 let authenticationState = (() => {
   if (typeof window !== 'undefined' && window.localStorage) {
-    const storedPubkey = window.localStorage.getItem('userPublicKey');
+    const storedPubkey = window.localStorage.getItem('userPublicKey') || window.localStorage.getItem('userPubkey');
     if (storedPubkey) {
+      // Normalize to both keys for consistency
+      window.localStorage.setItem('userPublicKey', storedPubkey);
+      window.localStorage.setItem('userPubkey', storedPubkey);
       return { isLoggedIn: true, publicKey: storedPubkey };
     }
   }
@@ -55,6 +58,7 @@ function processDeepLink(url) {
           // Store in localStorage for app-wide access (like other auth methods)
           if (typeof window !== 'undefined' && window.localStorage) {
             window.localStorage.setItem('userPublicKey', parsed.pubkey);
+            window.localStorage.setItem('userPubkey', parsed.pubkey); // For compatibility with other parts of codebase
           }
         }
         
@@ -294,9 +298,10 @@ const clearAuthenticationState = () => {
   authenticationState.isLoggedIn = false;
   authenticationState.publicKey = null;
   
-  // Also clear from localStorage
+  // Also clear from localStorage (both keys)
   if (typeof window !== 'undefined' && window.localStorage) {
     window.localStorage.removeItem('userPublicKey');
+    window.localStorage.removeItem('userPubkey');
   }
 };
 
