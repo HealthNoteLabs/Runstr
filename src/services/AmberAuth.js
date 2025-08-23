@@ -55,7 +55,6 @@ function processDeepLink(url) {
           // Store in localStorage for app-wide access (like other auth methods)
           if (typeof window !== 'undefined' && window.localStorage) {
             window.localStorage.setItem('userPublicKey', parsed.pubkey);
-            console.log('AmberAuth: Stored pubkey in localStorage for persistence');
           }
         }
         

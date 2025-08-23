@@ -35,7 +35,9 @@ const attachSigner = async () => {
           ndk.signer = {
             _pubkey: null,
             user: async function() {
-              if (!this._pubkey) this._pubkey = await AmberAuth.getPublicKey();
+              if (!this._pubkey) {
+                this._pubkey = await AmberAuth.getPublicKey();
+              }
               return { pubkey: this._pubkey };
             },
             sign: async (event) => {

@@ -218,7 +218,15 @@ export const useNostrRunStats = () => {
   }, [calculateWorkoutXP, calculateLevelData]);
 
   const loadEvents = useCallback(async () => {
-    if (!userPubkey) {
+    // Try multiple sources for pubkey (context first, then localStorage)
+    let effectivePubkey = userPubkey;
+    
+    if (!effectivePubkey && typeof window !== 'undefined') {
+      // Fallback to localStorage 'userPublicKey' (where Amber stores it)
+      effectivePubkey = window.localStorage.getItem('userPublicKey');
+    }
+    
+    if (!effectivePubkey) {
       setError('No user pubkey');
       return;
     }
@@ -226,7 +234,7 @@ export const useNostrRunStats = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const evSet = await fetchEvents({ kinds: [1301], authors: [userPubkey], limit: 1000 });
+      const evSet = await fetchEvents({ kinds: [1301], authors: [effectivePubkey], limit: 1000 });
       const evArr = Array.from(evSet).map(e => e.rawEvent ? e.rawEvent() : e);
       setWorkoutEvents(evArr);
       setStats(aggregateStats(evArr));

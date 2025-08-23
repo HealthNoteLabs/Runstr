@@ -165,15 +165,56 @@ Many utilities expect pubkey in localStorage:
 ### Real Solution
 **Amber authentication MUST store pubkey in localStorage** like the other auth methods did.
 
-## Next Steps - The Right Fix
+## 🚨 **NEW HYPOTHESIS: The Flow Is Broken**
+
+Since localStorage persistence didn't work, the issue might be deeper:
+
+### Possible Issues
+1. **Deep link callback not firing** - processDeepLink() might not be called
+2. **Timing issue** - Profile tab loads before authentication completes
+3. **NostrContext not updating** - localStorage exists but context doesn't read it
+4. **Different error source** - "Error: No user pubkey" might come from somewhere else
+
+### Debug Strategy
+Need to trace the EXACT flow:
+1. Does Amber authentication actually call processDeepLink()?
+2. Does localStorage actually get the pubkey stored?
+3. Does NostrContext.publicKey get set from the signer?
+4. Does useNostrRunStats receive a non-null userPubkey?
+
+## Next Steps - Debug The Flow
 
 ### Store Amber Pubkey in localStorage
-- [ ] Modify AmberAuth.processDeepLink() to store pubkey in localStorage 'userPublicKey'
-- [ ] Keep it simple - just add the storage, don't over-engineer
+- [x] Modify AmberAuth.processDeepLink() to store pubkey in localStorage 'userPublicKey'
+- [x] Keep it simple - just add the storage, don't over-engineer
+- ❌ **RESULT**: Still getting "Error: No user pubkey"
 
 ### Test Against Real Expectations  
 - [ ] Verify that profile tab can find pubkey in localStorage
 - [ ] Check that other parts of app (runPublisher, streakUtils) work
+
+## Attempt 6: Add localStorage Persistence to AmberAuth
+**Commit**: 08fef1f
+**What**: Made Amber authentication store pubkey in localStorage like other auth methods
+**Changes**:
+- AmberAuth.processDeepLink(): Store pubkey when deep link succeeds
+- AmberAuth initialization: Load from localStorage on startup
+- clearAuthenticationState(): Remove from localStorage on logout
+**Result**: ❌ Still getting "Error: No user pubkey"
+**Learning**: localStorage storage alone isn't sufficient - there's still a disconnect
+
+## Attempt 7: Add Console Debugging (Failed)
+**What**: Added comprehensive console.log debugging throughout AmberAuth and NostrContext
+**Problem**: Can't see console logs on Android device - debugging approach invalid
+**Learning**: Need different debugging strategy for mobile
+
+## Attempt 8: Direct localStorage Fallback in Profile Hook
+**What**: Instead of relying on NostrContext, added direct localStorage fallback in useNostrRunStats
+**Changes**: 
+- useNostrRunStats: Check context first, then localStorage 'userPublicKey' directly
+- Removed all console.log debugging (won't work on Android)
+**Rationale**: If Amber stores pubkey in localStorage but context doesn't get it, bypass the context
+**Result**: 🔄 Testing...
 
 ## Lessons Learned
 
