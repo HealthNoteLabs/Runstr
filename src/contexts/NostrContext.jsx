@@ -358,6 +358,15 @@ export const NostrProvider = ({ children }) => {
             }
           };
           
+          // DEBUG: Show toast to verify context update works
+          if (typeof window !== 'undefined' && window.Android?.showToast) {
+            try {
+              window.Android.showToast(`DEBUG: Context pubkey set: ${pubkey.substring(0, 8)}...`);
+            } catch (e) {
+              console.error('Toast error:', e);
+            }
+          }
+          
           return true;
         }
         return false;

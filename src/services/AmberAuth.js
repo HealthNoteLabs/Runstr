@@ -60,6 +60,15 @@ function processDeepLink(url) {
             window.localStorage.setItem('userPublicKey', parsed.pubkey);
             window.localStorage.setItem('userPubkey', parsed.pubkey); // For compatibility with other parts of codebase
           }
+          
+          // DEBUG: Show toast on Android to verify this step works
+          if (typeof window !== 'undefined' && window.Android?.showToast) {
+            try {
+              window.Android.showToast(`DEBUG: Pubkey stored: ${parsed.pubkey.substring(0, 8)}...`);
+            } catch (e) {
+              console.error('Toast error:', e);
+            }
+          }
         }
         
         req.resolve(parsed);

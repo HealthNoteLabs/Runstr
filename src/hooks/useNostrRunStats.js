@@ -227,6 +227,21 @@ export const useNostrRunStats = () => {
     }
     
     if (!effectivePubkey) {
+      // DEBUG: Show what we actually found
+      if (typeof window !== 'undefined' && window.Android?.showToast) {
+        try {
+          const contextPubkey = userPubkey ? userPubkey.substring(0, 8) + '...' : 'null';
+          const storagePubkey = window.localStorage.getItem('userPublicKey');
+          const storageShort = storagePubkey ? storagePubkey.substring(0, 8) + '...' : 'null';
+          const storagePubkey2 = window.localStorage.getItem('userPubkey');
+          const storage2Short = storagePubkey2 ? storagePubkey2.substring(0, 8) + '...' : 'null';
+          
+          window.Android.showToast(`DEBUG Profile: context=${contextPubkey}, storage1=${storageShort}, storage2=${storage2Short}`);
+        } catch (e) {
+          console.error('Toast error:', e);
+        }
+      }
+      
       setError('No user pubkey');
       return;
     }
