@@ -218,37 +218,15 @@ export const useNostrRunStats = () => {
   }, [calculateWorkoutXP, calculateLevelData]);
 
   const loadEvents = useCallback(async () => {
-    // Try multiple sources for pubkey with fallback strategy
-    let effectiveUserPubkey = userPubkey;
-    console.log('useNostrRunStats: Starting pubkey detection. NostrContext.publicKey:', userPubkey);
-    
-    if (!effectiveUserPubkey) {
-      // Fallback 1: Try localStorage
-      effectiveUserPubkey = typeof window !== 'undefined' ? window.localStorage?.getItem('userPublicKey') : null;
-      console.log('useNostrRunStats: Fallback 1 - localStorage userPublicKey:', effectiveUserPubkey);
-    }
-    
-    if (!effectiveUserPubkey) {
-      // Fallback 2: Try AmberAuth
-      try {
-        effectiveUserPubkey = AmberAuth.getCurrentPublicKey();
-        console.log('useNostrRunStats: Fallback 2 - AmberAuth.getCurrentPublicKey():', effectiveUserPubkey);
-      } catch (err) {
-        console.warn('useNostrRunStats: Could not get pubkey from AmberAuth:', err);
-      }
-    }
-    
-    console.log('useNostrRunStats: Final effectiveUserPubkey:', effectiveUserPubkey);
-    
-    if (!effectiveUserPubkey) {
-      setError('No user pubkey found. Please authenticate with Nostr (via browser extension, private key, or Amber on Android).');
+    if (!userPubkey) {
+      setError('No user pubkey');
       return;
     }
     
     setIsLoading(true);
     setError(null);
     try {
-      const evSet = await fetchEvents({ kinds: [1301], authors: [effectiveUserPubkey], limit: 1000 });
+      const evSet = await fetchEvents({ kinds: [1301], authors: [userPubkey], limit: 1000 });
       const evArr = Array.from(evSet).map(e => e.rawEvent ? e.rawEvent() : e);
       setWorkoutEvents(evArr);
       setStats(aggregateStats(evArr));

@@ -45,11 +45,6 @@ const attachSigner = async () => {
           };
           const user = await ndk.signer.user();
           console.log('NostrContext: Amber signer attached, user pubkey:', user.pubkey);
-          // Store Amber pubkey in localStorage for persistence
-          if (user.pubkey && typeof window !== 'undefined') {
-            window.localStorage.setItem('userPublicKey', user.pubkey);
-            console.log('NostrContext: Stored Amber pubkey in localStorage');
-          }
           return user.pubkey;
         } catch (amberError) {
           console.error('NostrContext: Error initializing AmberSigner:', amberError);
@@ -123,17 +118,7 @@ export const NostrContext = createContext({
 });
 
 export const NostrProvider = ({ children }) => {
-  const [publicKey, setPublicKeyInternal] = useState(() => {
-    // Initialize from localStorage if available (for Amber persistence)
-    if (typeof window !== 'undefined') {
-      const storedPubkey = window.localStorage.getItem('userPublicKey');
-      if (storedPubkey) {
-        console.log('NostrContext: Initializing publicKey from localStorage:', storedPubkey);
-        return storedPubkey;
-      }
-    }
-    return null;
-  });
+  const [publicKey, setPublicKeyInternal] = useState(null);
   const [ndkReady, setNdkReady] = useState(false);
   const [signerAvailable, setSignerAvailable] = useState(false);
   const [currentRelayCount, setCurrentRelayCount] = useState(0);
@@ -230,26 +215,6 @@ export const NostrProvider = ({ children }) => {
           const signerError = signerResult?.error || null;
           if (finalPubkey) {
             setPublicKeyInternal(finalPubkey);
-          } else if (publicKey && !ndk.signer) {
-            // If we have a stored pubkey but no active signer, restore Amber signer
-            console.log('NostrContext: Found stored pubkey without signer, attempting to restore Amber signer');
-            if (Platform.OS === 'android') {
-              ndk.signer = {
-                _pubkey: publicKey,
-                user: async function() {
-                  return { pubkey: this._pubkey };
-                },
-                sign: async (event) => {
-                  const signedEvent = await AmberAuth.signEvent(event);
-                  return signedEvent.sig;
-                }
-              };
-              setSignerAvailable(true);
-              console.log('NostrContext: Restored Amber signer for stored pubkey:', publicKey);
-            }
-          }
-          
-          if (finalPubkey || publicKey) {
             if (!initialNdkConnectionSuccess && !signerError) {
               // If NDK wasn't ready but signer IS, clear NDK error if it was generic
               // setNdkError(null); // This might be too optimistic if relays are still down
@@ -258,8 +223,7 @@ export const NostrProvider = ({ children }) => {
             }
             // Fetch lightning address
             try {
-              const effectivePubkey = finalPubkey || publicKey;
-              const user = ndk.getUser({ pubkey: effectivePubkey });
+              const user = ndk.getUser({ pubkey: finalPubkey });
               user.fetchProfile().then(() => {
                 if (!isMounted) return;
                 const profile = user.profile || {};
@@ -321,11 +285,6 @@ export const NostrProvider = ({ children }) => {
         setPublicKeyInternal(pubkey);
         setSignerAvailable(true);
         
-        // Store pubkey in localStorage for persistence
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem('userPublicKey', pubkey);
-          console.log('NostrContext: Stored reconnected Amber pubkey in localStorage');
-        }
         
         // Update the NDK signer
         ndk.signer = {
@@ -356,7 +315,6 @@ export const NostrProvider = ({ children }) => {
     setPublicKeyInternal(pk);
     if (!pk && typeof window !== 'undefined') {
         window.localStorage.removeItem('runstr_privkey');
-        window.localStorage.removeItem('userPublicKey'); // Clear Amber pubkey
         window.localStorage.removeItem('runstr_lightning_addr');
         ndk.signer = undefined; // Clear signer on explicit logout
         signerAttachmentPromise = null; // Allow re-attachment

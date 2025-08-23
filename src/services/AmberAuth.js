@@ -8,16 +8,7 @@ import { Platform, Linking, AppState } from '../utils/react-native-shim.js';
 let _deepLinkListener = null;
 const pendingRequests = new Map();
 const REQUEST_TIMEOUT = 30000; // 30 second timeout for authentication requests
-// Initialize authentication state from localStorage if available
-const initAuthState = () => {
-  const storedPubkey = typeof window !== 'undefined' ? window.localStorage?.getItem('userPublicKey') : null;
-  return {
-    isLoggedIn: !!storedPubkey,
-    publicKey: storedPubkey
-  };
-};
-
-let authenticationState = initAuthState();
+let authenticationState = { isLoggedIn: false, publicKey: null };
 
 function processDeepLink(url) {
   if (!url || !url.startsWith('runstr://callback')) return;
@@ -51,10 +42,6 @@ function processDeepLink(url) {
         if (req.type === 'pubkey' && parsed.pubkey) {
           authenticationState.isLoggedIn = true;
           authenticationState.publicKey = parsed.pubkey;
-          // Also store in localStorage for app-wide access
-          if (typeof window !== 'undefined' && window.localStorage) {
-            window.localStorage.setItem('userPublicKey', parsed.pubkey);
-          }
         }
         
         req.resolve(parsed);
@@ -292,10 +279,6 @@ const getCurrentPublicKey = () => {
 const clearAuthenticationState = () => {
   authenticationState.isLoggedIn = false;
   authenticationState.publicKey = null;
-  // Also clear from localStorage
-  if (typeof window !== 'undefined' && window.localStorage) {
-    window.localStorage.removeItem('userPublicKey');
-  }
 };
 
 // Retry authentication with optimized delays
