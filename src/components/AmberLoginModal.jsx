@@ -10,6 +10,7 @@ import PropTypes from 'prop-types';
 import AuthService from '../services/AuthService';
 import AmberIntentService from '../services/AmberIntentService';
 import SimpleAmberService from '../services/SimpleAmberService';
+import SimpleAmberAuth from '../services/SimpleAmberAuth';
 
 export const AmberLoginModal = ({ onSuccess, onCancel }) => {
   const [isLogging, setIsLogging] = useState(false);
@@ -115,6 +116,10 @@ export const AmberLoginModal = ({ onSuccess, onCancel }) => {
       // Also try simple approach
       const simpleInstalled = await SimpleAmberService.isAmberInstalled();
       addDebugLog(`📲 SimpleAmberService - Amber installed: ${simpleInstalled}`, simpleInstalled ? 'success' : 'error');
+      
+      // Try SimpleAmberAuth approach
+      const authAvailable = await SimpleAmberAuth.isAmberInstalled();
+      addDebugLog(`📲 SimpleAmberAuth - Amber available: ${authAvailable}`, authAvailable ? 'success' : 'info');
     } catch (err) {
       addDebugLog(`💥 Install check error: ${err.message}`, 'error');
     }
@@ -127,6 +132,80 @@ export const AmberLoginModal = ({ onSuccess, onCancel }) => {
       addDebugLog(`🔍 App test result: ${JSON.stringify(result)}`, result.error ? 'error' : 'success');
     } catch (err) {
       addDebugLog(`💥 App test error: ${err.message}`, 'error');
+    }
+  };
+
+  const handleInspectCapacitor = async () => {
+    addDebugLog('🔍 Inspecting Capacitor environment...', 'info');
+    try {
+      if (typeof window !== 'undefined' && window.Capacitor) {
+        addDebugLog(`✅ Capacitor found, platform: ${window.Capacitor.getPlatform()}`, 'success');
+        
+        if (window.Capacitor.Plugins) {
+          const plugins = window.Capacitor.Plugins;
+          const pluginNames = Object.keys(plugins);
+          addDebugLog(`🔌 ${pluginNames.length} plugins available: ${pluginNames.join(', ')}`, 'info');
+          
+          // Inspect App plugin specifically
+          if (plugins.App) {
+            const appMethods = Object.getOwnPropertyNames(plugins.App);
+            addDebugLog(`📱 App plugin methods: ${appMethods.join(', ')}`, 'info');
+            
+            if (plugins.App.openUrl) {
+              addDebugLog('✅ App.openUrl method found', 'success');
+            } else {
+              addDebugLog('❌ App.openUrl method NOT found', 'error');
+            }
+          } else {
+            addDebugLog('❌ App plugin NOT found in Capacitor.Plugins', 'error');
+          }
+          
+          // Check what other plugins have which methods
+          pluginNames.slice(0, 3).forEach(name => {
+            try {
+              const methods = Object.getOwnPropertyNames(plugins[name]);
+              addDebugLog(`🔧 ${name} methods: ${methods.slice(0, 5).join(', ')}${methods.length > 5 ? '...' : ''}`, 'info');
+            } catch (e) {
+              addDebugLog(`⚠️ Could not inspect ${name}`, 'warning');
+            }
+          });
+          
+        } else {
+          addDebugLog('❌ Capacitor.Plugins not available', 'error');
+        }
+      } else {
+        addDebugLog('❌ Capacitor not found in window', 'error');
+      }
+    } catch (err) {
+      addDebugLog(`💥 Inspect error: ${err.message}`, 'error');
+    }
+  };
+
+  const handleTestWindowOpen = async () => {
+    addDebugLog('🌐 Testing window.open approach...', 'info');
+    try {
+      addDebugLog('🔗 Testing window.open with simple URL...', 'info');
+      
+      // Test if window.open is available
+      if (typeof window !== 'undefined' && window.open) {
+        addDebugLog('✅ window.open function available', 'success');
+        
+        // Try to open a test URL
+        const testUrl = 'https://example.com';
+        addDebugLog(`🌍 Opening test URL: ${testUrl}`, 'info');
+        window.open(testUrl, '_system');
+        addDebugLog('✅ window.open call completed (URL should open)', 'success');
+        
+        // Now test nostrsigner scheme
+        addDebugLog('🔗 Testing nostrsigner: scheme...', 'info');
+        const testScheme = 'nostrsigner:';
+        window.open(testScheme, '_system');
+        addDebugLog('✅ nostrsigner: scheme test completed', 'success');
+      } else {
+        addDebugLog('❌ window.open not available', 'error');
+      }
+    } catch (err) {
+      addDebugLog(`💥 window.open test error: ${err.message}`, 'error');
     }
   };
 
@@ -186,6 +265,18 @@ export const AmberLoginModal = ({ onSuccess, onCancel }) => {
                   className="px-2 py-1 bg-purple-600 hover:bg-purple-700 rounded text-xs"
                 >
                   📱 Test App
+                </button>
+                <button
+                  onClick={handleTestWindowOpen}
+                  className="px-2 py-1 bg-orange-600 hover:bg-orange-700 rounded text-xs"
+                >
+                  🌐 Test Window
+                </button>
+                <button
+                  onClick={handleInspectCapacitor}
+                  className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 rounded text-xs"
+                >
+                  🔍 Inspect
                 </button>
                 <button
                   onClick={() => setDebugInfo([])}
