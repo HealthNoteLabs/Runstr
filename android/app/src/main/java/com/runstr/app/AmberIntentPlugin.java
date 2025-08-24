@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.app.Activity;
 import android.util.Log;
+import androidx.activity.result.ActivityResult;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -48,7 +49,7 @@ public class AmberIntentPlugin extends Plugin {
     }
     
     @ActivityCallback
-    private void handleGetPublicKeyResult(PluginCall call, android.app.Activity.ActivityResult result) {
+    private void handleGetPublicKeyResult(PluginCall call, ActivityResult result) {
         Log.d(TAG, "Got result from Amber - resultCode: " + result.getResultCode());
         
         if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
@@ -124,7 +125,7 @@ public class AmberIntentPlugin extends Plugin {
     }
     
     @ActivityCallback
-    private void handleSignEventResult(PluginCall call, android.app.Activity.ActivityResult result) {
+    private void handleSignEventResult(PluginCall call, ActivityResult result) {
         Log.d(TAG, "Got sign result from Amber - resultCode: " + result.getResultCode());
         
         if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
