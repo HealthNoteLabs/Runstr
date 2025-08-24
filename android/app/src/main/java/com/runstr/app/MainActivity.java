@@ -9,7 +9,8 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
-        // Register the AmberIntent plugin
+        // Register native plugins
         registerPlugin(AmberIntentPlugin.class);
+        registerPlugin(PedometerPlugin.class);
     }
 }

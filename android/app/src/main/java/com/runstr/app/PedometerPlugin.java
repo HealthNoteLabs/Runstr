@@ -1,4 +1,4 @@
-package com.example.app;
+package com.runstr.app;
 
 import android.Manifest;
 import android.content.Context;
@@ -180,4 +180,4 @@ public class PedometerPlugin extends Plugin implements SensorEventListener {
         // If listeners were unregistered on pause, re-register them here.
         Log.d(TAG, "handleOnResume called");
     }
-} 
+}
