@@ -38,14 +38,35 @@ function setupUrlListener() {
       try {
         const url = new URL(event.url);
         const result = url.searchParams.get('result');
+        const event_param = url.searchParams.get('event');
+        const signature = url.searchParams.get('signature');
         const error = url.searchParams.get('error');
+        
+        console.log('[SimpleAmberAuth] Callback params:', { result, event_param, signature, error });
         
         if (error) {
           pendingRequest.reject(new Error('Amber error: ' + error));
         } else if (result) {
-          // Amber returns the pubkey directly in result
+          // Direct result (probably pubkey for get_public_key)
           storePublicKey(result);
           pendingRequest.resolve(result);
+        } else if (event_param) {
+          // Event data returned
+          try {
+            const eventData = JSON.parse(decodeURIComponent(event_param));
+            if (eventData.pubkey) {
+              storePublicKey(eventData.pubkey);
+              pendingRequest.resolve(eventData.pubkey);
+            } else {
+              pendingRequest.resolve(eventData);
+            }
+          } catch (parseErr) {
+            console.error('[SimpleAmberAuth] Event parsing error:', parseErr);
+            pendingRequest.reject(new Error('Failed to parse event data'));
+          }
+        } else if (signature) {
+          // Signature returned
+          pendingRequest.resolve(signature);
         } else {
           pendingRequest.reject(new Error('No result from Amber'));
         }
@@ -85,16 +106,12 @@ async function launchAmber() {
       }
     }, 30000);
     
-    // Create nostrsigner URI with encoded JSON (as expected by Amber)
-    const request = {
-      type: 'get_public_key',
-      callbackUrl: 'runstr://callback'
-    };
-    const encodedJson = encodeURIComponent(JSON.stringify(request));
-    const amberUrl = `nostrsigner:${encodedJson}`;
+    // Use web application format from NIP-55 specification
+    // For get_public_key, we want the public key returned, not a signature
+    const callbackUrl = encodeURIComponent('runstr://callback');
+    const amberUrl = `nostrsigner:?compressionType=none&returnType=event&type=get_public_key&callbackUrl=${callbackUrl}`;
     
-    console.log('[SimpleAmberAuth] Launching Amber with request:', request);
-    console.log('[SimpleAmberAuth] Launching Amber with URL:', amberUrl);
+    console.log('[SimpleAmberAuth] Launching Amber with NIP-55 web format:', amberUrl);
     
     // Use Capacitor's built-in way to open URLs
     // This will trigger Android Intent system
@@ -187,16 +204,12 @@ export async function signEvent(event) {
       }
     }, 30000);
     
-    // Create signing request with encoded JSON
-    const request = {
-      type: 'sign_event',
-      event: JSON.stringify(event),
-      callbackUrl: 'runstr://callback'
-    };
-    const encodedJson = encodeURIComponent(JSON.stringify(request));
-    const amberUrl = `nostrsigner:${encodedJson}`;
+    // Use web application format for signing from NIP-55
+    const eventJson = encodeURIComponent(JSON.stringify(event));
+    const callbackUrl = encodeURIComponent('runstr://callback');
+    const amberUrl = `nostrsigner:${eventJson}?compressionType=none&returnType=signature&type=sign_event&callbackUrl=${callbackUrl}`;
     
-    console.log('[SimpleAmberAuth] Launching Amber for signing with request:', request);
+    console.log('[SimpleAmberAuth] Launching Amber for signing with NIP-55 web format:', amberUrl);
     window.open(amberUrl, '_system');
   });
 }
