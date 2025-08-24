@@ -73,6 +73,31 @@ export const AmberLoginModal = ({ onSuccess, onCancel }) => {
     addDebugLog('🔧 Running debug diagnostics...', 'info');
     try {
       addDebugLog('📦 Testing plugin registration...', 'info');
+      
+      // Test if Capacitor itself is available
+      if (typeof window !== 'undefined' && window.Capacitor) {
+        addDebugLog('✅ Capacitor found', 'success');
+        addDebugLog(`📱 Platform: ${window.Capacitor.getPlatform()}`, 'info');
+        
+        // Test if we can access plugins
+        if (window.Capacitor.Plugins) {
+          addDebugLog('✅ Capacitor.Plugins available', 'success');
+          const pluginNames = Object.keys(window.Capacitor.Plugins);
+          addDebugLog(`🔌 Available plugins: ${pluginNames.join(', ')}`, 'info');
+          
+          // Check specifically for AmberIntent
+          if (window.Capacitor.Plugins.AmberIntent) {
+            addDebugLog('✅ AmberIntent plugin found in Capacitor.Plugins!', 'success');
+          } else {
+            addDebugLog('❌ AmberIntent plugin NOT found in Capacitor.Plugins', 'error');
+          }
+        } else {
+          addDebugLog('❌ Capacitor.Plugins not available', 'error');
+        }
+      } else {
+        addDebugLog('❌ Capacitor not found', 'error');
+      }
+      
       const debugResult = await AmberIntentService.debugAmberIntents();
       addDebugLog(`🔍 Debug result: ${JSON.stringify(debugResult)}`, 'info');
     } catch (err) {

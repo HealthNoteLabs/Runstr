@@ -246,11 +246,36 @@ public class AmberIntentPlugin extends Plugin {
     @PluginMethod
     public void checkAmberInstalled(PluginCall call) {
         try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("nostrsigner:"));
-            boolean canResolve = intent.resolveActivity(getContext().getPackageManager()) != null;
+            Log.d(TAG, "Checking if Amber is installed...");
+            
+            // Use the same method as debugIntent for consistency
+            Intent testIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("nostrsigner:"));
+            testIntent.addCategory(Intent.CATEGORY_DEFAULT);
+            testIntent.addCategory(Intent.CATEGORY_BROWSABLE);
+            
+            PackageManager pm = getContext().getPackageManager();
+            List<ResolveInfo> activities = pm.queryIntentActivities(testIntent, 0);
+            
+            Log.d(TAG, "Found " + activities.size() + " apps for nostrsigner scheme");
+            
+            // Also check specifically for Amber's package
+            boolean amberSpecificCheck = false;
+            try {
+                pm.getPackageInfo("com.greenart7c3.nostrsigner", 0);
+                amberSpecificCheck = true;
+                Log.d(TAG, "Amber package found via direct package check");
+            } catch (PackageManager.NameNotFoundException e) {
+                Log.d(TAG, "Amber package not found via direct package check");
+            }
+            
+            boolean isInstalled = activities.size() > 0 || amberSpecificCheck;
+            
+            Log.d(TAG, "Final result - Amber installed: " + isInstalled);
             
             JSObject response = new JSObject();
-            response.put("installed", canResolve);
+            response.put("installed", isInstalled);
+            response.put("foundApps", activities.size());
+            response.put("packageFound", amberSpecificCheck);
             call.resolve(response);
             
         } catch (Exception e) {
