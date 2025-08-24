@@ -55,13 +55,51 @@ function processDeepLink(url) {
     if (response) {
       try {
         const decoded = decodeURIComponent(response);
-        const parsed = JSON.parse(decoded);
+        console.log('[AuthService] Decoded response:', decoded);
         
-        if (!parsed || typeof parsed !== 'object') {
-          throw new Error('Invalid response format from Amber');
+        // For NIP-55, the response might be just the result string or a JSON object
+        let parsed;
+        try {
+          parsed = JSON.parse(decoded);
+        } catch (jsonError) {
+          // If it's not JSON, treat it as the direct result (common for get_public_key)
+          if (req.type === 'get_public_key') {
+            parsed = { pubkey: decoded };
+          } else if (req.type === 'sign_event') {
+            parsed = { event: decoded };
+          } else {
+            parsed = { result: decoded };
+          }
         }
         
-        req.resolve(parsed);
+        console.log('[AuthService] Parsed response:', parsed);
+        
+        // Handle different response formats based on request type
+        if (req.type === 'get_public_key') {
+          // For get_public_key, result should contain the pubkey
+          if (parsed.result) {
+            req.resolve({ pubkey: parsed.result });
+          } else if (parsed.pubkey) {
+            req.resolve({ pubkey: parsed.pubkey });
+          } else if (typeof parsed === 'string') {
+            req.resolve({ pubkey: parsed });
+          } else {
+            throw new Error('No pubkey found in response');
+          }
+        } else if (req.type === 'sign_event') {
+          // For sign_event, we expect either an event or signature
+          if (parsed.event) {
+            const eventObj = typeof parsed.event === 'string' ? JSON.parse(parsed.event) : parsed.event;
+            req.resolve(eventObj);
+          } else if (parsed.result) {
+            req.resolve({ sig: parsed.result });
+          } else {
+            req.resolve(parsed);
+          }
+        } else {
+          req.resolve(parsed);
+        }
+        
       } catch (parseError) {
         console.error('[AuthService] Failed to parse Amber response:', parseError);
         req.reject(new Error('Invalid response format from Amber. Please try again.'));
@@ -132,13 +170,13 @@ async function isAmberAvailable() {
 }
 
 /**
- * Communicate with Amber app
+ * Request public key from Amber using NIP-55 web application format
  */
-async function requestFromAmber(eventTemplate, type = 'sign') {
+async function requestPublicKeyFromAmber() {
   return new Promise(async (resolve, reject) => {
-    const id = `${type}_${generateSecureId()}`;
+    const id = `pubkey_${generateSecureId()}`;
     
-    console.log(`[AuthService] Creating ${type} request with ID:`, id);
+    console.log(`[AuthService] Creating get_public_key request with ID:`, id);
     
     // Set up timeout
     const timeoutId = setTimeout(() => {
@@ -162,23 +200,78 @@ async function requestFromAmber(eventTemplate, type = 'sign') {
         reject(error);
       },
       timeout: timeoutId,
-      type
+      type: 'get_public_key'
     });
 
-    const encodedEvent = encodeURIComponent(JSON.stringify(eventTemplate));
+    // NIP-55 Web Application format for get_public_key
     const callbackUrl = encodeURIComponent(`runstr://callback?id=${id}`);
-    const amberUri = `nostrsigner:sign?event=${encodedEvent}&callback=${callbackUrl}`;
+    const amberUri = `nostrsigner:?compressionType=none&returnType=signature&type=get_public_key&callbackUrl=${callbackUrl}`;
     
-    console.log('[AuthService] Opening Amber with URI:', amberUri.substring(0, 100) + '...');
+    console.log('[AuthService] Opening Amber with NIP-55 URI:', amberUri);
     
     try {
       // Use window.open which should trigger the intent on Android
-      // The browser will handle the nostrsigner:// scheme and launch Amber
       const result = window.open(amberUri, '_system');
       console.log('[AuthService] window.open result:', result);
       
-      // On Android, window.open might return null but still work
-      console.log('[AuthService] Successfully attempted to open Amber app');
+      console.log('[AuthService] Successfully attempted to open Amber app for public key');
+      
+    } catch (e) {
+      console.error('[AuthService] Failed to open Amber app:', e);
+      clearTimeout(timeoutId);
+      pendingRequests.delete(id);
+      reject(new Error('Failed to open Amber app. Please ensure Amber is installed and try again.'));
+    }
+  });
+}
+
+/**
+ * Sign an event using Amber with NIP-55 web application format
+ */
+async function signEventWithAmber(eventTemplate) {
+  return new Promise(async (resolve, reject) => {
+    const id = `sign_${generateSecureId()}`;
+    
+    console.log(`[AuthService] Creating sign_event request with ID:`, id);
+    
+    // Set up timeout
+    const timeoutId = setTimeout(() => {
+      if (pendingRequests.has(id)) {
+        const req = pendingRequests.get(id);
+        pendingRequests.delete(id);
+        console.log('[AuthService] Request timed out for ID:', id);
+        req.reject(new Error('Request timed out. Please ensure Amber is installed and try again.'));
+      }
+    }, REQUEST_TIMEOUT);
+    
+    pendingRequests.set(id, {
+      resolve: (response) => {
+        clearTimeout(timeoutId);
+        console.log('[AuthService] Request resolved for ID:', id, 'Response:', response);
+        resolve(response);
+      },
+      reject: (error) => {
+        clearTimeout(timeoutId);
+        console.log('[AuthService] Request rejected for ID:', id, 'Error:', error);
+        reject(error);
+      },
+      timeout: timeoutId,
+      type: 'sign_event'
+    });
+
+    // NIP-55 Web Application format for sign_event
+    const encodedEvent = encodeURIComponent(JSON.stringify(eventTemplate));
+    const callbackUrl = encodeURIComponent(`runstr://callback?id=${id}`);
+    const amberUri = `nostrsigner:${encodedEvent}?compressionType=none&returnType=event&type=sign_event&callbackUrl=${callbackUrl}`;
+    
+    console.log('[AuthService] Opening Amber for signing with NIP-55 URI:', amberUri.substring(0, 100) + '...');
+    
+    try {
+      // Use window.open which should trigger the intent on Android
+      const result = window.open(amberUri, '_system');
+      console.log('[AuthService] window.open result:', result);
+      
+      console.log('[AuthService] Successfully attempted to open Amber app for signing');
       
     } catch (e) {
       console.error('[AuthService] Failed to open Amber app:', e);
@@ -228,12 +321,12 @@ export default class AuthService {
     console.log('[AuthService] Starting login process...');
     
     try {
-      console.log('[AuthService] Sending authentication request to Amber...');
-      const response = await requestFromAmber(authEvent, 'auth');
+      console.log('[AuthService] Requesting public key from Amber using NIP-55 web format...');
+      const response = await requestPublicKeyFromAmber();
       
       console.log('[AuthService] Received response from Amber:', response);
       
-      if (!response.pubkey) {
+      if (!response || !response.pubkey) {
         throw new Error('No public key received from Amber');
       }
       
@@ -295,7 +388,7 @@ export default class AuthService {
     }
     
     try {
-      const signedEvent = await requestFromAmber(event, 'sign');
+      const signedEvent = await signEventWithAmber(event);
       
       if (!signedEvent || !signedEvent.sig || !signedEvent.id) {
         throw new Error('Invalid signed event returned from Amber');
