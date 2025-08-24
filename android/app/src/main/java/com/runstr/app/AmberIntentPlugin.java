@@ -1,89 +1,157 @@
 package com.runstr.app;
 
-import android.content.Intent;
-import android.net.Uri;
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.net.Uri;
 import android.util.Log;
-import androidx.activity.result.ActivityResult;
+import java.util.List;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import com.getcapacitor.annotation.ActivityCallback;
 
 @CapacitorPlugin(name = "AmberIntent")
 public class AmberIntentPlugin extends Plugin {
     
     private static final String TAG = "AmberIntentPlugin";
+    private static final int REQUEST_GET_PUBKEY = 27001;
+    private static final int REQUEST_SIGN_EVENT = 27002;
+    private PluginCall pendingCall;
     
     @PluginMethod
     public void getPublicKey(PluginCall call) {
         Log.d(TAG, "getPublicKey called");
         
+        // Store call for result handling
+        this.pendingCall = call;
+        
         try {
-            // Create minimal intent exactly as specified
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("nostrsigner:"));
+            // Build the intent exactly as NIP-55 specifies
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setData(Uri.parse("nostrsigner:"));
             intent.putExtra("type", "get_public_key");
             
-            // Optional permissions
+            // Add permissions if provided
             String permissions = call.getString("permissions");
             if (permissions != null && !permissions.isEmpty()) {
-                intent.putExtra("permissions", permissions);
                 Log.d(TAG, "Adding permissions: " + permissions);
+                intent.putExtra("permissions", permissions);
             }
             
-            // Add flags
-            intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            // Add flags for external activity
+            intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
             
-            Log.d(TAG, "Launching intent with URI: nostrsigner:");
+            // Add categories for external apps
+            intent.addCategory(Intent.CATEGORY_DEFAULT);
+            intent.addCategory(Intent.CATEGORY_BROWSABLE);
+            
+            Log.d(TAG, "Launching Amber with intent");
+            Log.d(TAG, "URI: " + intent.getData());
             Log.d(TAG, "Type extra: " + intent.getStringExtra("type"));
             
-            // Start activity for result
-            startActivityForResult(call, intent, "handleGetPublicKeyResult");
+            // Use direct activity launch instead of Capacitor's wrapper
+            getActivity().startActivityForResult(intent, REQUEST_GET_PUBKEY);
             
+        } catch (ActivityNotFoundException e) {
+            Log.e(TAG, "Amber not found", e);
+            call.reject("Amber is not installed");
+            pendingCall = null;
         } catch (Exception e) {
-            Log.e(TAG, "Error launching Amber", e);
+            Log.e(TAG, "Failed to launch Amber", e);
             call.reject("Failed to launch Amber: " + e.getMessage());
+            pendingCall = null;
         }
     }
     
-    @ActivityCallback
-    private void handleGetPublicKeyResult(PluginCall call, ActivityResult result) {
-        Log.d(TAG, "Got result from Amber - resultCode: " + result.getResultCode());
+    @Override
+    protected void handleOnActivityResult(int requestCode, int resultCode, Intent data) {
+        super.handleOnActivityResult(requestCode, resultCode, data);
         
-        if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
-            Intent data = result.getData();
-            
-            String pubkey = data.getStringExtra("result");
-            String packageName = data.getStringExtra("package");
-            String error = data.getStringExtra("error");
-            
-            Log.d(TAG, "Pubkey: " + pubkey);
-            Log.d(TAG, "Package: " + packageName);
-            Log.d(TAG, "Error: " + error);
-            
-            JSObject response = new JSObject();
-            
-            if (error != null) {
-                response.put("error", error);
-                call.reject("Amber error: " + error);
-            } else if (pubkey != null) {
-                response.put("pubkey", pubkey);
-                response.put("package", packageName);
-                call.resolve(response);
-            } else {
-                call.reject("No result received from Amber");
+        Log.d(TAG, "handleOnActivityResult: requestCode=" + requestCode + ", resultCode=" + resultCode);
+        
+        if (requestCode == REQUEST_GET_PUBKEY) {
+            if (pendingCall != null) {
+                if (resultCode == Activity.RESULT_OK) {
+                    if (data != null) {
+                        String pubkey = data.getStringExtra("result");
+                        String packageName = data.getStringExtra("package");
+                        String error = data.getStringExtra("error");
+                        
+                        Log.d(TAG, "Received pubkey: " + (pubkey != null ? pubkey.substring(0, Math.min(8, pubkey.length())) + "..." : "null"));
+                        Log.d(TAG, "Package: " + packageName);
+                        Log.d(TAG, "Error: " + error);
+                        
+                        if (error != null) {
+                            pendingCall.reject("Amber error: " + error);
+                        } else if (pubkey != null) {
+                            JSObject response = new JSObject();
+                            response.put("pubkey", pubkey);
+                            response.put("package", packageName != null ? packageName : "");
+                            pendingCall.resolve(response);
+                        } else {
+                            pendingCall.reject("No result received from Amber");
+                        }
+                    } else {
+                        pendingCall.reject("No data returned from Amber");
+                    }
+                } else if (resultCode == Activity.RESULT_CANCELED) {
+                    pendingCall.reject("User canceled");
+                } else {
+                    pendingCall.reject("Unknown result code: " + resultCode);
+                }
+                pendingCall = null;
             }
-        } else {
-            Log.d(TAG, "Activity was cancelled or failed");
-            call.reject("Authentication was cancelled or failed");
+        } else if (requestCode == REQUEST_SIGN_EVENT) {
+            if (pendingCall != null) {
+                if (resultCode == Activity.RESULT_OK) {
+                    if (data != null) {
+                        String signedEvent = data.getStringExtra("event");
+                        String signature = data.getStringExtra("result");
+                        String eventId = data.getStringExtra("id");
+                        String error = data.getStringExtra("error");
+                        
+                        Log.d(TAG, "Signed event received");
+                        Log.d(TAG, "Signature: " + signature);
+                        Log.d(TAG, "Event ID: " + eventId);
+                        Log.d(TAG, "Error: " + error);
+                        
+                        if (error != null) {
+                            pendingCall.reject("Amber error: " + error);
+                        } else if (signedEvent != null) {
+                            JSObject response = new JSObject();
+                            response.put("signedEvent", signedEvent);
+                            response.put("eventId", eventId);
+                            pendingCall.resolve(response);
+                        } else if (signature != null) {
+                            JSObject response = new JSObject();
+                            response.put("signature", signature);
+                            response.put("eventId", eventId);
+                            pendingCall.resolve(response);
+                        } else {
+                            pendingCall.reject("No result received from Amber");
+                        }
+                    } else {
+                        pendingCall.reject("No data returned from Amber");
+                    }
+                } else {
+                    pendingCall.reject("Signing was cancelled or failed");
+                }
+                pendingCall = null;
+            }
         }
     }
     
     @PluginMethod
     public void signEvent(PluginCall call) {
         Log.d(TAG, "signEvent called");
+        
+        // Store call for result handling
+        this.pendingCall = call;
         
         String eventJson = call.getString("event");
         String currentUser = call.getString("currentUser");
@@ -92,12 +160,14 @@ public class AmberIntentPlugin extends Plugin {
         
         if (eventJson == null || eventJson.isEmpty()) {
             call.reject("Event JSON is required");
+            pendingCall = null;
             return;
         }
         
         try {
             // Create intent with event JSON in URI
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("nostrsigner:" + eventJson));
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setData(Uri.parse("nostrsigner:" + eventJson));
             intent.putExtra("type", "sign_event");
             
             if (id != null) {
@@ -112,54 +182,64 @@ public class AmberIntentPlugin extends Plugin {
                 intent.setPackage(packageName);
             }
             
-            intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            intent.addCategory(Intent.CATEGORY_DEFAULT);
+            intent.addCategory(Intent.CATEGORY_BROWSABLE);
             
             Log.d(TAG, "Signing event with URI: nostrsigner:" + eventJson.substring(0, Math.min(50, eventJson.length())) + "...");
             
-            startActivityForResult(call, intent, "handleSignEventResult");
+            getActivity().startActivityForResult(intent, REQUEST_SIGN_EVENT);
             
+        } catch (ActivityNotFoundException e) {
+            Log.e(TAG, "Amber not found for signing", e);
+            call.reject("Amber is not installed");
+            pendingCall = null;
         } catch (Exception e) {
             Log.e(TAG, "Error signing event", e);
             call.reject("Failed to sign event: " + e.getMessage());
+            pendingCall = null;
         }
     }
     
-    @ActivityCallback
-    private void handleSignEventResult(PluginCall call, ActivityResult result) {
-        Log.d(TAG, "Got sign result from Amber - resultCode: " + result.getResultCode());
-        
-        if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
-            Intent data = result.getData();
+    @PluginMethod
+    public void debugIntent(PluginCall call) {
+        try {
+            // Test if nostrsigner scheme can be resolved
+            Intent testIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("nostrsigner:"));
+            PackageManager pm = getContext().getPackageManager();
+            List<ResolveInfo> activities = pm.queryIntentActivities(testIntent, 0);
             
-            String signedEvent = data.getStringExtra("event");
-            String signature = data.getStringExtra("result");
-            String eventId = data.getStringExtra("id");
-            String error = data.getStringExtra("error");
-            
-            Log.d(TAG, "Signed event: " + (signedEvent != null ? signedEvent.substring(0, Math.min(100, signedEvent.length())) : "null"));
-            Log.d(TAG, "Signature: " + signature);
-            Log.d(TAG, "Event ID: " + eventId);
-            Log.d(TAG, "Error: " + error);
-            
+            Log.d(TAG, "Found " + activities.size() + " apps for nostrsigner:");
             JSObject response = new JSObject();
+            response.put("foundApps", activities.size());
             
-            if (error != null) {
-                response.put("error", error);
-                call.reject("Amber error: " + error);
-            } else if (signedEvent != null) {
-                response.put("signedEvent", signedEvent);
-                response.put("eventId", eventId);
-                call.resolve(response);
-            } else if (signature != null) {
-                response.put("signature", signature);
-                response.put("eventId", eventId);
-                call.resolve(response);
-            } else {
-                call.reject("No result received from Amber");
+            for (ResolveInfo info : activities) {
+                Log.d(TAG, "Package: " + info.activityInfo.packageName);
             }
-        } else {
-            Log.d(TAG, "Signing was cancelled or failed");
-            call.reject("Signing was cancelled or failed");
+            
+            // Try launching with explicit package
+            if (activities.size() > 0) {
+                try {
+                    Intent explicitIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("nostrsigner:"));
+                    explicitIntent.setPackage("com.greenart7c3.nostrsigner");
+                    explicitIntent.putExtra("type", "get_public_key");
+                    explicitIntent.addCategory(Intent.CATEGORY_DEFAULT);
+                    explicitIntent.addCategory(Intent.CATEGORY_BROWSABLE);
+                    
+                    getContext().startActivity(explicitIntent);
+                    response.put("launchAttempted", true);
+                } catch (Exception e) {
+                    Log.e(TAG, "Launch failed: " + e.getMessage());
+                    response.put("launchError", e.getMessage());
+                }
+            }
+            
+            call.resolve(response);
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Debug error: " + e.getMessage(), e);
+            call.reject("Debug failed: " + e.getMessage());
         }
     }
     

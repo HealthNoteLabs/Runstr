@@ -73,8 +73,11 @@
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="nostrsigner" />
         </intent>
+        <!-- Also add specific package for Amber -->
+        <package android:name="com.greenart7c3.nostrsigner" />
     </queries>
 </manifest>

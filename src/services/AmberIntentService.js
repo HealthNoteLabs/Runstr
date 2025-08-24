@@ -219,6 +219,25 @@ export async function isAmberInstalled() {
 }
 
 /**
+ * Debug method to test Intent resolution
+ */
+export async function debugAmberIntents() {
+  if (!isAndroid()) {
+    throw new Error('Debug is only available on Android');
+  }
+  
+  try {
+    console.log('[AmberIntentService] Running debug...');
+    const result = await AmberIntent.debugIntent();
+    console.log('[AmberIntentService] Debug result:', result);
+    return result;
+  } catch (error) {
+    console.error('[AmberIntentService] Debug failed:', error);
+    throw error;
+  }
+}
+
+/**
  * Logout - clear all authentication data
  */
 export function logout() {
@@ -238,5 +257,6 @@ export default {
   isAuthenticated: isLoggedIn,
   signEvent,
   logout,
-  isAmberInstalled
+  isAmberInstalled,
+  debugAmberIntents
 };
