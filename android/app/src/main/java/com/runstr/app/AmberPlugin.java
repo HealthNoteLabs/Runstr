@@ -12,8 +12,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.ActivityCallback;
 import java.util.List;
-import org.json.JSONObject;
-import org.json.JSONException;
+import com.getcapacitor.JSObject;
 
 @CapacitorPlugin(name = "AmberPlugin")
 public class AmberPlugin extends Plugin {
@@ -33,7 +32,7 @@ public class AmberPlugin extends Plugin {
             
             boolean isInstalled = !activities.isEmpty();
             
-            JSONObject result = new JSONObject();
+            JSObject result = new JSObject();
             result.put("installed", isInstalled);
             call.resolve(result);
         } catch (Exception e) {
@@ -163,7 +162,7 @@ public class AmberPlugin extends Plugin {
         }
         
         try {
-            JSONObject result = new JSONObject();
+            JSObject result = new JSObject();
             
             // Check for different response types
             String response = data.getStringExtra("result");
@@ -198,7 +197,7 @@ public class AmberPlugin extends Plugin {
             
             call.resolve(result);
             
-        } catch (JSONException e) {
+        } catch (Exception e) {
             call.reject("Failed to parse Amber response", e);
         }
     }
