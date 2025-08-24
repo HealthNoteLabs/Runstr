@@ -4,10 +4,7 @@
  */
 
 import { Capacitor } from '@capacitor/core';
-import { registerPlugin } from '@capacitor/core';
-
-// Register the native plugin
-const AmberIntent = registerPlugin('AmberIntent');
+import { AmberIntent } from './native-amber';
 
 // Storage key for user's public key
 const PUBKEY_STORAGE_KEY = 'runstr_user_pubkey';
@@ -270,8 +267,28 @@ export async function debugAmberIntents() {
     
     // Try calling debugIntent
     console.log('[AmberIntentService] Attempting to call debugIntent...');
-    const result = await AmberIntent.debugIntent();
-    console.log('[AmberIntentService] Debug result:', result);
+    let result;
+    
+    try {
+      result = await AmberIntent.debugIntent();
+      console.log('[AmberIntentService] Capacitor plugin debug result:', result);
+    } catch (capacitorError) {
+      console.log('[AmberIntentService] Capacitor plugin failed, trying Cordova plugin...');
+      // Try Cordova plugin as fallback
+      if (window.cordova && window.cordova.exec) {
+        try {
+          result = await new Promise((resolve, reject) => {
+            window.cordova.exec(resolve, reject, 'AmberPlugin', 'debugIntent', []);
+          });
+          console.log('[AmberIntentService] Cordova plugin debug result:', result);
+        } catch (cordovaError) {
+          console.error('[AmberIntentService] Both Capacitor and Cordova plugins failed');
+          throw capacitorError; // Throw original error
+        }
+      } else {
+        throw capacitorError;
+      }
+    }
     
     return {
       pluginFound: true,
