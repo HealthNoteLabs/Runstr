@@ -63,8 +63,11 @@ export async function login() {
   console.log('[AmberIntentService] Starting Amber login with proper Intents...');
   
   if (!isAndroid()) {
+    console.error('[AmberIntentService] Not on Android platform');
     throw new Error('Amber is only available on Android');
   }
+  
+  console.log('[AmberIntentService] Platform check passed - on Android');
   
   // Check if already logged in
   const existingPubkey = getPublicKey();
@@ -72,6 +75,8 @@ export async function login() {
     console.log('[AmberIntentService] Already logged in with pubkey:', existingPubkey.substring(0, 8) + '...');
     return existingPubkey;
   }
+  
+  console.log('[AmberIntentService] No existing pubkey found, proceeding with fresh login');
   
   try {
     // Create permissions array as JSON string
@@ -90,12 +95,15 @@ export async function login() {
     ]);
     
     console.log('[AmberIntentService] Requesting public key from Amber with permissions:', permissions);
+    console.log('[AmberIntentService] About to call AmberIntent.getPublicKey()...');
     
     const result = await AmberIntent.getPublicKey({
       permissions: permissions
     });
     
-    console.log('[AmberIntentService] Received result from Amber:', result);
+    console.log('[AmberIntentService] Successfully received result from Amber:', result);
+    console.log('[AmberIntentService] Result type:', typeof result);
+    console.log('[AmberIntentService] Result keys:', Object.keys(result || {}));
     
     if (result.pubkey) {
       // Store the pubkey and package name
@@ -113,14 +121,20 @@ export async function login() {
     }
     
   } catch (error) {
-    console.error('[AmberIntentService] Login failed:', error);
+    console.error('[AmberIntentService] Login failed with error:', error);
+    console.error('[AmberIntentService] Error type:', typeof error);
+    console.error('[AmberIntentService] Error message:', error.message);
+    console.error('[AmberIntentService] Error stack:', error.stack);
     
     // User-friendly error messages
     if (error.message.includes('not found') || error.message.includes('No Activity found')) {
+      console.error('[AmberIntentService] Amber app not found error detected');
       throw new Error('Amber app not found. Please install Amber and try again.');
     } else if (error.message.includes('cancelled')) {
+      console.error('[AmberIntentService] User cancelled error detected');
       throw new Error('Authentication was cancelled');
     } else {
+      console.error('[AmberIntentService] Generic authentication error');
       throw new Error('Authentication failed: ' + error.message);
     }
   }
@@ -206,14 +220,26 @@ export async function signEvent(event) {
  */
 export async function isAmberInstalled() {
   if (!isAndroid()) {
+    console.log('[AmberIntentService] Not on Android, returning false for isAmberInstalled');
     return false;
   }
   
   try {
+    console.log('[AmberIntentService] Checking if Amber is installed...');
+    
+    // Test if the plugin is registered first
+    if (typeof AmberIntent === 'undefined') {
+      console.error('[AmberIntentService] AmberIntent plugin not found during install check!');
+      return false;
+    }
+    
+    console.log('[AmberIntentService] AmberIntent plugin found, calling checkAmberInstalled...');
     const result = await AmberIntent.checkAmberInstalled();
+    console.log('[AmberIntentService] Amber installation check result:', result);
     return result.installed;
   } catch (error) {
     console.error('[AmberIntentService] Error checking Amber installation:', error);
+    console.error('[AmberIntentService] Error details:', error.message);
     return false;
   }
 }
@@ -228,12 +254,30 @@ export async function debugAmberIntents() {
   
   try {
     console.log('[AmberIntentService] Running debug...');
+    console.log('[AmberIntentService] Testing AmberIntent plugin availability...');
+    
+    // Test if the plugin is registered
+    if (typeof AmberIntent === 'undefined') {
+      console.error('[AmberIntentService] AmberIntent plugin not found!');
+      return { error: 'AmberIntent plugin not registered' };
+    }
+    
+    console.log('[AmberIntentService] AmberIntent plugin found, calling debugIntent...');
     const result = await AmberIntent.debugIntent();
     console.log('[AmberIntentService] Debug result:', result);
-    return result;
+    
+    return {
+      pluginFound: true,
+      debugResult: result,
+      timestamp: new Date().toISOString()
+    };
   } catch (error) {
     console.error('[AmberIntentService] Debug failed:', error);
-    throw error;
+    return {
+      pluginFound: typeof AmberIntent !== 'undefined',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    };
   }
 }
 
