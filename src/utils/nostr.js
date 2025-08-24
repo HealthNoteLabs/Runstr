@@ -3,7 +3,7 @@ import { Platform } from '../utils/react-native-shim.js';
 import AuthService from '../services/AuthService.js';
 // Import nostr-tools implementation for fallback
 import { createAndPublishEvent as publishWithNostrTools } from './nostrClient.js';
-import { getFastestRelays, directFetchRunningPosts } from './feedFetcher.js';
+import { getFastestRelays } from './feedFetcher.js';
 import { encryptContentNip44 } from './nip44.js';
 import { getEventTargetId, chunkArray } from './eventHelpers.js';
 import { v4 as uuidv4 } from 'uuid'; // Import uuid
@@ -779,7 +779,7 @@ export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null
     // Use platform-specific signing
     if (Platform.OS === 'android') {
       // Check if Amber is available
-      const isAmberAvailable = await AmberAuth.isAmberInstalled();
+      const isAmberAvailable = await AuthService.isAuthenticated();
       
       if (isAmberAvailable) {
         // For Android with Amber, we use Amber for signing
@@ -816,7 +816,7 @@ export const createAndPublishEvent = async (eventTemplate, pubkeyOverride = null
         
         // Sign using Amber - this is now properly async with timeout handling
         try {
-          signedEvent = await AmberAuth.signEvent(event);
+          signedEvent = await AuthService.signEvent(event);
           publishResult.signMethod = 'amber';
           
           // Validate that we got a properly signed event
@@ -1137,7 +1137,6 @@ export const createWorkoutEvent = (run, distanceUnit, options = {}) => {
     elevationTags = [['elevation_gain', elevationValue.toString(), elevationUnit]];
   }
 
-  const runDate = new Date(run.date);
   // Remove title completely to avoid duplication with date badge
   const workoutTitle = run.title || '';
 

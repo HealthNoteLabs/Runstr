@@ -1,10 +1,8 @@
 // Import GrapheneOS detection utilities
-import { isGrapheneOS, getAccuracyThreshold, getMovementThreshold } from './grapheneDetection';
+import { getAccuracyThreshold, getMovementThreshold } from './grapheneDetection';
 
 // Constants for accuracy thresholds
-const MINIMUM_ACCURACY = 20; // meters - relaxed for cycling compatibility
 const SPEED_THRESHOLD = 18; // meters/second (~65 km/h) - increased for cycling
-const MINIMUM_DISTANCE = 0.5; // meters - reduced for better movement detection
 const MAXIMUM_DISTANCE_PER_POINT = 50; // meters
 const MINIMUM_TIME_DIFF = 0.2; // seconds
 const PACE_WINDOW = 15; // Reduced to 15 seconds for more responsive pace updates
