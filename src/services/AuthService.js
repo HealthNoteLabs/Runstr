@@ -1,21 +1,21 @@
 /**
  * AuthService.js
- * Simplified authentication service using SimpleAmberAuth
+ * Authentication service using proper Android Intent-based Amber integration
  */
 
-import SimpleAmberAuth from './SimpleAmberAuth.js';
+import AmberIntentService from './AmberIntentService.js';
 
 /**
  * AuthService - Simple, unified authentication API
  */
 export default class AuthService {
   /**
-   * Login with Amber using simple Intent approach
+   * Login with Amber using proper Android Intent approach
    * @returns {Promise<string>} The user's public key
    */
   static async login() {
-    console.log('[AuthService] Starting simple Amber login...');
-    return await SimpleAmberAuth.login();
+    console.log('[AuthService] Starting Intent-based Amber login...');
+    return await AmberIntentService.login();
   }
   
   /**
@@ -23,7 +23,7 @@ export default class AuthService {
    * @returns {string|null} The public key or null if not authenticated
    */
   static getPublicKey() {
-    return SimpleAmberAuth.getPublicKey();
+    return AmberIntentService.getPublicKey();
   }
   
   /**
@@ -31,24 +31,24 @@ export default class AuthService {
    * @returns {boolean} True if user has a stored public key
    */
   static isAuthenticated() {
-    return SimpleAmberAuth.isAuthenticated();
+    return AmberIntentService.isAuthenticated();
   }
   
   /**
-   * Sign a Nostr event with Amber using simple Intent approach
+   * Sign a Nostr event with Amber using proper Android Intent approach
    * @param {Object} event - The event to sign
    * @returns {Promise<Object>} The signed event
    */
   static async signEvent(event) {
-    console.log('[AuthService] Signing event with simple Amber approach...');
-    return await SimpleAmberAuth.signEvent(event);
+    console.log('[AuthService] Signing event with Intent-based Amber approach...');
+    return await AmberIntentService.signEvent(event);
   }
   
   /**
    * Logout - clear all authentication data
    */
   static logout() {
-    SimpleAmberAuth.logout();
+    AmberIntentService.logout();
     console.log('[AuthService] User logged out');
   }
   
