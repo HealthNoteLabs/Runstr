@@ -8,7 +8,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace "club.runstr.app"
+    namespace "com.runstr.app"
     compileSdk rootProject.ext.compileSdkVersion
 
     // Define signing configurations
