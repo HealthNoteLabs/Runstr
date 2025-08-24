@@ -234,8 +234,10 @@ export async function isAmberInstalled() {
     }
     
     console.log('[AmberIntentService] AmberIntent plugin found, calling checkAmberInstalled...');
+    console.log('[AmberIntentService] About to call AmberIntent.checkAmberInstalled()...');
     const result = await AmberIntent.checkAmberInstalled();
     console.log('[AmberIntentService] Amber installation check result:', result);
+    console.log('[AmberIntentService] Result type:', typeof result);
     return result.installed;
   } catch (error) {
     console.error('[AmberIntentService] Error checking Amber installation:', error);
@@ -262,7 +264,12 @@ export async function debugAmberIntents() {
       return { error: 'AmberIntent plugin not registered' };
     }
     
-    console.log('[AmberIntentService] AmberIntent plugin found, calling debugIntent...');
+    console.log('[AmberIntentService] AmberIntent plugin found, inspecting available methods...');
+    console.log('[AmberIntentService] AmberIntent object:', AmberIntent);
+    console.log('[AmberIntentService] AmberIntent methods:', Object.getOwnPropertyNames(AmberIntent));
+    
+    // Try calling debugIntent
+    console.log('[AmberIntentService] Attempting to call debugIntent...');
     const result = await AmberIntent.debugIntent();
     console.log('[AmberIntentService] Debug result:', result);
     
