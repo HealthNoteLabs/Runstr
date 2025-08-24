@@ -9,6 +9,7 @@ import { useState } from 'react';
 import PropTypes from 'prop-types';
 import AuthService from '../services/AuthService';
 import AmberIntentService from '../services/AmberIntentService';
+import SimpleAmberService from '../services/SimpleAmberService';
 
 export const AmberLoginModal = ({ onSuccess, onCancel }) => {
   const [isLogging, setIsLogging] = useState(false);
@@ -109,9 +110,23 @@ export const AmberLoginModal = ({ onSuccess, onCancel }) => {
     addDebugLog('📱 Checking if Amber is installed...', 'info');
     try {
       const isInstalled = await AmberIntentService.isAmberInstalled();
-      addDebugLog(`📲 Amber installed: ${isInstalled}`, isInstalled ? 'success' : 'error');
+      addDebugLog(`📲 AmberIntentService - Amber installed: ${isInstalled}`, isInstalled ? 'success' : 'error');
+      
+      // Also try simple approach
+      const simpleInstalled = await SimpleAmberService.isAmberInstalled();
+      addDebugLog(`📲 SimpleAmberService - Amber installed: ${simpleInstalled}`, simpleInstalled ? 'success' : 'error');
     } catch (err) {
       addDebugLog(`💥 Install check error: ${err.message}`, 'error');
+    }
+  };
+
+  const handleTestApp = async () => {
+    addDebugLog('📱 Testing App plugin...', 'info');
+    try {
+      const result = await SimpleAmberService.debugApp();
+      addDebugLog(`🔍 App test result: ${JSON.stringify(result)}`, result.error ? 'error' : 'success');
+    } catch (err) {
+      addDebugLog(`💥 App test error: ${err.message}`, 'error');
     }
   };
 
@@ -165,6 +180,12 @@ export const AmberLoginModal = ({ onSuccess, onCancel }) => {
                   className="px-2 py-1 bg-green-600 hover:bg-green-700 rounded text-xs"
                 >
                   🔧 Debug Intent
+                </button>
+                <button
+                  onClick={handleTestApp}
+                  className="px-2 py-1 bg-purple-600 hover:bg-purple-700 rounded text-xs"
+                >
+                  📱 Test App
                 </button>
                 <button
                   onClick={() => setDebugInfo([])}

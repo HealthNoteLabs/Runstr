@@ -4,6 +4,7 @@
  */
 
 import AmberIntentService from './AmberIntentService.js';
+import SimpleAmberService from './SimpleAmberService.js';
 
 /**
  * AuthService - Simple, unified authentication API
@@ -14,8 +15,16 @@ export default class AuthService {
    * @returns {Promise<string>} The user's public key
    */
   static async login() {
-    console.log('[AuthService] Starting Intent-based Amber login...');
-    return await AmberIntentService.login();
+    console.log('[AuthService] Starting Amber login...');
+    
+    // Try the complex approach first, then fallback to simple
+    try {
+      console.log('[AuthService] Attempting AmberIntentService...');
+      return await AmberIntentService.login();
+    } catch (error) {
+      console.log('[AuthService] AmberIntentService failed, trying SimpleAmberService...', error.message);
+      return await SimpleAmberService.login();
+    }
   }
   
   /**
