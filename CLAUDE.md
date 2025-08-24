@@ -57,8 +57,11 @@ When pushing changes:
 ## Architecture Overview
 
 ### Technology Stack
-- **Frontend**: React 18 with Vite build system
-- **Mobile**: Capacitor for Android deployment
+- **Native Android App**: This is a native Android application, NOT a hybrid web app
+- **No Browser Usage**: Users never interact with this app through browsers - it's Android-only
+- **Target Platforms**: Android, GrapheneOS, and CalyxOS (privacy-focused Android ROMs)
+- **Frontend**: React 18 with Vite build system (for native mobile packaging via Capacitor)
+- **Mobile**: Capacitor for native Android deployment and API access
 - **Styling**: TailwindCSS with custom design system
 - **Protocol**: Nostr (Notes and Other Stuff Transmitted by Relays)
 - **State Management**: React Context API
@@ -181,7 +184,7 @@ NostrProvider
 1. **Run Tests**: `npm run test` - Must pass before proceeding
 2. **Check Lint**: `npm run lint` - Must have zero errors/warnings  
 3. **Verify Build**: `npm run build` - Must complete successfully
-4. **Test in Browser**: `npm run dev` - Verify app loads and basic functionality works
+4. **Test on Android**: `npm run build:android` then test on device/emulator - This is a mobile-only app
 5. **Git Diff Review**: Check exactly what changed before committing
 
 ##### Red Flags - Stop Immediately If You See These
@@ -233,11 +236,17 @@ If anything breaks:
 - Handle signer availability gracefully (read-only mode when no signer)
 - Use proper event kinds: kind 31923 for runs, kind 9802 for team events
 
-#### Mobile Considerations
-- Android-first development approach
-- Capacitor plugins for native functionality
-- Background processing for GPS tracking
-- Battery optimization handling
+#### Native Android Development
+- **Pure Android App**: This is a native Android application, users never use browsers
+- **Not a Hybrid App**: While built with web technologies, it's packaged as a native Android app
+- **Android Platforms**: Runs on standard Android, GrapheneOS, and CalyxOS
+- **Privacy-Focused Design**: Optimized for users who prioritize privacy and data sovereignty
+- **Zero Web Interface**: No browser version exists - Android APK installation only
+- **Capacitor Native APIs**: Full reliance on Capacitor plugins for native Android functionality
+- **Background GPS**: Continuous location tracking for run activities
+- **Battery Optimization**: Critical for long-duration run tracking across all Android variants
+- **Native Features**: Push notifications, background sync, device sensors, native UI
+- **Privacy Considerations**: Must work without Google Play Services (especially for GrapheneOS/CalyxOS users)
 
 #### Performance Optimization
 - Lazy loading for route components in AppRoutes.jsx

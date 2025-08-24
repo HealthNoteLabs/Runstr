@@ -13,6 +13,7 @@
 
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
+import AmberNative from './AmberNativePlugin.js';
 
 // Single storage key for the user's public key
 const PUBKEY_STORAGE_KEY = 'runstr_user_pubkey';
@@ -203,18 +204,36 @@ async function requestPublicKeyFromAmber() {
       type: 'get_public_key'
     });
 
-    // NIP-55 Web Application format for get_public_key
+    // Try exact NIP-55 Web Application format
+    // Example from docs: nostrsigner:?compressionType=none&returnType=signature&type=get_public_key&callbackUrl=https://example.com/?event=
     const callbackUrl = encodeURIComponent(`runstr://callback?id=${id}`);
     const amberUri = `nostrsigner:?compressionType=none&returnType=signature&type=get_public_key&callbackUrl=${callbackUrl}`;
     
-    console.log('[AuthService] Opening Amber with NIP-55 URI:', amberUri);
+    console.log('[AuthService] Generated URI:');
+    console.log(amberUri);
+    console.log('[AuthService] URI Length:', amberUri.length);
+    
+    // Also try without callback first to see if Amber shows anything
+    const simpleUri = `nostrsigner:?type=get_public_key`;
+    console.log('[AuthService] Simple URI test:', simpleUri);
     
     try {
-      // Use window.open which should trigger the intent on Android
-      const result = window.open(amberUri, '_system');
-      console.log('[AuthService] window.open result:', result);
+      // First try the NIP-55 documented approach using window.href (like in the example)
+      console.log('[AuthService] Trying window.location.href approach...');
+      window.location.href = amberUri;
       
-      console.log('[AuthService] Successfully attempted to open Amber app for public key');
+      console.log('[AuthService] Successfully set window.location.href to Amber URI');
+      
+      // If that doesn't work, also try window.open as fallback
+      setTimeout(() => {
+        console.log('[AuthService] Trying window.open fallback...');
+        try {
+          const result = window.open(amberUri, '_system');
+          console.log('[AuthService] window.open result:', result);
+        } catch (openError) {
+          console.log('[AuthService] window.open also failed:', openError);
+        }
+      }, 1000);
       
     } catch (e) {
       console.error('[AuthService] Failed to open Amber app:', e);
@@ -289,7 +308,7 @@ async function signEventWithAmber(eventTemplate) {
  */
 export default class AuthService {
   /**
-   * Login with Amber
+   * Login with Amber using native Android Intents
    * @returns {Promise<string>} The user's public key
    */
   static async login() {
@@ -299,47 +318,22 @@ export default class AuthService {
       throw new Error('Amber authentication is only available on Android devices. Please install Amber.');
     }
     
-    if (!await isAmberAvailable()) {
-      throw new Error('Amber app not found. Please install Amber from https://github.com/greenart7c3/Amber and try again.');
-    }
-    
-    // Setup deep link handling if not already done
-    setupDeepLinkHandling();
-    
-    // Create authentication event
-    const authEvent = {
-      kind: 22242, // Auth event kind
-      created_at: Math.floor(Date.now() / 1000),
-      content: 'Login to Runstr',
-      tags: [
-        ['relay', 'wss://relay.damus.io'],
-        ['relay', 'wss://nos.lol'],
-        ['relay', 'wss://relay.nostr.band']
-      ]
-    };
-    
-    console.log('[AuthService] Starting login process...');
+    console.log('[AuthService] Starting native Amber login process...');
     
     try {
-      console.log('[AuthService] Requesting public key from Amber using NIP-55 web format...');
-      const response = await requestPublicKeyFromAmber();
+      // Use native plugin instead of web URI approach
+      const pubkey = await AmberNative.getPublicKey();
       
-      console.log('[AuthService] Received response from Amber:', response);
-      
-      if (!response || !response.pubkey) {
-        throw new Error('No public key received from Amber');
-      }
-      
-      // Store the public key in single location
+      // Store the public key in single location (native plugin already does this, but ensure consistency)
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem(PUBKEY_STORAGE_KEY, response.pubkey);
-        console.log('[AuthService] Stored pubkey in localStorage');
+        window.localStorage.setItem(PUBKEY_STORAGE_KEY, pubkey);
+        console.log('[AuthService] Ensured pubkey stored in localStorage');
       }
       
-      console.log('[AuthService] Successfully authenticated with Amber, pubkey:', response.pubkey);
-      return response.pubkey;
+      console.log('[AuthService] Successfully authenticated with Amber via native plugin, pubkey:', pubkey.substring(0, 8) + '...');
+      return pubkey;
     } catch (error) {
-      console.error('[AuthService] Login failed:', error);
+      console.error('[AuthService] Native Amber login failed:', error);
       throw error;
     }
   }
@@ -349,11 +343,7 @@ export default class AuthService {
    * @returns {string|null} The public key or null if not authenticated
    */
   static getPublicKey() {
-    if (typeof window === 'undefined' || !window.localStorage) {
-      return null;
-    }
-    
-    return window.localStorage.getItem(PUBKEY_STORAGE_KEY);
+    return AmberNative.getCurrentPublicKey();
   }
   
   /**
@@ -361,11 +351,11 @@ export default class AuthService {
    * @returns {boolean} True if user has a stored public key
    */
   static isAuthenticated() {
-    return !!this.getPublicKey();
+    return AmberNative.isLoggedIn();
   }
   
   /**
-   * Sign a Nostr event with Amber
+   * Sign a Nostr event with Amber using native Android Intents
    * @param {Object} event - The event to sign
    * @returns {Promise<Object>} The signed event
    */
@@ -376,27 +366,20 @@ export default class AuthService {
       throw new Error('Amber signing is only available on Android devices.');
     }
     
-    if (!await isAmberAvailable()) {
-      throw new Error('Amber app not found. Please install Amber and try again.');
-    }
-    
-    // Setup deep link handling if not already done
-    setupDeepLinkHandling();
-    
-    if (!event.created_at) {
-      event.created_at = Math.floor(Date.now() / 1000);
-    }
+    console.log('[AuthService] Signing event with native Amber plugin...');
     
     try {
-      const signedEvent = await signEventWithAmber(event);
+      // Use native plugin instead of web URI approach
+      const signedEvent = await AmberNative.signEvent(event);
       
       if (!signedEvent || !signedEvent.sig || !signedEvent.id) {
         throw new Error('Invalid signed event returned from Amber');
       }
       
+      console.log('[AuthService] Successfully signed event via native plugin');
       return signedEvent;
     } catch (error) {
-      console.error('[AuthService] Signing failed:', error);
+      console.error('[AuthService] Native Amber signing failed:', error);
       throw error;
     }
   }
@@ -405,11 +388,8 @@ export default class AuthService {
    * Logout - clear all authentication data
    */
   static logout() {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.removeItem(PUBKEY_STORAGE_KEY);
-    }
-    
-    console.log('[AuthService] User logged out');
+    AmberNative.logout();
+    console.log('[AuthService] User logged out via native plugin');
   }
   
   /**
