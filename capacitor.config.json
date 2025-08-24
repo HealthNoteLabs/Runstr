@@ -22,7 +22,8 @@
       "appUrlOpen": {
         "enabled": true
       }
-    }
+    },
+    "AmberIntent": {}
   },
   "android": {
     "useLegacyBridge": true,

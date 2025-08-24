@@ -12,8 +12,5 @@ public class MainActivity extends BridgeActivity {
         // Register native plugins
         registerPlugin(AmberIntentPlugin.class);
         registerPlugin(PedometerPlugin.class);
-        
-        // Register Cordova plugin for legacy bridge
-        registerPlugin("AmberPlugin", AmberPlugin.class);
     }
 }
