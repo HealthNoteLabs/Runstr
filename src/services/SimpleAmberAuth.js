@@ -85,9 +85,15 @@ async function launchAmber() {
       }
     }, 30000);
     
-    // Create simple nostrsigner URI (like Amethyst)
-    const amberUrl = `nostrsigner:?type=get_public_key&callbackUrl=${encodeURIComponent('runstr://callback')}`;
+    // Create nostrsigner URI with encoded JSON (as expected by Amber)
+    const request = {
+      type: 'get_public_key',
+      callbackUrl: 'runstr://callback'
+    };
+    const encodedJson = encodeURIComponent(JSON.stringify(request));
+    const amberUrl = `nostrsigner:${encodedJson}`;
     
+    console.log('[SimpleAmberAuth] Launching Amber with request:', request);
     console.log('[SimpleAmberAuth] Launching Amber with URL:', amberUrl);
     
     // Use Capacitor's built-in way to open URLs
@@ -181,11 +187,16 @@ export async function signEvent(event) {
       }
     }, 30000);
     
-    // Create signing URL
-    const eventJson = JSON.stringify(event);
-    const amberUrl = `nostrsigner:${encodeURIComponent(eventJson)}?type=sign_event&callbackUrl=${encodeURIComponent('runstr://callback')}`;
+    // Create signing request with encoded JSON
+    const request = {
+      type: 'sign_event',
+      event: JSON.stringify(event),
+      callbackUrl: 'runstr://callback'
+    };
+    const encodedJson = encodeURIComponent(JSON.stringify(request));
+    const amberUrl = `nostrsigner:${encodedJson}`;
     
-    console.log('[SimpleAmberAuth] Launching Amber for signing...');
+    console.log('[SimpleAmberAuth] Launching Amber for signing with request:', request);
     window.open(amberUrl, '_system');
   });
 }
