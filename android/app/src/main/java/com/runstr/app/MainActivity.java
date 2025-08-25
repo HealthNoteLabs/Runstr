@@ -57,10 +57,8 @@ public class MainActivity extends BridgeActivity {
                 if (signature != null) jsObject.put("signature", signature);
                 if (error != null) jsObject.put("error", error);
                 
-                // Send the event to JavaScript using proper Capacitor bridge
-                getBridge().getWebView().post(() -> {
-                    getBridge().evalJS("window.dispatchEvent(new CustomEvent('amberCallback', { detail: " + jsObject.toString() + " }));");
-                });
+                // Send the event to JavaScript using Capacitor's triggerJSEvent
+                getBridge().triggerJSEvent("amberCallback", "window", jsObject.toString());
                 
                 Log.d(TAG, "Sent amber callback to JavaScript: " + jsObject.toString());
             }
