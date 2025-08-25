@@ -7,6 +7,7 @@ import AmberIntentService from './AmberIntentService.js';
 import SimpleAmberService from './SimpleAmberService.js';
 import SimpleAmberAuth from './SimpleAmberAuth.js';
 import DirectAmberAuth from './DirectAmberAuth.js';
+import NativeAmberAuth from './NativeAmberAuth.js';
 
 /**
  * AuthService - Simple, unified authentication API
@@ -20,20 +21,26 @@ export default class AuthService {
     console.log('[AuthService] Starting Amber login...');
     
     // Try multiple approaches in order of preference
+    // First try the native deep link approach which should work
     try {
-      console.log('[AuthService] Attempting AmberIntentService...');
-      return await AmberIntentService.login();
+      console.log('[AuthService] Attempting NativeAmberAuth (deep links)...');
+      return await NativeAmberAuth.login();
     } catch (error) {
-      console.log('[AuthService] AmberIntentService failed, trying SimpleAmberAuth...', error.message);
+      console.log('[AuthService] NativeAmberAuth failed, trying AmberIntentService...', error.message);
       try {
-        return await SimpleAmberAuth.login();
+        return await AmberIntentService.login();
       } catch (error2) {
-        console.log('[AuthService] SimpleAmberAuth failed, trying DirectAmberAuth...', error2.message);
+        console.log('[AuthService] AmberIntentService failed, trying SimpleAmberAuth...', error2.message);
         try {
-          return await DirectAmberAuth.login();
+          return await SimpleAmberAuth.login();
         } catch (error3) {
-          console.log('[AuthService] DirectAmberAuth failed, trying SimpleAmberService...', error3.message);
-          return await SimpleAmberService.login();
+          console.log('[AuthService] SimpleAmberAuth failed, trying DirectAmberAuth...', error3.message);
+          try {
+            return await DirectAmberAuth.login();
+          } catch (error4) {
+            console.log('[AuthService] DirectAmberAuth failed, trying SimpleAmberService...', error4.message);
+            return await SimpleAmberService.login();
+          }
         }
       }
     }
