@@ -6,6 +6,7 @@
 import AmberIntentService from './AmberIntentService.js';
 import SimpleAmberService from './SimpleAmberService.js';
 import SimpleAmberAuth from './SimpleAmberAuth.js';
+import DirectAmberAuth from './DirectAmberAuth.js';
 
 /**
  * AuthService - Simple, unified authentication API
@@ -27,8 +28,13 @@ export default class AuthService {
       try {
         return await SimpleAmberAuth.login();
       } catch (error2) {
-        console.log('[AuthService] SimpleAmberAuth failed, trying SimpleAmberService...', error2.message);
-        return await SimpleAmberService.login();
+        console.log('[AuthService] SimpleAmberAuth failed, trying DirectAmberAuth...', error2.message);
+        try {
+          return await DirectAmberAuth.login();
+        } catch (error3) {
+          console.log('[AuthService] DirectAmberAuth failed, trying SimpleAmberService...', error3.message);
+          return await SimpleAmberService.login();
+        }
       }
     }
   }

@@ -11,12 +11,15 @@ import AuthService from '../services/AuthService';
 import AmberIntentService from '../services/AmberIntentService';
 import SimpleAmberService from '../services/SimpleAmberService';
 import SimpleAmberAuth from '../services/SimpleAmberAuth';
+import DirectAmberAuth from '../services/DirectAmberAuth';
 
 export const AmberLoginModal = ({ onSuccess, onCancel }) => {
   const [isLogging, setIsLogging] = useState(false);
   const [error, setError] = useState(null);
   const [debugInfo, setDebugInfo] = useState([]);
   const [showDebug, setShowDebug] = useState(true);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualPubkey, setManualPubkey] = useState('');
 
   const addDebugLog = (message, type = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
@@ -51,6 +54,14 @@ export const AmberLoginModal = ({ onSuccess, onCancel }) => {
     } catch (err) {
       console.error('[AmberLoginModal] Login error:', err);
       addDebugLog(`💥 Error: ${err.message}`, 'error');
+      
+      // Check if this is a manual entry requirement
+      if (err.message.includes('MANUAL_ENTRY_REQUIRED')) {
+        addDebugLog('🔄 Switching to manual pubkey entry mode', 'info');
+        setShowManualEntry(true);
+        setError('Amber opened successfully! Please copy your public key from Amber and paste it below.');
+        return;
+      }
       
       // User-friendly error messages
       let errorMessage = 'Authentication failed. Please try again.';
@@ -209,6 +220,38 @@ export const AmberLoginModal = ({ onSuccess, onCancel }) => {
     }
   };
 
+  const handleManualPubkeySubmit = async () => {
+    if (!manualPubkey.trim()) {
+      setError('Please enter your public key');
+      return;
+    }
+    
+    try {
+      addDebugLog(`🔑 Attempting manual pubkey entry: ${manualPubkey.substring(0, 8)}...`, 'info');
+      const pubkey = DirectAmberAuth.enterPubkeyManually(manualPubkey.trim());
+      
+      addDebugLog(`✅ Manual entry successful: ${pubkey.substring(0, 8)}...`, 'success');
+      console.log('[AmberLoginModal] Manual pubkey entry successful:', pubkey.substring(0, 8) + '...');
+      onSuccess(pubkey);
+    } catch (err) {
+      addDebugLog(`💥 Manual entry error: ${err.message}`, 'error');
+      setError(err.message);
+    }
+  };
+
+  const handleOpenAmberDirect = async () => {
+    addDebugLog('🔗 Opening Amber directly for pubkey copy...', 'info');
+    try {
+      const result = await DirectAmberAuth.openAmberForAuth();
+      addDebugLog(`✅ ${result.message}`, 'success');
+      setShowManualEntry(true);
+      setError('Amber should now be open. Please copy your public key and paste it below.');
+    } catch (err) {
+      addDebugLog(`💥 Direct Amber open error: ${err.message}`, 'error');
+      setError('Failed to open Amber: ' + err.message);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-bg-primary rounded-xl shadow-2xl max-w-lg w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
@@ -273,6 +316,12 @@ export const AmberLoginModal = ({ onSuccess, onCancel }) => {
                   🌐 Test Window
                 </button>
                 <button
+                  onClick={handleOpenAmberDirect}
+                  className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 rounded text-xs"
+                >
+                  🔗 Open Amber
+                </button>
+                <button
                   onClick={handleInspectCapacitor}
                   className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 rounded text-xs"
                 >
@@ -303,6 +352,54 @@ export const AmberLoginModal = ({ onSuccess, onCancel }) => {
                   ))
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Manual Pubkey Entry */}
+        {showManualEntry && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <div className="text-center mb-3">
+              <h3 className="text-lg font-semibold text-blue-800 mb-2">📋 Manual Public Key Entry</h3>
+              <p className="text-blue-600 text-sm">
+                Copy your public key from Amber and paste it below:
+              </p>
+            </div>
+            
+            <div className="mb-3">
+              <input
+                type="text"
+                value={manualPubkey}
+                onChange={(e) => setManualPubkey(e.target.value)}
+                placeholder="Enter your 64-character public key..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm focus:ring-2 focus:ring-primary focus:border-transparent"
+                maxLength={64}
+              />
+              <div className="text-xs text-gray-500 mt-1">
+                {manualPubkey.length}/64 characters
+              </div>
+            </div>
+            
+            <div className="flex gap-2">
+              <button
+                onClick={handleManualPubkeySubmit}
+                disabled={!manualPubkey.trim() || manualPubkey.length !== 64}
+                className="flex-1 py-2 px-4 bg-primary hover:bg-primary-dark disabled:bg-gray-300 text-white rounded-lg font-semibold transition-colors"
+              >
+                ✅ Use This Key
+              </button>
+              <button
+                onClick={handleOpenAmberDirect}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
+              >
+                🔗 Open Amber
+              </button>
+              <button
+                onClick={() => setShowManualEntry(false)}
+                className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-semibold transition-colors"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         )}
