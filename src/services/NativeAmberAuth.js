@@ -71,7 +71,13 @@ function setupNativeListener() {
     
     try {
       // Parse the data from the native layer
-      const data = typeof event.detail === 'string' ? JSON.parse(event.detail) : event.detail;
+      let data;
+      if (event.detail) {
+        data = typeof event.detail === 'string' ? JSON.parse(event.detail) : event.detail;
+      } else {
+        // Fallback for different event structures
+        data = event;
+      }
       
       console.log('[NativeAmberAuth] Parsed callback data:', data);
       

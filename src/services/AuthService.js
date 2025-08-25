@@ -20,27 +20,26 @@ export default class AuthService {
   static async login() {
     console.log('[AuthService] Starting Amber login...');
     
-    // Try multiple approaches in order of preference
-    // First try the native deep link approach which should work
+    // Try native deep link approach first (this should work)
     try {
       console.log('[AuthService] Attempting NativeAmberAuth (deep links)...');
       return await NativeAmberAuth.login();
     } catch (error) {
-      console.log('[AuthService] NativeAmberAuth failed, trying AmberIntentService...', error.message);
+      console.log('[AuthService] NativeAmberAuth failed:', error.message);
+      
+      // Try the plugin approaches as backup
       try {
+        console.log('[AuthService] Trying AmberIntentService...');
         return await AmberIntentService.login();
       } catch (error2) {
-        console.log('[AuthService] AmberIntentService failed, trying SimpleAmberAuth...', error2.message);
+        console.log('[AuthService] AmberIntentService failed:', error2.message);
+        
         try {
+          console.log('[AuthService] Trying SimpleAmberAuth...');
           return await SimpleAmberAuth.login();
         } catch (error3) {
-          console.log('[AuthService] SimpleAmberAuth failed, trying DirectAmberAuth...', error3.message);
-          try {
-            return await DirectAmberAuth.login();
-          } catch (error4) {
-            console.log('[AuthService] DirectAmberAuth failed, trying SimpleAmberService...', error4.message);
-            return await SimpleAmberService.login();
-          }
+          console.log('[AuthService] All automatic methods failed:', error3.message);
+          throw new Error('Amber authentication failed. Please ensure Amber is installed and try again.');
         }
       }
     }

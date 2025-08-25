@@ -55,13 +55,7 @@ export const AmberLoginModal = ({ onSuccess, onCancel }) => {
       console.error('[AmberLoginModal] Login error:', err);
       addDebugLog(`💥 Error: ${err.message}`, 'error');
       
-      // Check if this is a manual entry requirement
-      if (err.message.includes('MANUAL_ENTRY_REQUIRED')) {
-        addDebugLog('🔄 Switching to manual pubkey entry mode', 'info');
-        setShowManualEntry(true);
-        setError('Amber opened successfully! Please copy your public key from Amber and paste it below.');
-        return;
-      }
+      // No manual entry in main flow - just show error
       
       // User-friendly error messages
       let errorMessage = 'Authentication failed. Please try again.';
