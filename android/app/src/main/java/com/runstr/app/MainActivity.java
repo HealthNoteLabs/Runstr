@@ -9,6 +9,7 @@ import com.getcapacitor.JSObject;
 
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "MainActivity";
+    private static final String AMBER_PACKAGE = "com.greenart7c3.nostrsigner";
     
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -62,6 +63,111 @@ public class MainActivity extends BridgeActivity {
                 
                 Log.d(TAG, "Sent amber callback to JavaScript: " + jsObject.toString());
             }
+        }
+    }
+    
+    /**
+     * Launch Amber with proper NIP-55 permission request
+     * Called from JavaScript via bridge
+     */
+    public void launchAmberForPublicKey(String permissionsJson, String callbackUrl) {
+        Log.d(TAG, "launchAmberForPublicKey called");
+        Log.d(TAG, "Permissions: " + permissionsJson);
+        Log.d(TAG, "Callback URL: " + callbackUrl);
+        
+        try {
+            // Create the Intent following NIP-55 specification exactly
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            
+            // Set the nostrsigner URI with required NIP-55 parameters
+            String nostrsignerUri = "nostrsigner:?compressionType=none&returnType=signature&type=get_public_key&callbackUrl=" + 
+                    Uri.encode(callbackUrl);
+            
+            intent.setData(Uri.parse(nostrsignerUri));
+            
+            // Add required Intent extras as per NIP-55 specification
+            intent.putExtra("type", "get_public_key");
+            intent.putExtra("permissions", permissionsJson);
+            intent.putExtra("compressionType", "none");
+            intent.putExtra("returnType", "signature");
+            intent.putExtra("callbackUrl", callbackUrl);
+            
+            // Target Amber specifically
+            intent.setPackage(AMBER_PACKAGE);
+            
+            Log.d(TAG, "Starting Amber Intent with URI: " + nostrsignerUri);
+            Log.d(TAG, "Intent extras - type: get_public_key, compressionType: none, returnType: signature");
+            
+            // Launch Amber
+            startActivity(intent);
+            
+            Log.d(TAG, "Amber launched successfully for public key request");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error launching Amber for public key", e);
+        }
+    }
+    
+    /**
+     * Launch Amber for event signing with proper NIP-55 format
+     * Called from JavaScript via bridge
+     */
+    public void launchAmberForSigning(String eventJson, String callbackUrl) {
+        Log.d(TAG, "launchAmberForSigning called");
+        Log.d(TAG, "Event JSON: " + eventJson);
+        Log.d(TAG, "Callback URL: " + callbackUrl);
+        
+        try {
+            // Create the Intent for signing following NIP-55 specification
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            
+            // For signing, the event JSON goes in the URI data per NIP-55
+            String nostrsignerUri = "nostrsigner:" + Uri.encode(eventJson) + 
+                    "?compressionType=none&returnType=signature&type=sign_event&callbackUrl=" + 
+                    Uri.encode(callbackUrl);
+            
+            intent.setData(Uri.parse(nostrsignerUri));
+            
+            // Add required Intent extras
+            intent.putExtra("type", "sign_event");
+            intent.putExtra("compressionType", "none");
+            intent.putExtra("returnType", "signature");
+            intent.putExtra("callbackUrl", callbackUrl);
+            
+            // Target Amber specifically
+            intent.setPackage(AMBER_PACKAGE);
+            
+            Log.d(TAG, "Starting Amber Intent for signing with URI: " + nostrsignerUri);
+            
+            // Launch Amber
+            startActivity(intent);
+            
+            Log.d(TAG, "Amber launched successfully for event signing");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error launching Amber for signing", e);
+        }
+    }
+    
+    /**
+     * Check if Amber is installed
+     * Called from JavaScript via bridge
+     */
+    public boolean isAmberInstalled() {
+        try {
+            // Check if Amber is installed by creating a query intent
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setData(Uri.parse("nostrsigner:"));
+            intent.setPackage(AMBER_PACKAGE);
+            
+            boolean isInstalled = intent.resolveActivity(getPackageManager()) != null;
+            
+            Log.d(TAG, "Amber installed check: " + isInstalled);
+            return isInstalled;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error checking if Amber is installed", e);
+            return false;
         }
     }
 }
